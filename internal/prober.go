@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/gob"
+	"encoding/json"
 	chacha "github.com/GoKillers/libsodium-go/crypto/aead/chacha20poly1305ietf"
 	"github.com/GoKillers/libsodium-go/cryptobox"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/internal/crypto"
 	"github.com/btcsuite/btcutil/base58"
+	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/packager"
 	"github.com/hyperledger/aries-framework-go/pkg/didcomm/transport"
 	didHttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
@@ -23,6 +25,7 @@ type Prober struct {
 	packer   transport.Packager
 	inbound  transport.InboundTransport
 	outbound transport.OutboundTransport
+	dest     *service.Destination
 	*crypto.KeyManager
 }
 
@@ -47,11 +50,19 @@ func Init(addr string) (*Prober, error) {
 		return nil, err
 	}
 
+	if err = inClient.Start(ctxProvider); err != nil {
+		return nil, err
+	}
+
 	return &Prober{
 		outbound: outClient,
 		inbound:  inClient,
 		packer:   packer,
 	}, nil
+}
+
+func (p *Prober) SetRecipientAddr(peerEndpoint string) {
+	p.dest = &service.Destination{ServiceEndpoint: peerEndpoint}
 }
 
 func (p *Prober) Pack(msg, recipient string) (domain.AuthCryptMsg, error) {
@@ -116,4 +127,17 @@ func (p *Prober) Pack(msg, recipient string) (domain.AuthCryptMsg, error) {
 	}
 
 	return authCryptMsg, nil
+}
+
+func (p *Prober) Send(msg domain.AuthCryptMsg) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	if _, err = p.outbound.Send(data, p.dest); err != nil {
+		return err
+	}
+
+	return nil
 }
