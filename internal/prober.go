@@ -61,8 +61,9 @@ func Init(addr string) (*Prober, error) {
 	}, nil
 }
 
-func (p *Prober) SetRecipientAddr(peerEndpoint string) {
-	p.dest = &service.Destination{ServiceEndpoint: peerEndpoint}
+func (p *Prober) SetRecipient(label, key, endpoint string) {
+	p.SetPeerKey(label, []byte(key))
+	p.dest = &service.Destination{RoutingKeys: []string{key}, ServiceEndpoint: endpoint}
 }
 
 func (p *Prober) Pack(msg, recipient string) (domain.AuthCryptMsg, error) {
