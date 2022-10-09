@@ -23,14 +23,13 @@ type recipient struct {
 }
 
 type Prober struct {
-	endpoint    string
 	rec         *recipient
 	transporter domain.Transporter
 	*crypto.KeyManager
 	logger log.Logger
 }
 
-func NewProber(endpoint string, t domain.Transporter, logger log.Logger) (*Prober, error) {
+func NewProber(t domain.Transporter, logger log.Logger) (*Prober, error) {
 	km := crypto.KeyManager{}
 	if err := km.GenerateKeys(); err != nil {
 		logger.Error(err)
@@ -38,7 +37,6 @@ func NewProber(endpoint string, t domain.Transporter, logger log.Logger) (*Probe
 	}
 
 	return &Prober{
-		endpoint:    endpoint,
 		KeyManager:  &km,
 		transporter: t,
 		logger:      logger,
@@ -49,7 +47,29 @@ func (p *Prober) SetRecipient(name, endpoint string, key []byte) {
 	p.rec = &recipient{name: name, endpoint: endpoint, publicKey: key}
 }
 
-func (p *Prober) Pack(msg string) (domain.AuthCryptMsg, error) {
+func (p *Prober) Send(text string) error {
+	msg, err := p.pack(text)
+	if err != nil {
+		p.logger.Error(err)
+		return err
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		p.logger.Error(err)
+		return err
+	}
+
+	err = p.transporter.Send(data, p.rec.endpoint)
+	if err != nil {
+		p.logger.Error(err)
+		return err
+	}
+
+	return nil
+}
+
+func (p *Prober) pack(msg string) (domain.AuthCryptMsg, error) {
 	// todo check if recipient is set
 	// generating and encoding the nonce
 	cekIv := []byte(strconv.Itoa(rand2.Int()))
@@ -110,20 +130,4 @@ func (p *Prober) Pack(msg string) (domain.AuthCryptMsg, error) {
 	}
 
 	return authCryptMsg, nil
-}
-
-func (p *Prober) Send(msg domain.AuthCryptMsg) error {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		p.logger.Error(err)
-		return err
-	}
-
-	err = p.transporter.Send(data, p.rec.endpoint)
-	if err != nil {
-		p.logger.Error(err)
-		return err
-	}
-
-	return nil
 }

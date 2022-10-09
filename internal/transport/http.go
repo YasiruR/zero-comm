@@ -51,11 +51,13 @@ func (h *HTTP) Send(data []byte, endpoint string) error {
 
 func (h *HTTP) handleInbound(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	_, err := ioutil.ReadAll(r.Body)
+	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		h.logger.Error(err)
 		return
 	}
+
+	h.logger.Debug("received msg", string(data))
 }
 
 func (h *HTTP) Stop() error {

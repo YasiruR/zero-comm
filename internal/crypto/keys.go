@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 )
 
 type KeyManager struct {
@@ -26,5 +27,6 @@ func (k *KeyManager) PrivateKey() []byte {
 }
 
 func (k *KeyManager) PublicKey() []byte {
-	return k.pubKey.N.Bytes()
+	//return k.pubKey.N.Bytes()
+	return x509.MarshalPKCS1PublicKey(k.pubKey)
 }
