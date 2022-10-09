@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func Init(name, pubKey, addr string) {
+func Init(name, addr, pubKey string) {
 	fmt.Printf("# Agent initialized with following attributes: \n\t- Name: %s\n\t- Endpoint: %s\n\t- Public key: %s\n", name, addr, pubKey)
 }
 

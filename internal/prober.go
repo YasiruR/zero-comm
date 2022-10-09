@@ -11,64 +11,46 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/internal/crypto"
 	"github.com/btcsuite/btcutil/base58"
-	"github.com/hyperledger/aries-framework-go/pkg/didcomm/common/service"
-	"github.com/hyperledger/aries-framework-go/pkg/didcomm/packager"
-	"github.com/hyperledger/aries-framework-go/pkg/didcomm/transport"
-	didHttp "github.com/hyperledger/aries-framework-go/pkg/didcomm/transport/http"
-	"github.com/hyperledger/aries-framework-go/pkg/framework/context"
+	"github.com/tryfix/log"
 	rand2 "math/rand"
-	"net/http"
 	"strconv"
 )
 
-type Prober struct {
-	packer   transport.Packager
-	inbound  transport.InboundTransport
-	outbound transport.OutboundTransport
-	dest     *service.Destination
-	*crypto.KeyManager
+type recipient struct {
+	name      string
+	endpoint  string
+	publicKey []byte
 }
 
-func Init(addr string) (*Prober, error) {
-	outClient, err := didHttp.NewOutbound(didHttp.WithOutboundHTTPClient(&http.Client{}))
-	if err != nil {
-		return nil, err
-	}
+type Prober struct {
+	endpoint    string
+	rec         *recipient
+	transporter domain.Transporter
+	*crypto.KeyManager
+	logger log.Logger
+}
 
-	inClient, err := didHttp.NewInbound(addr, ``, ``, ``)
-	if err != nil {
-		return nil, err
-	}
-
-	ctxProvider, err := context.New(context.WithOutboundTransports(outClient))
-	if err != nil {
-		return nil, err
-	}
-
-	packer, err := packager.New(ctxProvider)
-	if err != nil {
-		return nil, err
-	}
-
-	if err = inClient.Start(ctxProvider); err != nil {
+func NewProber(endpoint string, t domain.Transporter, logger log.Logger) (*Prober, error) {
+	km := crypto.KeyManager{}
+	if err := km.GenerateKeys(); err != nil {
+		logger.Error(err)
 		return nil, err
 	}
 
 	return &Prober{
-		outbound: outClient,
-		inbound:  inClient,
-		packer:   packer,
+		endpoint:    endpoint,
+		KeyManager:  &km,
+		transporter: t,
+		logger:      logger,
 	}, nil
 }
 
-func (p *Prober) SetRecipient(label, key, endpoint string) {
-	p.SetPeerKey(label, []byte(key))
-	p.dest = &service.Destination{RoutingKeys: []string{key}, ServiceEndpoint: endpoint}
+func (p *Prober) SetRecipient(name, endpoint string, key []byte) {
+	p.rec = &recipient{name: name, endpoint: endpoint, publicKey: key}
 }
 
-func (p *Prober) Pack(msg, recipient string) (domain.AuthCryptMsg, error) {
-	peerKey := p.PeerKey(recipient)
-
+func (p *Prober) Pack(msg string) (domain.AuthCryptMsg, error) {
+	// todo check if recipient is set
 	// generating and encoding the nonce
 	cekIv := []byte(strconv.Itoa(rand2.Int()))
 	iv := base64.StdEncoding.EncodeToString(cekIv)
@@ -81,10 +63,10 @@ func (p *Prober) Pack(msg, recipient string) (domain.AuthCryptMsg, error) {
 	}
 
 	// encrypting cek so it will be decrypted by recipient
-	encryptedCek, _ := cryptobox.CryptoBox(cek, cekIv, peerKey, p.PrivateKey())
+	encryptedCek, _ := cryptobox.CryptoBox(cek, cekIv, p.rec.publicKey, p.PrivateKey())
 
 	// encrypting sender ver key
-	encryptedSendKey, _ := cryptobox.CryptoBoxSeal(p.PublicKey(), peerKey)
+	encryptedSendKey, _ := cryptobox.CryptoBoxSeal(p.PublicKey(), p.rec.publicKey)
 
 	// constructing payload
 	payload := domain.Payload{
@@ -95,7 +77,7 @@ func (p *Prober) Pack(msg, recipient string) (domain.AuthCryptMsg, error) {
 			{
 				EncryptedKey: base64.StdEncoding.EncodeToString(encryptedCek),
 				Header: domain.Header{
-					Kid:    base58.Encode(peerKey),
+					Kid:    base58.Encode(p.rec.publicKey),
 					Iv:     iv,
 					Sender: base64.StdEncoding.EncodeToString(encryptedSendKey),
 				},
@@ -133,10 +115,13 @@ func (p *Prober) Pack(msg, recipient string) (domain.AuthCryptMsg, error) {
 func (p *Prober) Send(msg domain.AuthCryptMsg) error {
 	data, err := json.Marshal(msg)
 	if err != nil {
+		p.logger.Error(err)
 		return err
 	}
 
-	if _, err = p.outbound.Send(data, p.dest); err != nil {
+	err = p.transporter.Send(data, p.rec.endpoint)
+	if err != nil {
+		p.logger.Error(err)
 		return err
 	}
 
