@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
-	"github.com/YasiruR/didcomm-prober/internal"
+	"github.com/YasiruR/didcomm-prober/prober"
 	"log"
 	"os"
 	"strconv"
@@ -15,7 +15,7 @@ import (
 type runner struct {
 	cfg    domain.Config
 	reader *bufio.Reader
-	prober *internal.Prober
+	prober *prober.Prober
 }
 
 func ParseArgs() domain.Config {
@@ -30,7 +30,7 @@ func ParseArgs() domain.Config {
 	}
 }
 
-func Init(cfg domain.Config, prb *internal.Prober) {
+func Init(cfg domain.Config, prb *prober.Prober) {
 	fmt.Printf("# Agent initialized with following attributes: \n\t- Name: %s\n\t- Endpoint: localhost:%d\n\t- Public key: %s\n", cfg.Name, cfg.Port, string(prb.PublicKey()))
 	r := runner{cfg: cfg, reader: bufio.NewReader(os.Stdin), prober: prb}
 	r.basicCommands()
@@ -49,7 +49,7 @@ basicCmds:
 	case "1":
 		r.setRecipient()
 	case "2":
-
+		r.sendMsg()
 	case "3":
 		log.Fatalln(`program exited`)
 	default:

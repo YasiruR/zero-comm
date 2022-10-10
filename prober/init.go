@@ -1,4 +1,4 @@
-package internal
+package prober
 
 import (
 	"bytes"
@@ -6,10 +6,11 @@ import (
 	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
+	"fmt"
 	chacha "github.com/GoKillers/libsodium-go/crypto/aead/chacha20poly1305ietf"
 	"github.com/GoKillers/libsodium-go/cryptobox"
+	"github.com/YasiruR/didcomm-prober/crypto"
 	"github.com/YasiruR/didcomm-prober/domain"
-	"github.com/YasiruR/didcomm-prober/internal/crypto"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/tryfix/log"
 	rand2 "math/rand"
@@ -82,8 +83,17 @@ func (p *Prober) pack(msg string) (domain.AuthCryptMsg, error) {
 		return domain.AuthCryptMsg{}, err
 	}
 
+	// todo remove
+	for i := 0; i < 5; i++ {
+		cekIv = append(cekIv, 48)
+	}
+
+	pubKey := p.rec.publicKey
+	fmt.Println("PUB: ", pubKey)
+	fmt.Println("PUB LEN: ", len(pubKey))
+
 	// encrypting cek so it will be decrypted by recipient
-	encryptedCek, _ := cryptobox.CryptoBox(cek, cekIv, p.rec.publicKey, p.PrivateKey())
+	encryptedCek, _ := cryptobox.CryptoBox(cek, cekIv, pubKey, p.PrivateKey())
 
 	// encrypting sender ver key
 	encryptedSendKey, _ := cryptobox.CryptoBoxSeal(p.PublicKey(), p.rec.publicKey)
