@@ -40,9 +40,6 @@ func (h *HTTP) Start() {
 }
 
 func (h *HTTP) Send(data []byte, endpoint string) error {
-	fmt.Println("ENDPOINT: ", endpoint)
-	fmt.Println("DATA: ", string(data))
-
 	res, err := h.client.Post(endpoint, `application/json`, bytes.NewBuffer(data))
 	if err != nil {
 		h.logger.Error(err)
