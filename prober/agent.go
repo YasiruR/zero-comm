@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
-	"fmt"
 	chacha "github.com/GoKillers/libsodium-go/crypto/aead/chacha20poly1305ietf"
 	"github.com/GoKillers/libsodium-go/cryptobox"
 	"github.com/YasiruR/didcomm-prober/crypto"
@@ -26,26 +25,36 @@ type recipient struct {
 type Prober struct {
 	rec         *recipient
 	transporter domain.Transporter
-	*crypto.KeyManager
-	logger log.Logger
+	km          *crypto.KeyManager
+	logger      log.Logger
 }
 
-func NewProber(t domain.Transporter, logger log.Logger) (*Prober, error) {
+func NewProber(t domain.Transporter, logger log.Logger) (p *Prober, pubKey []byte, err error) {
 	km := crypto.KeyManager{}
-	if err := km.GenerateKeys(); err != nil {
+	if err = km.GenerateKeys(); err != nil {
 		logger.Error(err)
-		return nil, err
+		return nil, nil, err
 	}
 
+	encodedKey := make([]byte, 64)
+	base64.StdEncoding.Encode(encodedKey, km.PublicKey())
+
 	return &Prober{
-		KeyManager:  &km,
+		km:          &km,
 		transporter: t,
 		logger:      logger,
-	}, nil
+	}, encodedKey, nil
 }
 
-func (p *Prober) SetRecipient(name, endpoint string, key []byte) {
+func (p *Prober) SetRecipient(name, endpoint string, encodedKey string) error {
+	key, err := base64.StdEncoding.DecodeString(encodedKey)
+	if err != nil {
+		p.logger.Error(err)
+		return err
+	}
+
 	p.rec = &recipient{name: name, endpoint: endpoint, publicKey: key}
+	return nil
 }
 
 func (p *Prober) Send(text string) error {
@@ -88,15 +97,11 @@ func (p *Prober) pack(msg string) (domain.AuthCryptMsg, error) {
 		cekIv = append(cekIv, 48)
 	}
 
-	pubKey := p.rec.publicKey
-	fmt.Println("PUB: ", pubKey)
-	fmt.Println("PUB LEN: ", len(pubKey))
-
 	// encrypting cek so it will be decrypted by recipient
-	encryptedCek, _ := cryptobox.CryptoBox(cek, cekIv, pubKey, p.PrivateKey())
+	encryptedCek, _ := cryptobox.CryptoBox(cek, cekIv, p.rec.publicKey, p.km.PrivateKey())
 
 	// encrypting sender ver key
-	encryptedSendKey, _ := cryptobox.CryptoBoxSeal(p.PublicKey(), p.rec.publicKey)
+	encryptedSendKey, _ := cryptobox.CryptoBoxSeal(p.km.PublicKey(), p.rec.publicKey)
 
 	// constructing payload
 	payload := domain.Payload{

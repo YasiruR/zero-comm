@@ -30,15 +30,15 @@ func ParseArgs() domain.Config {
 	}
 }
 
-func Init(cfg domain.Config, prb *prober.Prober) {
-	fmt.Printf("# Agent initialized with following attributes: \n\t- Name: %s\n\t- Endpoint: localhost:%d\n\t- Public key: %s\n", cfg.Name, cfg.Port, string(prb.PublicKey()))
+func Init(cfg domain.Config, prb *prober.Prober, pubKey []byte) {
+	fmt.Printf("# Agent initialized with following attributes: \n\t- Name: %s\n\t- Endpoint: localhost:%d\n\t- Public key: %s", cfg.Name, cfg.Port, string(pubKey))
 	r := runner{cfg: cfg, reader: bufio.NewReader(os.Stdin), prober: prb}
 	r.basicCommands()
 }
 
 func (r *runner) basicCommands() {
 basicCmds:
-	fmt.Printf("# Enter the corresponding number of a command to proceed:\n\t[1] Set recipient\n\t[2] Send a message\n\t[3] Exit\nCommand: ")
+	fmt.Printf("\n# Enter the corresponding number of a command to proceed:\n\t[1] Set recipient\n\t[2] Send a message\n\t[3] Exit\nCommand: ")
 	cmd, err := r.reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("Error: reading command number failed, please try again")
@@ -62,7 +62,7 @@ basicCmds:
 }
 
 func (r *runner) setRecipient() {
-	fmt.Printf("# Enter recipient details:\n")
+	fmt.Printf("\n# Enter recipient details:\n")
 readName:
 	fmt.Printf("\tName: ")
 	name, err := r.reader.ReadString('\n')
@@ -87,13 +87,16 @@ readPubKey:
 		goto readPubKey
 	}
 
-	r.prober.SetRecipient(strings.TrimSpace(name), strings.TrimSpace(endpoint), []byte(strings.TrimSpace(pubKey)))
-	fmt.Printf("recipient saved\n")
+	if err = r.prober.SetRecipient(strings.TrimSpace(name), strings.TrimSpace(endpoint), strings.TrimSpace(pubKey)); err != nil {
+		fmt.Println("Error: public key may be invalid, please try again")
+		goto readPubKey
+	}
+	fmt.Printf("recipient saved")
 }
 
 func (r *runner) sendMsg() {
 readMsg:
-	fmt.Printf("# Enter message: ")
+	fmt.Printf("\n# Enter message: ")
 	msg, err := r.reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("Error: reading endpoint failed, please try again")
