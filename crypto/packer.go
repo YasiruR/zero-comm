@@ -28,12 +28,11 @@ func NewEncryptor(logger log.Logger) *Encryptor {
 	return &Encryptor{logger: logger}
 }
 
-func (e *Encryptor) Pack(msg string, peerPubKey, sendPubKey, sendPrvKey []byte) (domain.AuthCryptMsg, error) {
+func (e *Encryptor) Pack(msg string, recPubKey, sendPubKey, sendPrvKey []byte) (domain.AuthCryptMsg, error) {
 	// todo check if recipient is set
 	// generating and encoding the nonce
 	cekIv := []byte(strconv.Itoa(rand2.Int()))
 	encodedCekIv := base64.StdEncoding.EncodeToString(cekIv)
-	//iv := base64.StdEncoding.EncodeToString(cekIv)
 
 	// generating content encryption key
 	cek := make([]byte, 64)
@@ -48,10 +47,10 @@ func (e *Encryptor) Pack(msg string, peerPubKey, sendPubKey, sendPrvKey []byte) 
 	}
 
 	// encrypting cek so it will be decrypted by recipient
-	encryptedCek, _ := cryptobox.CryptoBox(cek, cekIv, peerPubKey, sendPrvKey)
+	encryptedCek, _ := cryptobox.CryptoBoxEasy(cek, cekIv, recPubKey, sendPrvKey)
 
 	// encrypting sender ver key
-	encryptedSendKey, _ := cryptobox.CryptoBoxSeal(sendPubKey, peerPubKey)
+	encryptedSendKey, _ := cryptobox.CryptoBoxSeal(sendPubKey, recPubKey)
 
 	// constructing payload
 	payload := domain.Payload{
@@ -62,7 +61,7 @@ func (e *Encryptor) Pack(msg string, peerPubKey, sendPubKey, sendPrvKey []byte) 
 			{
 				EncryptedKey: base64.StdEncoding.EncodeToString(encryptedCek),
 				Header: domain.Header{
-					Kid:    base58.Encode(peerPubKey),
+					Kid:    base58.Encode(recPubKey),
 					Iv:     encodedCekIv,
 					Sender: base64.StdEncoding.EncodeToString(encryptedSendKey),
 				},
@@ -76,11 +75,6 @@ func (e *Encryptor) Pack(msg string, peerPubKey, sendPubKey, sendPrvKey []byte) 
 		return domain.AuthCryptMsg{}, err
 	}
 	protectedVal := base64.StdEncoding.EncodeToString(data)
-	//buf := bytes.Buffer{}
-	//if err = gob.NewEncoder(&buf).Encode(payload); err != nil {
-	//	return domain.AuthCryptMsg{}, err
-	//}
-	//protectedVal := buf.Bytes()
 
 	// encrypt with chachapoly1305 detached mode
 	iv := []byte(strconv.Itoa(rand2.Int()))
@@ -114,12 +108,6 @@ func (e *Encryptor) Unpack(data, recPubKey, recPrvKey []byte) (text string, err 
 
 	// decode protected payload
 	var payload domain.Payload
-	//buf := bytes.NewBuffer([]byte(msg.Protected))
-	//err = gob.NewDecoder(buf).Decode(&payload)
-	//if err != nil {
-	//	e.logger.Error(err)
-	//	return ``, err
-	//}
 	decodedVal, err := base64.StdEncoding.DecodeString(msg.Protected)
 	if err != nil {
 		e.logger.Error(err)
@@ -162,7 +150,7 @@ func (e *Encryptor) Unpack(data, recPubKey, recPrvKey []byte) (text string, err 
 		cekIv = append(cekIv, 48)
 	}
 
-	cek, _ := cryptobox.CryptoBoxOpen(decodedCek, cekIv, sendPubKey, recPrvKey)
+	cek, _ := cryptobox.CryptoBoxOpenEasy(decodedCek, cekIv, sendPubKey, recPrvKey)
 
 	// decrypt cipher text
 	decodedCipher, err := base64.StdEncoding.DecodeString(msg.Ciphertext)
