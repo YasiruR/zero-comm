@@ -70,6 +70,7 @@ readName:
 		fmt.Println("Error: reading name failed, please try again")
 		goto readName
 	}
+	name = `bob`
 
 readEndpoint:
 	fmt.Printf("\tEndpoint: ")
@@ -78,6 +79,7 @@ readEndpoint:
 		fmt.Println("Error: reading endpoint failed, please try again")
 		goto readEndpoint
 	}
+	endpoint = `http://localhost:6666`
 
 readPubKey:
 	fmt.Printf("\tPublic key: ")

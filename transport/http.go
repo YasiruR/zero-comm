@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/crypto"
 	"github.com/gorilla/mux"
 	"github.com/tryfix/log"
 	"io/ioutil"
@@ -14,11 +15,20 @@ type HTTP struct {
 	port   int
 	router *mux.Router
 	client *http.Client
+	enc    *crypto.Encryptor
+	km     *crypto.KeyManager
 	logger log.Logger // remove later
 }
 
-func NewHTTP(port int, logger log.Logger) *HTTP {
-	return &HTTP{port: port, router: mux.NewRouter(), client: &http.Client{}, logger: logger}
+func NewHTTP(port int, enc *crypto.Encryptor, km *crypto.KeyManager, logger log.Logger) *HTTP {
+	return &HTTP{
+		port:   port,
+		router: mux.NewRouter(),
+		client: &http.Client{},
+		enc:    enc,
+		km:     km,
+		logger: logger,
+	}
 }
 
 func (h *HTTP) Start() {
@@ -30,17 +40,15 @@ func (h *HTTP) Start() {
 }
 
 func (h *HTTP) Send(data []byte, endpoint string) error {
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewBuffer(data))
-	if err != nil {
-		h.logger.Error(err)
-		return err
-	}
+	fmt.Println("ENDPOINT: ", endpoint)
+	fmt.Println("DATA: ", string(data))
 
-	res, err := h.client.Do(req)
+	res, err := h.client.Post(endpoint, `application/json`, bytes.NewBuffer(data))
 	if err != nil {
 		h.logger.Error(err)
 		return err
 	}
+	defer res.Body.Close()
 
 	if res.StatusCode == http.StatusAccepted || res.StatusCode == http.StatusOK {
 		return nil
@@ -49,7 +57,7 @@ func (h *HTTP) Send(data []byte, endpoint string) error {
 	return fmt.Errorf(`invalid status code: %d`, res.StatusCode)
 }
 
-func (h *HTTP) handleInbound(w http.ResponseWriter, r *http.Request) {
+func (h *HTTP) handleInbound(_ http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
@@ -57,7 +65,12 @@ func (h *HTTP) handleInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Debug("received msg", string(data))
+	text, err := h.enc.Unpack(data, h.km.PublicKey(), h.km.PrivateKey())
+	if err != nil {
+		return
+	}
+
+	h.logger.Debug("received msg: ", text)
 }
 
 func (h *HTTP) Stop() error {
