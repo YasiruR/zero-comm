@@ -9,16 +9,11 @@ import (
 	"github.com/tryfix/log"
 )
 
-// init prober with args recipient name
-// output public key
-
-// set recipient{name, endpoint, public key}
-
-// send message
-
 func main() {
 	logger := log.Constructor.Log(log.WithColors(true), log.WithLevel("DEBUG"), log.WithFilePath(true))
 	cfg := cli.ParseArgs()
+
+	recChan := make(chan string)
 
 	enc := crypto.NewEncryptor(logger)
 	km := crypto.KeyManager{}
@@ -29,7 +24,7 @@ func main() {
 	encodedKey := make([]byte, 64)
 	base64.StdEncoding.Encode(encodedKey, km.PublicKey())
 
-	tr := transport.NewHTTP(cfg.Port, enc, &km, logger)
+	tr := transport.NewHTTP(cfg.Port, enc, &km, recChan, logger)
 	go tr.Start()
 
 	prb, err := prober.NewProber(tr, enc, &km, logger)
@@ -37,5 +32,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cli.Init(cfg, prb, encodedKey)
+	cli.Init(cfg, prb, encodedKey, recChan)
 }

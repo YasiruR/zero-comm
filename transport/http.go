@@ -12,28 +12,29 @@ import (
 )
 
 type HTTP struct {
-	port   int
-	router *mux.Router
-	client *http.Client
-	enc    *crypto.Encryptor
-	km     *crypto.KeyManager
-	logger log.Logger // remove later
+	port    int
+	router  *mux.Router
+	client  *http.Client
+	enc     *crypto.Encryptor
+	km      *crypto.KeyManager
+	recChan chan string
+	logger  log.Logger // remove later
 }
 
-func NewHTTP(port int, enc *crypto.Encryptor, km *crypto.KeyManager, logger log.Logger) *HTTP {
+func NewHTTP(port int, enc *crypto.Encryptor, km *crypto.KeyManager, recChan chan string, logger log.Logger) *HTTP {
 	return &HTTP{
-		port:   port,
-		router: mux.NewRouter(),
-		client: &http.Client{},
-		enc:    enc,
-		km:     km,
-		logger: logger,
+		port:    port,
+		router:  mux.NewRouter(),
+		client:  &http.Client{},
+		enc:     enc,
+		km:      km,
+		recChan: recChan,
+		logger:  logger,
 	}
 }
 
 func (h *HTTP) Start() {
 	h.router.HandleFunc(`/`, h.handleInbound).Methods(http.MethodPost)
-	h.logger.Info(fmt.Sprintf("http server started listening on %d", h.port))
 	if err := http.ListenAndServe(":"+strconv.Itoa(h.port), h.router); err != nil {
 		h.logger.Fatal(err)
 	}
@@ -67,7 +68,7 @@ func (h *HTTP) handleInbound(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Debug("received msg: ", text)
+	h.recChan <- text
 }
 
 func (h *HTTP) Stop() error {

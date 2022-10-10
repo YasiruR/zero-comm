@@ -13,9 +13,10 @@ import (
 )
 
 type runner struct {
-	cfg    domain.Config
-	reader *bufio.Reader
-	prober *prober.Prober
+	cfg     domain.Config
+	reader  *bufio.Reader
+	prober  *prober.Prober
+	recChan chan string
 }
 
 func ParseArgs() domain.Config {
@@ -30,15 +31,16 @@ func ParseArgs() domain.Config {
 	}
 }
 
-func Init(cfg domain.Config, prb *prober.Prober, pubKey []byte) {
-	fmt.Printf("# Agent initialized with following attributes: \n\t- Name: %s\n\t- Endpoint: localhost:%d\n\t- Public key: %s", cfg.Name, cfg.Port, string(pubKey))
-	r := runner{cfg: cfg, reader: bufio.NewReader(os.Stdin), prober: prb}
+func Init(cfg domain.Config, prb *prober.Prober, pubKey []byte, recChan chan string) {
+	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Endpoint: localhost:%d\n\t- Public key: %s\n", cfg.Name, cfg.Port, string(pubKey))
+	r := runner{cfg: cfg, reader: bufio.NewReader(os.Stdin), prober: prb, recChan: recChan}
+	go r.listen()
 	r.basicCommands()
 }
 
 func (r *runner) basicCommands() {
 basicCmds:
-	fmt.Printf("\n# Enter the corresponding number of a command to proceed:\n\t[1] Set recipient\n\t[2] Send a message\n\t[3] Exit\nCommand: ")
+	fmt.Printf("\n\t[1] Set recipient\n\t[2] Send a message\n\t[3] Exit\n-> Enter the corresponding number of a command to proceed: ")
 	cmd, err := r.reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("Error: reading command number failed, please try again")
@@ -57,12 +59,11 @@ basicCmds:
 		goto basicCmds
 	}
 
-	fmt.Println()
 	r.basicCommands()
 }
 
 func (r *runner) setRecipient() {
-	fmt.Printf("\n# Enter recipient details:\n")
+	fmt.Printf("-> Enter recipient details:\n")
 readName:
 	fmt.Printf("\tName: ")
 	name, err := r.reader.ReadString('\n')
@@ -93,12 +94,12 @@ readPubKey:
 		fmt.Println("Error: public key may be invalid, please try again")
 		goto readPubKey
 	}
-	fmt.Printf("recipient saved")
+	fmt.Printf("-> Recipient saved {name: %s, endpoint: %s}\n", name, endpoint)
 }
 
 func (r *runner) sendMsg() {
 readMsg:
-	fmt.Printf("\n# Enter message: ")
+	fmt.Printf("-> Enter message: ")
 	msg, err := r.reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("Error: reading endpoint failed, please try again")
@@ -107,5 +108,14 @@ readMsg:
 
 	if err = r.prober.Send(msg); err != nil {
 		fmt.Printf("Error: sending message failed due to %s", err.Error())
+	}
+	fmt.Printf("-> Message sent\n")
+}
+
+func (r *runner) listen() {
+	for {
+		text := <-r.recChan
+		fmt.Printf("\n-> Message received: %s", text)
+		r.basicCommands()
 	}
 }
