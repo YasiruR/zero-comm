@@ -9,13 +9,14 @@ import (
 	"github.com/tryfix/log"
 )
 
+// did resolver
+
 func main() {
 	logger := log.Constructor.Log(log.WithColors(true), log.WithLevel("DEBUG"), log.WithFilePath(true))
 	cfg := cli.ParseArgs()
 
 	recChan := make(chan string)
-
-	enc := crypto.NewEncryptor(logger)
+	enc := crypto.NewPacker(logger)
 	km := crypto.KeyManager{}
 	if err := km.GenerateKeys(); err != nil {
 		logger.Fatal(err)

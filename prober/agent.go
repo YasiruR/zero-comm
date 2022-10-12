@@ -17,12 +17,12 @@ type recipient struct {
 type Prober struct {
 	rec         *recipient
 	transporter domain.Transporter
-	enc         *crypto.Encryptor
+	enc         *crypto.Packer
 	km          *crypto.KeyManager
 	logger      log.Logger
 }
 
-func NewProber(t domain.Transporter, enc *crypto.Encryptor, km *crypto.KeyManager, logger log.Logger) (p *Prober, err error) {
+func NewProber(t domain.Transporter, enc *crypto.Packer, km *crypto.KeyManager, logger log.Logger) (p *Prober, err error) {
 	return &Prober{
 		km:          km,
 		transporter: t,

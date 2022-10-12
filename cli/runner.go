@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 type runner struct {
@@ -17,6 +18,7 @@ type runner struct {
 	reader  *bufio.Reader
 	prober  *prober.Prober
 	recChan chan string
+	disCmds uint64 // flag to identify whether output cursor is on basic commands or not
 }
 
 func ParseArgs() domain.Config {
@@ -40,7 +42,9 @@ func Init(cfg domain.Config, prb *prober.Prober, pubKey []byte, recChan chan str
 
 func (r *runner) basicCommands() {
 basicCmds:
-	fmt.Printf("\n\t[1] Set recipient\n\t[2] Send a message\n\t[3] Exit\n-> Enter the corresponding number of a command to proceed: ")
+	fmt.Printf("-> Enter the corresponding number of a command to proceed;\n\t[1] Set recipient\n\t[2] Send a message\n\t[3] Exit\n   Command: ")
+	atomic.AddUint64(&r.disCmds, 1)
+
 	cmd, err := r.reader.ReadString('\n')
 	if err != nil {
 		fmt.Println("Error: reading command number failed, please try again")
@@ -55,10 +59,13 @@ basicCmds:
 	case "3":
 		log.Fatalln(`program exited`)
 	default:
-		fmt.Println("Error: invalid command number, please try again")
-		goto basicCmds
+		if r.disCmds > 0 {
+			fmt.Println("Error: invalid command number, please try again")
+			goto basicCmds
+		}
 	}
 
+	atomic.StoreUint64(&r.disCmds, 0)
 	r.basicCommands()
 }
 
@@ -115,7 +122,10 @@ readMsg:
 func (r *runner) listen() {
 	for {
 		text := <-r.recChan
-		fmt.Printf("\n-> Message received: %s", text)
-		r.basicCommands()
+		if r.disCmds == 1 {
+			atomic.StoreUint64(&r.disCmds, 0)
+			fmt.Println()
+		}
+		fmt.Printf("-> Message received: %s", text)
 	}
 }

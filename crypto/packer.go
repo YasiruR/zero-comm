@@ -5,31 +5,23 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	chacha "github.com/GoKillers/libsodium-go/crypto/aead/chacha20poly1305ietf"
-	"github.com/GoKillers/libsodium-go/cryptobox"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/tryfix/log"
-	"golang.org/x/crypto/nacl/box"
 	rand2 "math/rand"
 	"strconv"
 )
 
-const (
-	nonceSize        = 24
-	curve2551KeySize = 32
-)
-
-type Encryptor struct {
+type Packer struct {
+	enc    domain.Encryptor
 	logger log.Logger
 }
 
-func NewEncryptor(logger log.Logger) *Encryptor {
-	return &Encryptor{logger: logger}
+func NewPacker(logger log.Logger) *Packer {
+	return &Packer{enc: &encryptor{}, logger: logger}
 }
 
-func (e *Encryptor) Pack(msg string, recPubKey, sendPubKey, sendPrvKey []byte) (domain.AuthCryptMsg, error) {
-	// todo check if recipient is set
+func (p *Packer) Pack(msg string, recPubKey, sendPubKey, sendPrvKey []byte) (domain.AuthCryptMsg, error) {
 	// generating and encoding the nonce
 	cekIv := []byte(strconv.Itoa(rand2.Int()))
 	encodedCekIv := base64.StdEncoding.EncodeToString(cekIv)
@@ -41,16 +33,17 @@ func (e *Encryptor) Pack(msg string, recPubKey, sendPubKey, sendPrvKey []byte) (
 		return domain.AuthCryptMsg{}, err
 	}
 
-	// todo remove
-	for i := 0; i < 5; i++ {
-		cekIv = append(cekIv, 48)
+	// encrypting cek so it will be decrypted by recipient
+	encryptedCek, err := p.enc.Box(cek, cekIv, recPubKey, sendPrvKey)
+	if err != nil {
+		return domain.AuthCryptMsg{}, err
 	}
 
-	// encrypting cek so it will be decrypted by recipient
-	encryptedCek, _ := cryptobox.CryptoBoxEasy(cek, cekIv, recPubKey, sendPrvKey)
-
 	// encrypting sender ver key
-	encryptedSendKey, _ := cryptobox.CryptoBoxSeal(sendPubKey, recPubKey)
+	encryptedSendKey, err := p.enc.SealBox(sendPubKey, recPubKey)
+	if err != nil {
+		return domain.AuthCryptMsg{}, err
+	}
 
 	// constructing payload
 	payload := domain.Payload{
@@ -78,13 +71,10 @@ func (e *Encryptor) Pack(msg string, recPubKey, sendPubKey, sendPrvKey []byte) (
 
 	// encrypt with chachapoly1305 detached mode
 	iv := []byte(strconv.Itoa(rand2.Int()))
-	var convertedIv [chacha.NonceBytes]byte
-	copy(convertedIv[:], iv)
-
-	var convertedCek [chacha.KeyBytes]byte
-	copy(convertedCek[:], cek)
-
-	cipher, mac := chacha.EncryptDetached([]byte(msg), nil, &convertedIv, &convertedCek)
+	cipher, mac, err := p.enc.EncryptDetached(msg, iv, cek)
+	if err != nil {
+		return domain.AuthCryptMsg{}, err
+	}
 
 	// constructing the final message
 	authCryptMsg := domain.AuthCryptMsg{
@@ -97,12 +87,12 @@ func (e *Encryptor) Pack(msg string, recPubKey, sendPubKey, sendPrvKey []byte) (
 	return authCryptMsg, nil
 }
 
-func (e *Encryptor) Unpack(data, recPubKey, recPrvKey []byte) (text string, err error) {
+func (p *Packer) Unpack(data, recPubKey, recPrvKey []byte) (text string, err error) {
 	// unmarshal into authcrypt message
 	var msg domain.AuthCryptMsg
 	err = json.Unmarshal(data, &msg)
 	if err != nil {
-		e.logger.Error(err)
+		p.logger.Error(err)
 		return ``, err
 	}
 
@@ -110,13 +100,13 @@ func (e *Encryptor) Unpack(data, recPubKey, recPrvKey []byte) (text string, err 
 	var payload domain.Payload
 	decodedVal, err := base64.StdEncoding.DecodeString(msg.Protected)
 	if err != nil {
-		e.logger.Error(err)
+		p.logger.Error(err)
 		return ``, err
 	}
 
 	err = json.Unmarshal(decodedVal, &payload)
 	if err != nil {
-		e.logger.Error(err)
+		p.logger.Error(err)
 		return ``, err
 	}
 
@@ -128,78 +118,58 @@ func (e *Encryptor) Unpack(data, recPubKey, recPrvKey []byte) (text string, err 
 	// decrypt sender verification key
 	decodedSendKey, err := base64.StdEncoding.DecodeString(rec.Header.Sender) // note: array length should be checked
 	if err != nil {
-		e.logger.Error(err)
+		p.logger.Error(err)
 		return ``, err
 	}
-	sendPubKey, _ := cryptobox.CryptoBoxSealOpen(decodedSendKey, recPubKey, recPrvKey)
+
+	sendPubKey, err := p.enc.SealBoxOpen(decodedSendKey, recPubKey, recPrvKey)
+	if err != nil {
+		p.logger.Error(err)
+		return ``, err
+	}
 
 	// decrypt cek
 	decodedCek, err := base64.StdEncoding.DecodeString(rec.EncryptedKey) // note: array length should be checked
 	if err != nil {
-		e.logger.Error(err)
+		p.logger.Error(err)
 		return ``, err
 	}
 
 	cekIv, err := base64.StdEncoding.DecodeString(rec.Header.Iv)
 	if err != nil {
-		e.logger.Error(err)
+		p.logger.Error(err)
 		return ``, err
 	}
 
-	for i := 0; i < 5; i++ {
-		cekIv = append(cekIv, 48)
+	cek, err := p.enc.BoxOpen(decodedCek, cekIv, sendPubKey, recPrvKey)
+	if err != nil {
+		return ``, err
 	}
-
-	cek, _ := cryptobox.CryptoBoxOpenEasy(decodedCek, cekIv, sendPubKey, recPrvKey)
 
 	// decrypt cipher text
 	decodedCipher, err := base64.StdEncoding.DecodeString(msg.Ciphertext)
 	if err != nil {
-		e.logger.Error(err)
+		p.logger.Error(err)
 		return ``, err
 	}
 
 	mac, err := base64.StdEncoding.DecodeString(msg.Tag)
 	if err != nil {
-		e.logger.Error(err)
+		p.logger.Error(err)
 		return ``, err
 	}
 
 	iv, err := base64.StdEncoding.DecodeString(msg.Iv)
 	if err != nil {
-		e.logger.Error(err)
+		p.logger.Error(err)
 		return ``, err
 	}
-	var convertedIv [chacha.NonceBytes]byte
-	copy(convertedIv[:], iv)
 
-	var convertedCek [chacha.KeyBytes]byte
-	copy(convertedCek[:], cek)
-
-	textBytes, err := chacha.DecryptDetached(decodedCipher, mac, nil, &convertedIv, &convertedCek)
+	textBytes, err := p.enc.DecryptDetached(decodedCipher, mac, iv, cek)
 	if err != nil {
-		e.logger.Error(err)
+		p.logger.Error(err)
 		return ``, err
 	}
 
 	return string(textBytes), nil
-}
-
-func (e *Encryptor) Box(payload, nonce, peerPubKey, mySecKey []byte) (encMsg []byte, err error) {
-	var (
-		tmpPubKey [curve2551KeySize]byte
-		tmpSecKey [curve2551KeySize]byte
-		tmpNonce  [nonceSize]byte
-	)
-
-	copy(tmpPubKey[:], peerPubKey)
-	copy(tmpSecKey[:], mySecKey)
-	copy(tmpNonce[:], nonce)
-
-	encMsg = box.Seal(nil, payload, &tmpNonce, &tmpPubKey, &tmpSecKey)
-	return encMsg, nil
-}
-
-func (e *Encryptor) SealBox(payload, peerPubKey []byte) (encMsg []byte, err error) {
-	return nil, nil
 }
