@@ -20,6 +20,7 @@ type Encryptor interface {
 	DecryptDetached(cipher, mac, nonce, key []byte) (msg []byte, err error)
 }
 
-type DIDResolver interface {
-	Resolve()
+type Agent interface {
+	CreateInvitation()
+	AcceptInvitation()
 }

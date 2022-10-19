@@ -9,7 +9,7 @@ import (
 )
 
 type recipient struct {
-	name      string
+	id        string
 	endpoint  string
 	publicKey []byte
 }
@@ -38,9 +38,29 @@ func (p *Prober) SetRecipient(name, endpoint string, encodedKey string) error {
 		return err
 	}
 
-	p.rec = &recipient{name: name, endpoint: endpoint, publicKey: key}
+	p.rec = &recipient{id: name, endpoint: endpoint, publicKey: key}
 	return nil
 }
+
+//func (p *Prober) SetRecipientWithDoc(doc domain.DIDDocument) error {
+//	if len(doc.Service) == 0 {
+//		return errors.New(`DID document does not contain any service endpoints`)
+//	}
+//
+//	service := doc.Service[0]
+//	if len(service.RoutingKeys) == 0 {
+//		return errors.New(`DID document does not contain any routing keys`)
+//	}
+//
+//	key, err := base64.StdEncoding.DecodeString(service.RoutingKeys[0])
+//	if err != nil {
+//		p.logger.Error(err)
+//		return err
+//	}
+//
+//	p.rec = &recipient{id: service.Id, endpoint: service.ServiceEndpoint, publicKey: key}
+//	return nil
+//}
 
 func (p *Prober) Send(text string) error {
 	msg, err := p.enc.Pack(text, p.rec.publicKey, p.km.PublicKey(), p.km.PrivateKey())

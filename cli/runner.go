@@ -42,7 +42,7 @@ func Init(cfg domain.Config, prb *prober.Prober, pubKey []byte, recChan chan str
 
 func (r *runner) basicCommands() {
 basicCmds:
-	fmt.Printf("-> Enter the corresponding number of a command to proceed;\n\t[1] Set recipient\n\t[2] Send a message\n\t[3] Exit\n   Command: ")
+	fmt.Printf("-> Enter the corresponding number of a command to proceed;\n\t[1] Set recipient manually\n\t[2] Send a message\n\t[3] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
 	cmd, err := r.reader.ReadString('\n')
@@ -53,7 +53,7 @@ basicCmds:
 
 	switch strings.TrimSpace(cmd) {
 	case "1":
-		r.setRecipient()
+		r.setRecipientWithKey()
 	case "2":
 		r.sendMsg()
 	case "3":
@@ -69,7 +69,7 @@ basicCmds:
 	r.basicCommands()
 }
 
-func (r *runner) setRecipient() {
+func (r *runner) setRecipientWithKey() {
 	fmt.Printf("-> Enter recipient details:\n")
 readName:
 	fmt.Printf("\tName: ")
@@ -101,8 +101,30 @@ readPubKey:
 		fmt.Println("Error: public key may be invalid, please try again")
 		goto readPubKey
 	}
-	fmt.Printf("-> Recipient saved {name: %s, endpoint: %s}\n", name, endpoint)
+	fmt.Printf("-> Recipient saved {id: %s, endpoint: %s}\n", name, endpoint)
 }
+
+//func (r *runner) setRecipientWithDoc() {
+//	readDIDDoc:
+//		fmt.Printf("-> Provide recipient's DID document: ")
+//		strDoc, err := r.reader.ReadString('\n')
+//		if err != nil {
+//			fmt.Println("Error: reading DID document failed, please try again")
+//			goto readDIDDoc
+//		}
+//
+//		doc, err := r.didResolver.Parse([]byte(strDoc))
+//		if err != nil {
+//			fmt.Println("Error: DID document may be incorrect, please check and try again")
+//			goto readDIDDoc
+//		}
+//
+//		if err = r.prober.SetRecipientWithDoc(doc); err != nil {
+//			fmt.Println("Error: DID document may be incorrect, please check and try again")
+//			goto readDIDDoc
+//		}
+//		fmt.Printf("-> Recipient saved {id: %s, endpoint: %s}\n", doc.Id, doc.Service[0].ServiceEndpoint)
+//}
 
 func (r *runner) sendMsg() {
 readMsg:

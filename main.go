@@ -9,7 +9,9 @@ import (
 	"github.com/tryfix/log"
 )
 
-// did resolver
+// create peer did
+// create invitation by attaching temp peer did
+// follow did-exchange
 
 func main() {
 	logger := log.Constructor.Log(log.WithColors(true), log.WithLevel("DEBUG"), log.WithFilePath(true))
