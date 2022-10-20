@@ -152,6 +152,7 @@ readUrl:
 		goto readUrl
 	}
 
+	// todo
 	r.prober.SetRecipient(d, endpoint, key)
 	fmt.Printf("-> Recipient saved {id: %s, endpoint: %s}\n", d, endpoint)
 }
