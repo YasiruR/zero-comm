@@ -9,6 +9,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/prober"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -47,7 +48,7 @@ func Init(cfg domain.Config, prb *prober.Prober, recChan chan string) {
 
 func (r *runner) basicCommands() {
 basicCmds:
-	fmt.Printf("\n-> Enter the corresponding number of a command to proceed;\n\t[1] Generte invitation\n\t[2] Set recipient manually\n\t[3] Send a message\n\t[4] Exit\n   Command: ")
+	fmt.Printf("\n-> Enter the corresponding number of a command to proceed;\n\t[1] Generate invitation\n\t[2] Set recipient via invitation\n\t[3] Set recipient manually\n\t[4] Send a message\n\t[5] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
 	cmd, err := r.reader.ReadString('\n')
@@ -60,10 +61,12 @@ basicCmds:
 	case "1":
 		r.generateInvitation()
 	case "2":
-		r.setRecManually()
+		r.setRecWithInv()
 	case "3":
-		r.sendMsg()
+		r.setRecManually()
 	case "4":
+		r.sendMsg()
+	case "5":
 		log.Fatalln(`program exited`)
 	default:
 		if r.disCmds > 0 {
@@ -74,6 +77,16 @@ basicCmds:
 
 	atomic.StoreUint64(&r.disCmds, 0)
 	r.basicCommands()
+}
+
+func (r *runner) generateInvitation() {
+	inv, err := did.CreateInvitation(r.cfg.Hostname+domain.InvitationEndpoint, r.cfg.Hostname+domain.ExchangeEndpoint, r.prober.PublicKey())
+	if err != nil {
+		fmt.Println("-> Error: generating invitation failed")
+		return
+	}
+
+	fmt.Printf("-> Invitation URL: %s\n", inv)
 }
 
 func (r *runner) setRecManually() {
@@ -102,21 +115,45 @@ readPubKey:
 		goto readPubKey
 	}
 
-	if err = r.prober.SetRecipient(strings.TrimSpace(name), strings.TrimSpace(endpoint), strings.TrimSpace(pubKey)); err != nil {
-		fmt.Println("   Error: public key may be invalid, please try again")
+	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(pubKey))
+	if err != nil {
+		fmt.Println("   Error: decoding public key failed, please try again")
 		goto readPubKey
 	}
+
+	r.prober.SetRecipient(strings.TrimSpace(name), strings.TrimSpace(endpoint), key)
 	fmt.Printf("-> Recipient saved {id: %s, endpoint: %s}\n", name, endpoint)
 }
 
-func (r *runner) generateInvitation() {
-	inv, err := did.CreateInvitation(r.cfg.Hostname+domain.InvitationEndpoint, r.cfg.Hostname+domain.ExchangeEndpoint, r.prober.PublicKey())
+func (r *runner) setRecWithInv() {
+readUrl:
+	fmt.Printf("-> Provide invitation URL: ")
+	rawUrl, err := r.reader.ReadString('\n')
 	if err != nil {
-		fmt.Println("-> Error: generating invitation failed")
-		return
+		fmt.Println("   Error: reading url failed, please try again")
+		goto readUrl
 	}
 
-	fmt.Printf("-> Invitation URL: %s\n", inv)
+	u, err := url.Parse(strings.TrimSpace(rawUrl))
+	if err != nil {
+		fmt.Println("   Error: invalid url format, please try again")
+		goto readUrl
+	}
+
+	inv, ok := u.Query()[`oob`]
+	if !ok {
+		fmt.Println("   Error: invitation url must contain 'oob' parameter, please try again")
+		goto readUrl
+	}
+
+	d, endpoint, key, err := did.ParseInvitation(inv[0])
+	if err != nil {
+		fmt.Println("   Error: invalid invitation, please try again")
+		goto readUrl
+	}
+
+	r.prober.SetRecipient(d, endpoint, key)
+	fmt.Printf("-> Recipient saved {id: %s, endpoint: %s}\n", d, endpoint)
 }
 
 func (r *runner) sendMsg() {

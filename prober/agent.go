@@ -1,7 +1,6 @@
 package prober
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"github.com/YasiruR/didcomm-prober/crypto"
 	"github.com/YasiruR/didcomm-prober/domain"
@@ -35,15 +34,8 @@ func (p *Prober) PublicKey() []byte {
 	return p.km.PublicKey()
 }
 
-func (p *Prober) SetRecipient(name, endpoint string, encodedKey string) error {
-	key, err := base64.StdEncoding.DecodeString(encodedKey)
-	if err != nil {
-		p.logger.Error(err)
-		return err
-	}
-
+func (p *Prober) SetRecipient(name, endpoint string, key []byte) {
 	p.rec = &recipient{id: name, endpoint: endpoint, publicKey: key}
-	return nil
 }
 
 func (p *Prober) Send(text string) error {
