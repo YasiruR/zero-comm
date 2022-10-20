@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"github.com/YasiruR/didcomm-prober/cli"
 	"github.com/YasiruR/didcomm-prober/crypto"
 	"github.com/YasiruR/didcomm-prober/prober"
@@ -9,20 +8,20 @@ import (
 	"github.com/tryfix/log"
 )
 
+// create peer did
+// create invitation by attaching temp peer did
+// follow did-exchange
+
 func main() {
 	logger := log.Constructor.Log(log.WithColors(true), log.WithLevel("DEBUG"), log.WithFilePath(true))
 	cfg := cli.ParseArgs()
 
 	recChan := make(chan string)
-
-	enc := crypto.NewEncryptor(logger)
+	enc := crypto.NewPacker(logger)
 	km := crypto.KeyManager{}
 	if err := km.GenerateKeys(); err != nil {
 		logger.Fatal(err)
 	}
-
-	encodedKey := make([]byte, 64)
-	base64.StdEncoding.Encode(encodedKey, km.PublicKey())
 
 	tr := transport.NewHTTP(cfg.Port, enc, &km, recChan, logger)
 	go tr.Start()
@@ -32,5 +31,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cli.Init(cfg, prb, encodedKey, recChan)
+	cli.Init(cfg, prb, recChan)
 }

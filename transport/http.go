@@ -15,13 +15,13 @@ type HTTP struct {
 	port    int
 	router  *mux.Router
 	client  *http.Client
-	enc     *crypto.Encryptor
+	enc     *crypto.Packer
 	km      *crypto.KeyManager
 	recChan chan string
 	logger  log.Logger // remove later
 }
 
-func NewHTTP(port int, enc *crypto.Encryptor, km *crypto.KeyManager, recChan chan string, logger log.Logger) *HTTP {
+func NewHTTP(port int, enc *crypto.Packer, km *crypto.KeyManager, recChan chan string, logger log.Logger) *HTTP {
 	return &HTTP{
 		port:    port,
 		router:  mux.NewRouter(),

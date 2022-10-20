@@ -1,7 +1,6 @@
 package prober
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"github.com/YasiruR/didcomm-prober/crypto"
 	"github.com/YasiruR/didcomm-prober/domain"
@@ -9,7 +8,7 @@ import (
 )
 
 type recipient struct {
-	name      string
+	id        string
 	endpoint  string
 	publicKey []byte
 }
@@ -17,12 +16,12 @@ type recipient struct {
 type Prober struct {
 	rec         *recipient
 	transporter domain.Transporter
-	enc         *crypto.Encryptor
+	enc         *crypto.Packer
 	km          *crypto.KeyManager
 	logger      log.Logger
 }
 
-func NewProber(t domain.Transporter, enc *crypto.Encryptor, km *crypto.KeyManager, logger log.Logger) (p *Prober, err error) {
+func NewProber(t domain.Transporter, enc *crypto.Packer, km *crypto.KeyManager, logger log.Logger) (p *Prober, err error) {
 	return &Prober{
 		km:          km,
 		transporter: t,
@@ -31,15 +30,12 @@ func NewProber(t domain.Transporter, enc *crypto.Encryptor, km *crypto.KeyManage
 	}, nil
 }
 
-func (p *Prober) SetRecipient(name, endpoint string, encodedKey string) error {
-	key, err := base64.StdEncoding.DecodeString(encodedKey)
-	if err != nil {
-		p.logger.Error(err)
-		return err
-	}
+func (p *Prober) PublicKey() []byte {
+	return p.km.PublicKey()
+}
 
-	p.rec = &recipient{name: name, endpoint: endpoint, publicKey: key}
-	return nil
+func (p *Prober) SetRecipient(name, endpoint string, key []byte) {
+	p.rec = &recipient{id: name, endpoint: endpoint, publicKey: key}
 }
 
 func (p *Prober) Send(text string) error {
