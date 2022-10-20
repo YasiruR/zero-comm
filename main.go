@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"github.com/YasiruR/didcomm-prober/cli"
 	"github.com/YasiruR/didcomm-prober/crypto"
 	"github.com/YasiruR/didcomm-prober/prober"
@@ -24,9 +23,6 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	encodedKey := make([]byte, 64)
-	base64.StdEncoding.Encode(encodedKey, km.PublicKey())
-
 	tr := transport.NewHTTP(cfg.Port, enc, &km, recChan, logger)
 	go tr.Start()
 
@@ -35,5 +31,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cli.Init(cfg, prb, encodedKey, recChan)
+	cli.Init(cfg, prb, recChan)
 }

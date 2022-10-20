@@ -2,8 +2,10 @@ package cli
 
 import (
 	"bufio"
+	"encoding/base64"
 	"flag"
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/did"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/prober"
 	"log"
@@ -29,12 +31,15 @@ func ParseArgs() domain.Config {
 	return domain.Config{
 		Name:     *name,
 		Port:     *port,
-		Endpoint: "http://localhost:" + strconv.Itoa(*port),
+		Hostname: "http://localhost:" + strconv.Itoa(*port), // todo change later for remote urls
 	}
 }
 
-func Init(cfg domain.Config, prb *prober.Prober, pubKey []byte, recChan chan string) {
-	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Endpoint: localhost:%d\n\t- Public key: %s\n", cfg.Name, cfg.Port, string(pubKey))
+func Init(cfg domain.Config, prb *prober.Prober, recChan chan string) {
+	encodedKey := make([]byte, 64)
+	base64.StdEncoding.Encode(encodedKey, prb.PublicKey())
+	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n\t- Public key: %s\n", cfg.Name, cfg.Hostname, string(encodedKey))
+
 	r := runner{cfg: cfg, reader: bufio.NewReader(os.Stdin), prober: prb, recChan: recChan}
 	go r.listen()
 	r.basicCommands()
@@ -42,25 +47,27 @@ func Init(cfg domain.Config, prb *prober.Prober, pubKey []byte, recChan chan str
 
 func (r *runner) basicCommands() {
 basicCmds:
-	fmt.Printf("-> Enter the corresponding number of a command to proceed;\n\t[1] Set recipient manually\n\t[2] Send a message\n\t[3] Exit\n   Command: ")
+	fmt.Printf("\n-> Enter the corresponding number of a command to proceed;\n\t[1] Generte invitation\n\t[2] Set recipient manually\n\t[3] Send a message\n\t[4] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
 	cmd, err := r.reader.ReadString('\n')
 	if err != nil {
-		fmt.Println("Error: reading command number failed, please try again")
+		fmt.Println("   Error: reading command number failed, please try again")
 		goto basicCmds
 	}
 
 	switch strings.TrimSpace(cmd) {
 	case "1":
-		r.setRecipientWithKey()
+		r.generateInvitation()
 	case "2":
-		r.sendMsg()
+		r.setRecManually()
 	case "3":
+		r.sendMsg()
+	case "4":
 		log.Fatalln(`program exited`)
 	default:
 		if r.disCmds > 0 {
-			fmt.Println("Error: invalid command number, please try again")
+			fmt.Println("   Error: invalid command number, please try again")
 			goto basicCmds
 		}
 	}
@@ -69,74 +76,60 @@ basicCmds:
 	r.basicCommands()
 }
 
-func (r *runner) setRecipientWithKey() {
+func (r *runner) setRecManually() {
 	fmt.Printf("-> Enter recipient details:\n")
 readName:
 	fmt.Printf("\tName: ")
 	name, err := r.reader.ReadString('\n')
 	if err != nil {
-		fmt.Println("Error: reading name failed, please try again")
+		fmt.Println("   Error: reading name failed, please try again")
 		goto readName
 	}
-	name = `bob`
 
 readEndpoint:
-	fmt.Printf("\tEndpoint: ")
+	fmt.Printf("\tHostname: ")
 	endpoint, err := r.reader.ReadString('\n')
 	if err != nil {
-		fmt.Println("Error: reading endpoint failed, please try again")
+		fmt.Println("   Error: reading endpoint failed, please try again")
 		goto readEndpoint
 	}
-	endpoint = `http://localhost:6666`
 
 readPubKey:
 	fmt.Printf("\tPublic key: ")
 	pubKey, err := r.reader.ReadString('\n')
 	if err != nil {
-		fmt.Println("Error: reading public key failed, please try again")
+		fmt.Println("   Error: reading public key failed, please try again")
 		goto readPubKey
 	}
 
 	if err = r.prober.SetRecipient(strings.TrimSpace(name), strings.TrimSpace(endpoint), strings.TrimSpace(pubKey)); err != nil {
-		fmt.Println("Error: public key may be invalid, please try again")
+		fmt.Println("   Error: public key may be invalid, please try again")
 		goto readPubKey
 	}
 	fmt.Printf("-> Recipient saved {id: %s, endpoint: %s}\n", name, endpoint)
 }
 
-//func (r *runner) setRecipientWithDoc() {
-//	readDIDDoc:
-//		fmt.Printf("-> Provide recipient's DID document: ")
-//		strDoc, err := r.reader.ReadString('\n')
-//		if err != nil {
-//			fmt.Println("Error: reading DID document failed, please try again")
-//			goto readDIDDoc
-//		}
-//
-//		doc, err := r.didResolver.Parse([]byte(strDoc))
-//		if err != nil {
-//			fmt.Println("Error: DID document may be incorrect, please check and try again")
-//			goto readDIDDoc
-//		}
-//
-//		if err = r.prober.SetRecipientWithDoc(doc); err != nil {
-//			fmt.Println("Error: DID document may be incorrect, please check and try again")
-//			goto readDIDDoc
-//		}
-//		fmt.Printf("-> Recipient saved {id: %s, endpoint: %s}\n", doc.Id, doc.Service[0].ServiceEndpoint)
-//}
+func (r *runner) generateInvitation() {
+	inv, err := did.CreateInvitation(r.cfg.Hostname+domain.InvitationEndpoint, r.cfg.Hostname+domain.ExchangeEndpoint, r.prober.PublicKey())
+	if err != nil {
+		fmt.Println("-> Error: generating invitation failed")
+		return
+	}
+
+	fmt.Printf("-> Invitation URL: %s\n", inv)
+}
 
 func (r *runner) sendMsg() {
 readMsg:
 	fmt.Printf("-> Enter message: ")
 	msg, err := r.reader.ReadString('\n')
 	if err != nil {
-		fmt.Println("Error: reading endpoint failed, please try again")
+		fmt.Println("   Error: reading endpoint failed, please try again")
 		goto readMsg
 	}
 
 	if err = r.prober.Send(msg); err != nil {
-		fmt.Printf("Error: sending message failed due to %s", err.Error())
+		fmt.Printf("   Error: sending message failed due to %s", err.Error())
 	}
 	fmt.Printf("-> Message sent\n")
 }
