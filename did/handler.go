@@ -57,7 +57,7 @@ func (h *Handler) ValidatePeerDID(did string) error {
 	return nil
 }
 
-func (h *Handler) CreateConnReq(name, pthid, did string, encryptedDoc []byte) domain.ConnReq {
+func (h *Handler) CreateConnReq(pthid, did string, encDidDoc domain.AuthCryptMsg) (domain.ConnReq, error) {
 	id := uuid.New().String()
 	req := domain.ConnReq{
 		Id:   id,
@@ -66,14 +66,61 @@ func (h *Handler) CreateConnReq(name, pthid, did string, encryptedDoc []byte) do
 			ThId  string `json:"thid"`
 			PThId string `json:"pthid"`
 		}{ThId: id, PThId: pthid},
-		Label: name,
+		Label: `test-label`,
 		Goal:  "connection establishment",
 		DID:   did,
 	}
 
+	// marshals the encrypted did doc
+	encDocBytes, err := json.Marshal(encDidDoc)
+	if err != nil {
+		return domain.ConnReq{}, fmt.Errorf(`marshalling encrypted did doc failed - %v`, err)
+	}
+
 	req.DIDDocAttach.Id = uuid.New().String()
 	req.DIDDocAttach.MimeType = `application/json`
-	req.DIDDocAttach.Data.Base64 = base64.StdEncoding.EncodeToString(encryptedDoc)
+	req.DIDDocAttach.Data.Base64 = base64.StdEncoding.EncodeToString(encDocBytes)
 
-	return req
+	return req, nil
+}
+
+func (h *Handler) ParseConnReq(data []byte) (thId string, encDocBytes []byte, err error) {
+	var req domain.ConnReq
+	if err = json.Unmarshal(data, &req); err != nil {
+		return ``, nil, fmt.Errorf(`unmarshalling connection request failed - %v`, err)
+	}
+
+	encDocBytes, err = base64.StdEncoding.DecodeString(req.DIDDocAttach.Data.Base64)
+	if err != nil {
+		return ``, nil, fmt.Errorf(`decoding did doc failed - %v`, err)
+	}
+
+	//if err = json.Unmarshal(encDocBytes, &encDidDoc); err != nil {
+	//	return ``, nil, fmt.Errorf(`unmarshalling encrypted did doc failed - %v`, err)
+	//}
+
+	return req.Thread.ThId, encDocBytes, nil
+}
+
+func (h *Handler) CreateConnRes(thId, did string, encDidDoc domain.AuthCryptMsg) (domain.ConnRes, error) {
+	res := domain.ConnRes{
+		Id:   uuid.New().String(),
+		Type: "https://didcomm.org/didexchange/1.0/response",
+		Thread: struct {
+			ThId string `json:"thid"`
+		}{ThId: thId},
+		DID: did,
+	}
+
+	// marshals the encrypted did doc
+	encDocBytes, err := json.Marshal(encDidDoc)
+	if err != nil {
+		return domain.ConnRes{}, fmt.Errorf(`marshalling encrypted did doc failed - %v`, err)
+	}
+
+	res.DIDDocAttach.Id = uuid.New().String()
+	res.DIDDocAttach.MimeType = `application/json`
+	res.DIDDocAttach.Data.Base64 = base64.StdEncoding.EncodeToString(encDocBytes)
+
+	return res, nil
 }

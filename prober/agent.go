@@ -89,6 +89,7 @@ func (p *Prober) GenerateInv() (url string, err error) {
 	return p.oob.CreateInvitation(p.did, invDidDoc)
 }
 
+// ProcessInv creates a connection request and sends it to the invitation endpoint
 func (p *Prober) ProcessInv(encodedInv string) error {
 	inv, invEndpoint, peerInvPubKey, err := p.oob.ParseInvitation(encodedInv)
 	if err != nil {
@@ -102,19 +103,16 @@ func (p *Prober) ProcessInv(encodedInv string) error {
 	}
 
 	// encrypts did doc with peer invitation public key and default own key pair
-	encryptedDoc, err := p.enc.Pack(docBytes, peerInvPubKey, p.km.PublicKey(), p.km.PrivateKey())
+	encDoc, err := p.enc.Pack(docBytes, peerInvPubKey, p.km.PublicKey(), p.km.PrivateKey())
 	if err != nil {
 		return fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
-	// marshals the encrypted did doc
-	encryptedDocBytes, err := json.Marshal(encryptedDoc)
-	if err != nil {
-		return fmt.Errorf(`marshalling encrypted did doc failed - %v`, err)
-	}
-
 	// creates connection request
-	connReq := p.dh.CreateConnReq(`test-label`, inv.Id, inv.From, encryptedDocBytes)
+	connReq, err := p.dh.CreateConnReq(inv.Id, p.did, encDoc)
+	if err != nil {
+		return fmt.Errorf(`creating connection request failed - %v`, err)
+	}
 
 	// marshals connection request
 	connReqBytes, err := json.Marshal(connReq)
@@ -124,6 +122,67 @@ func (p *Prober) ProcessInv(encodedInv string) error {
 
 	if err = p.transport.Send(connReqBytes, invEndpoint); err != nil {
 		return fmt.Errorf(`sending connection request failed - %v`, err)
+	}
+}
+
+// ProcessConnReq parses the connection request, creates a connection response and sends it to did endpoint
+func (p *Prober) ProcessConnReq(data []byte) error {
+	thId, peerEncDocBytes, err := p.dh.ParseConnReq(data)
+	if err != nil {
+		return fmt.Errorf(`parsing connection request failed - %v`, err)
+	}
+
+	// decrypts did doc which is encrypted with invitation keys
+	peerDocBytes, err := p.enc.Unpack(peerEncDocBytes, p.km.InvPublicKey(), p.km.InvPrivateKey())
+	if err != nil {
+		return fmt.Errorf(`decrypting did doc failed - %v`, err)
+	}
+
+	// unmarshalls decrypted did doc
+	var peerDidDoc domain.DIDDocument
+	if err = json.Unmarshal(peerDocBytes, &peerDidDoc); err != nil {
+		return fmt.Errorf(`unmarshalling decrypted did doc failed - %v`, err)
+	}
+
+	if len(peerDidDoc.Service) == 0 {
+		return fmt.Errorf(`did doc does not contain a service`)
+	}
+
+	// assumes first service is the valid one
+	if len(peerDidDoc.Service[0].RecipientKeys) == 0 {
+		return fmt.Errorf(`did doc does not contain recipient keys for the service`)
+	}
+
+	peerEndpoint := peerDidDoc.Service[0].ServiceEndpoint
+	peerPubKey, err := base64.StdEncoding.DecodeString(peerDidDoc.Service[0].RecipientKeys[0])
+	if err != nil {
+		return fmt.Errorf(`decoding recipient key failed - %v`, err)
+	}
+
+	// marshals own did doc to proceed with packing process
+	docBytes, err := json.Marshal(p.didDoc)
+	if err != nil {
+		return fmt.Errorf(`marshalling did doc failed - %v`, err)
+	}
+
+	// encrypts did doc with peer invitation public key and default own key pair
+	encDidDoc, err := p.enc.Pack(docBytes, peerPubKey, p.km.PublicKey(), p.km.PrivateKey())
+	if err != nil {
+		return fmt.Errorf(`encrypting did doc failed - %v`, err)
+	}
+
+	connRes, err := p.dh.CreateConnRes(thId, p.did, encDidDoc)
+	if err != nil {
+		return fmt.Errorf(`creating connection response failed - %v`, err)
+	}
+
+	connResBytes, err := json.Marshal(connRes)
+	if err != nil {
+		return fmt.Errorf(`marshalling connection response failed - %v`, err)
+	}
+
+	if err = p.transport.Send(connResBytes, peerEndpoint); err != nil {
+		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 }
 

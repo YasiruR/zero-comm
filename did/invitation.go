@@ -54,7 +54,12 @@ func (o *OOBService) ParseInvitation(encInv string) (inv domain.Invitation, endp
 		if len(s.RecipientKeys) == 0 {
 			continue
 		}
-		return inv, s.ServiceEndpoint, []byte(s.RecipientKeys[0]), nil
+
+		pubKey, err = base64.StdEncoding.DecodeString(s.RecipientKeys[0])
+		if err != nil {
+			return domain.Invitation{}, ``, nil, fmt.Errorf(`decoding recipient key failed - %v`, err)
+		}
+		return inv, s.ServiceEndpoint, pubKey, nil
 	}
 
 	return domain.Invitation{}, ``, nil, fmt.Errorf(`no recipient key found for a service - %v`, inv)

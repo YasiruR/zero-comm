@@ -18,8 +18,10 @@ type HTTP struct {
 	client  *http.Client
 	enc     *crypto.Packer
 	km      *crypto.KeyManager
-	recChan chan string
+	msgChan chan string
 	logger  log.Logger // remove later
+
+	connChan chan []byte
 }
 
 func NewHTTP(port int, enc *crypto.Packer, km *crypto.KeyManager, recChan chan string, logger log.Logger) *HTTP {
@@ -29,12 +31,13 @@ func NewHTTP(port int, enc *crypto.Packer, km *crypto.KeyManager, recChan chan s
 		client:  &http.Client{},
 		enc:     enc,
 		km:      km,
-		recChan: recChan,
+		msgChan: recChan,
 		logger:  logger,
 	}
 }
 
 func (h *HTTP) Start() {
+	h.router.HandleFunc(domain.InvitationEndpoint, h.handleConnReqs).Methods(http.MethodPost)
 	h.router.HandleFunc(domain.ExchangeEndpoint, h.handleInbound).Methods(http.MethodPost)
 	if err := http.ListenAndServe(":"+strconv.Itoa(h.port), h.router); err != nil {
 		h.logger.Fatal(err)
@@ -57,6 +60,12 @@ func (h *HTTP) Send(data []byte, endpoint string) error {
 }
 
 func (h *HTTP) handleConnReqs(_ http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	data, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		h.logger.Error(err)
+		return
+	}
 
 }
 
@@ -68,12 +77,13 @@ func (h *HTTP) handleInbound(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	text, err := h.enc.Unpack(data, h.km.PublicKey(), h.km.PrivateKey())
+	// todo remove this from transport
+	textBytes, err := h.enc.Unpack(data, h.km.PublicKey(), h.km.PrivateKey())
 	if err != nil {
 		return
 	}
 
-	h.recChan <- text
+	h.msgChan <- string(textBytes)
 }
 
 func (h *HTTP) Stop() error {
