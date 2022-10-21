@@ -124,3 +124,17 @@ func (h *Handler) CreateConnRes(thId, did string, encDidDoc domain.AuthCryptMsg)
 
 	return res, nil
 }
+
+func (h *Handler) ParseConnRes(data []byte) (thId string, encDocBytes []byte, err error) {
+	var res domain.ConnRes
+	if err = json.Unmarshal(data, &res); err != nil {
+		return ``, nil, fmt.Errorf(`unmarshalling connection response failed - %v`, err)
+	}
+
+	encDocBytes, err = base64.StdEncoding.DecodeString(res.DIDDocAttach.Data.Base64)
+	if err != nil {
+		return ``, nil, fmt.Errorf(`decoding did doc failed - %v`, err)
+	}
+
+	return res.Thread.ThId, encDocBytes, nil
+}

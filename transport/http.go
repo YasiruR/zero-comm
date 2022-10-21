@@ -13,26 +13,25 @@ import (
 )
 
 type HTTP struct {
-	port    int
-	router  *mux.Router
-	client  *http.Client
-	enc     *crypto.Packer
-	km      *crypto.KeyManager
-	msgChan chan string
-	logger  log.Logger // remove later
+	port   int
+	router *mux.Router
+	client *http.Client
+	enc    *crypto.Packer
+	km     *crypto.KeyManager
+	logger log.Logger // remove later
 
-	connChan chan []byte
+	inChan chan []byte
 }
 
-func NewHTTP(port int, enc *crypto.Packer, km *crypto.KeyManager, recChan chan string, logger log.Logger) *HTTP {
+func NewHTTP(port int, enc *crypto.Packer, km *crypto.KeyManager, inChan chan []byte, logger log.Logger) *HTTP {
 	return &HTTP{
-		port:    port,
-		router:  mux.NewRouter(),
-		client:  &http.Client{},
-		enc:     enc,
-		km:      km,
-		msgChan: recChan,
-		logger:  logger,
+		port:   port,
+		router: mux.NewRouter(),
+		client: &http.Client{},
+		enc:    enc,
+		km:     km,
+		inChan: inChan,
+		logger: logger,
 	}
 }
 
@@ -67,6 +66,7 @@ func (h *HTTP) handleConnReqs(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.inChan <- data
 }
 
 func (h *HTTP) handleInbound(_ http.ResponseWriter, r *http.Request) {
@@ -77,13 +77,7 @@ func (h *HTTP) handleInbound(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// todo remove this from transport
-	textBytes, err := h.enc.Unpack(data, h.km.PublicKey(), h.km.PrivateKey())
-	if err != nil {
-		return
-	}
-
-	h.msgChan <- string(textBytes)
+	h.inChan <- data
 }
 
 func (h *HTTP) Stop() error {
