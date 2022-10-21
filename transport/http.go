@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/crypto"
+	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/gorilla/mux"
 	"github.com/tryfix/log"
 	"io/ioutil"
@@ -34,7 +35,7 @@ func NewHTTP(port int, enc *crypto.Packer, km *crypto.KeyManager, recChan chan s
 }
 
 func (h *HTTP) Start() {
-	h.router.HandleFunc(`/`, h.handleInbound).Methods(http.MethodPost)
+	h.router.HandleFunc(domain.ExchangeEndpoint, h.handleInbound).Methods(http.MethodPost)
 	if err := http.ListenAndServe(":"+strconv.Itoa(h.port), h.router); err != nil {
 		h.logger.Fatal(err)
 	}
@@ -53,6 +54,10 @@ func (h *HTTP) Send(data []byte, endpoint string) error {
 	}
 
 	return fmt.Errorf(`invalid status code: %d`, res.StatusCode)
+}
+
+func (h *HTTP) handleConnReqs(_ http.ResponseWriter, r *http.Request) {
+
 }
 
 func (h *HTTP) handleInbound(_ http.ResponseWriter, r *http.Request) {

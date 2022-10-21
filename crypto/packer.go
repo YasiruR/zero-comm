@@ -21,7 +21,7 @@ func NewPacker(logger log.Logger) *Packer {
 	return &Packer{enc: &encryptor{}, logger: logger}
 }
 
-func (p *Packer) Pack(msg string, recPubKey, sendPubKey, sendPrvKey []byte) (domain.AuthCryptMsg, error) {
+func (p *Packer) Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (domain.AuthCryptMsg, error) {
 	// generating and encoding the nonce
 	cekIv := []byte(strconv.Itoa(rand2.Int()))
 	encodedCekIv := base64.StdEncoding.EncodeToString(cekIv)
@@ -63,15 +63,15 @@ func (p *Packer) Pack(msg string, recPubKey, sendPubKey, sendPrvKey []byte) (dom
 	}
 
 	// base64 encoding of the payload
-	data, err := json.Marshal(payload)
+	encPayload, err := json.Marshal(payload)
 	if err != nil {
 		return domain.AuthCryptMsg{}, err
 	}
-	protectedVal := base64.StdEncoding.EncodeToString(data)
+	protectedVal := base64.StdEncoding.EncodeToString(encPayload)
 
 	// encrypt with chachapoly1305 detached mode
 	iv := []byte(strconv.Itoa(rand2.Int()))
-	cipher, mac, err := p.enc.EncryptDetached(msg, iv, cek)
+	cipher, mac, err := p.enc.EncryptDetached(string(input), iv, cek)
 	if err != nil {
 		return domain.AuthCryptMsg{}, err
 	}
@@ -87,13 +87,13 @@ func (p *Packer) Pack(msg string, recPubKey, sendPubKey, sendPrvKey []byte) (dom
 	return authCryptMsg, nil
 }
 
-func (p *Packer) Unpack(data, recPubKey, recPrvKey []byte) (text string, err error) {
+func (p *Packer) Unpack(data, recPubKey, recPrvKey []byte) (output []byte, err error) {
 	// unmarshal into authcrypt message
 	var msg domain.AuthCryptMsg
 	err = json.Unmarshal(data, &msg)
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
 	// decode protected payload
@@ -101,17 +101,17 @@ func (p *Packer) Unpack(data, recPubKey, recPrvKey []byte) (text string, err err
 	decodedVal, err := base64.StdEncoding.DecodeString(msg.Protected)
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
 	err = json.Unmarshal(decodedVal, &payload)
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
 	if len(payload.Recipients) == 0 {
-		return ``, errors.New("no recipients found")
+		return nil, errors.New("no recipients found")
 	}
 	rec := payload.Recipients[0]
 
@@ -119,57 +119,57 @@ func (p *Packer) Unpack(data, recPubKey, recPrvKey []byte) (text string, err err
 	decodedSendKey, err := base64.StdEncoding.DecodeString(rec.Header.Sender) // note: array length should be checked
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
 	sendPubKey, err := p.enc.SealBoxOpen(decodedSendKey, recPubKey, recPrvKey)
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
 	// decrypt cek
 	decodedCek, err := base64.StdEncoding.DecodeString(rec.EncryptedKey) // note: array length should be checked
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
 	cekIv, err := base64.StdEncoding.DecodeString(rec.Header.Iv)
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
 	cek, err := p.enc.BoxOpen(decodedCek, cekIv, sendPubKey, recPrvKey)
 	if err != nil {
-		return ``, err
+		return nil, err
 	}
 
 	// decrypt cipher text
 	decodedCipher, err := base64.StdEncoding.DecodeString(msg.Ciphertext)
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
 	mac, err := base64.StdEncoding.DecodeString(msg.Tag)
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
 	iv, err := base64.StdEncoding.DecodeString(msg.Iv)
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
-	textBytes, err := p.enc.DecryptDetached(decodedCipher, mac, iv, cek)
+	output, err = p.enc.DecryptDetached(decodedCipher, mac, iv, cek)
 	if err != nil {
 		p.logger.Error(err)
-		return ``, err
+		return nil, err
 	}
 
-	return string(textBytes), nil
+	return output, nil
 }

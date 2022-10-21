@@ -7,8 +7,8 @@ type Transporter interface {
 }
 
 type Packer interface {
-	Pack(msg string, recPubKey, sendPubKey, sendPrvKey []byte) (AuthCryptMsg, error)
-	Unpack(data, recPubKey, recPrvKey []byte) (text string, err error)
+	Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (AuthCryptMsg, error)
+	Unpack(data, recPubKey, recPrvKey []byte) (output []byte, err error)
 }
 
 type Encryptor interface {
