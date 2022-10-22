@@ -16,12 +16,12 @@ type recipient struct {
 type Prober struct {
 	rec         *recipient
 	transporter domain.Transporter
-	enc         *crypto.Packer
+	enc         domain.Packer
 	km          *crypto.KeyManager
 	logger      log.Logger
 }
 
-func NewProber(t domain.Transporter, enc *crypto.Packer, km *crypto.KeyManager, logger log.Logger) (p *Prober, err error) {
+func NewProber(t domain.Transporter, enc domain.Packer, km *crypto.KeyManager, logger log.Logger) (p *Prober, err error) {
 	return &Prober{
 		km:          km,
 		transporter: t,
@@ -36,6 +36,13 @@ func (p *Prober) PublicKey() []byte {
 
 func (p *Prober) SetRecipient(name, endpoint string, key []byte) {
 	p.rec = &recipient{id: name, endpoint: endpoint, publicKey: key}
+}
+
+// generate conn req - include peer did, did doc
+// encrypt using rec keys
+
+func (p *Prober) Connect() {
+
 }
 
 func (p *Prober) Send(text string) error {

@@ -1,5 +1,6 @@
 package domain
 
+// Invitation reference: https://identity.foundation/didcomm-messaging/spec/#invitation
 type Invitation struct {
 	Id   string `json:"id"`
 	Type string `json:"type"`
@@ -11,33 +12,6 @@ type Invitation struct {
 	} `json:"body"`
 	Attachments interface{}
 	Services    []Service `json:"services"` // deprecated in v2 but used for simplicity
-}
-
-type PeerDIDDoc struct {
-	Context       string `json:"@context"`
-	PublicKey     []key  `json:"publicKey"`
-	Authorization auth   `json:"authorization"`
-}
-
-type key struct {
-	Crv string `json:"crv"`
-	Kty string `json:"kty"`
-	X   string `json:"x"`
-	Y   string `json:"y"`
-	Kid string `json:"kid"`
-}
-
-type auth struct {
-	Profiles []struct {
-		Key   string   `json:"key"`
-		Roles []string `json:"roles"`
-	} `json:"profiles"`
-	Rules []struct {
-		Grant []string `json:"grant"`
-		When  struct {
-			Roles string `json:"roles"`
-		} `json:"when"`
-	}
 }
 
 type DIDDocument struct {
@@ -54,3 +28,51 @@ type Service struct {
 	ServiceEndpoint string   `json:"serviceEndpoint"`
 	Accept          []string `json:"accept"`
 }
+
+// ConnReq reference: https://github.com/hyperledger/aries-rfcs/tree/main/features/0023-did-exchange#request-message-example
+type ConnReq struct {
+	Id     string `json:"@id"`
+	Type   string `json:"@type"`
+	Thread struct {
+		ThId  string `json:"thid"`
+		PThId string `json:"pthid"`
+	} `json:"~thread"`
+	Label        string `json:"label"`
+	GoalCode     string `json:"goal_code"`
+	Goal         string `json:"goal"`
+	DID          string `json:"did"`
+	DIDDocAttach struct {
+		Id       string `json:"@id"`
+		MimeType string `json:"mime-type"`
+		Data     struct {
+			Base64 string `json:"base64"`
+		}
+	}
+}
+
+//type PeerDIDDoc struct {
+//	Context       string `json:"@context"`
+//	PublicKey     []key  `json:"publicKey"`
+//	Authorization auth   `json:"authorization"`
+//}
+//
+//type key struct {
+//	Crv string `json:"crv"`
+//	Kty string `json:"kty"`
+//	X   string `json:"x"`
+//	Y   string `json:"y"`
+//	Kid string `json:"kid"`
+//}
+//
+//type auth struct {
+//	Profiles []struct {
+//		Key   string   `json:"key"`
+//		Roles []string `json:"roles"`
+//	} `json:"profiles"`
+//	Rules []struct {
+//		Grant []string `json:"grant"`
+//		When  struct {
+//			Roles string `json:"roles"`
+//		} `json:"when"`
+//	}
+//}
