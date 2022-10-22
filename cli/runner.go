@@ -5,13 +5,11 @@ import (
 	"encoding/base64"
 	"flag"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/did"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/prober"
 	"log"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync/atomic"
 )
@@ -19,31 +17,26 @@ import (
 type runner struct {
 	cfg     *domain.Config
 	reader  *bufio.Reader
-	oob     *did.OOBService
 	prober  *prober.Prober
 	outChan chan string
 	disCmds uint64 // flag to identify whether output cursor is on basic commands or not
 }
 
-func ParseArgs() *domain.Config {
+func ParseArgs() (name string, port int, verbose bool) {
 	// todo verbose and log errors
-	name := flag.String(`label`, ``, `agent's name'`)
-	port := flag.Int(`port`, 0, `agent's port'`)
+	n := flag.String(`label`, ``, `agent's name'`)
+	p := flag.Int(`port`, 0, `agent's port'`)
 	flag.Parse()
 
-	return &domain.Config{
-		Name:     *name,
-		Port:     *port,
-		Hostname: "http://localhost:" + strconv.Itoa(*port), // todo change later for remote urls
-	}
+	return *n, *p, false
 }
 
-func Init(cfg *domain.Config, prb *prober.Prober, oob *did.OOBService, outChan chan string) {
+func Init(c *domain.Container, prb *prober.Prober) {
 	encodedKey := make([]byte, 64)
 	base64.StdEncoding.Encode(encodedKey, prb.PublicKey())
-	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n\t- Public key: %s\n", cfg.Name, cfg.Hostname, string(encodedKey))
+	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n\t- Public key: %s\n", c.Cfg.Name, c.Cfg.Hostname, string(encodedKey))
 
-	r := runner{cfg: cfg, reader: bufio.NewReader(os.Stdin), prober: prb, oob: oob, outChan: outChan}
+	r := runner{cfg: c.Cfg, reader: bufio.NewReader(os.Stdin), prober: prb, outChan: c.OutChan}
 	go r.listen()
 	r.basicCommands()
 }
@@ -80,7 +73,7 @@ basicCmds:
 }
 
 func (r *runner) generateInvitation() {
-	inv, err := r.prober.GenerateInv()
+	inv, err := r.prober.Invite()
 	if err != nil {
 		fmt.Println("-> Error: generating invitation failed")
 		return
@@ -110,7 +103,7 @@ readUrl:
 		goto readUrl
 	}
 
-	if err = r.prober.ProcessInv(inv[0]); err != nil {
+	if err = r.prober.Accept(inv[0]); err != nil {
 		fmt.Println("   Error: invitation may be invalid, please try again")
 		goto readUrl
 	}
@@ -138,6 +131,6 @@ func (r *runner) listen() {
 			atomic.StoreUint64(&r.disCmds, 0)
 			fmt.Println()
 		}
-		fmt.Printf("-> Message received: %s", text)
+		fmt.Printf("\n-> Message received: %s", text)
 	}
 }

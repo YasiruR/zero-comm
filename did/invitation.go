@@ -17,7 +17,7 @@ func NewOOBService(cfg *domain.Config) *OOBService {
 	return &OOBService{invEndpoint: cfg.Hostname + domain.InvitationEndpoint}
 }
 
-func (o *OOBService) CreateInvitation(did string, didDoc domain.DIDDocument) (url string, err error) {
+func (o *OOBService) CreateInv(did string, didDoc domain.DIDDocument) (url string, err error) {
 	inv := domain.Invitation{
 		Id:       uuid.New().String(), // todo use this as pthid in request
 		Type:     "https://didcomm.org/out-of-band/1.0/invitation",
@@ -34,7 +34,7 @@ func (o *OOBService) CreateInvitation(did string, didDoc domain.DIDDocument) (ur
 	return o.invEndpoint + `?oob=` + base64.URLEncoding.EncodeToString(byts), nil
 }
 
-func (o *OOBService) ParseInvitation(encInv string) (inv domain.Invitation, endpoint string, pubKey []byte, err error) {
+func (o *OOBService) ParseInv(encInv string) (inv domain.Invitation, endpoint string, pubKey []byte, err error) {
 	bytInv := make([]byte, len(encInv))
 	if _, err = base64.URLEncoding.Decode(bytInv, []byte(encInv)); err != nil {
 		return domain.Invitation{}, ``, nil, fmt.Errorf(`base64 url decode failed - %v`, err)

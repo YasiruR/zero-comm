@@ -5,8 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/crypto"
-	"github.com/YasiruR/didcomm-prober/did"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/tryfix/log"
 )
@@ -25,53 +23,51 @@ type connection struct {
 }
 
 type Prober struct {
-	did     string
-	didDoc  domain.DIDDocument
-	peerDid string
-
-	conn      *connection // single connection for now
-	transport domain.Transporter
-	enc       domain.Packer
-	km        *crypto.KeyManager // single key-pair for now
-	logger    log.Logger
-
+	did         string
+	didDoc      domain.DIDDocument
+	peerDid     string
 	invEndpoint string
-	dh          *did.Handler
-	oob         *did.OOBService
 	state       string
 	inChan      chan []byte
 	outChan     chan string
+	conn        *connection       // single connection for now
+	ks          domain.KeyService // single key-pair for now
+	tr          domain.Transporter
+	packer      domain.Packer
+	ds          domain.DIDService
+	oob         domain.OOBService
+	logger      log.Logger
 }
 
-// todo container for services
+func NewProber(c *domain.Container) (p *Prober, err error) {
+	p = &Prober{
+		invEndpoint: c.Cfg.InvEndpoint,
+		ks:          c.KS,
+		tr:          c.Tr,
+		packer:      c.Packer,
+		logger:      c.Logger,
+		ds:          c.DS,
+		oob:         c.OOB,
+		inChan:      c.InChan,
+		outChan:     c.OutChan,
+		state:       stateInitial,
+	}
 
-func NewProber(cfg *domain.Config, dh *did.Handler, oob *did.OOBService, t domain.Transporter, enc domain.Packer, km *crypto.KeyManager, inChan chan []byte, outChan chan string, logger log.Logger) (p *Prober, err error) {
 	encodedKey := make([]byte, 64)
-	base64.StdEncoding.Encode(encodedKey, km.PublicKey())
+	base64.StdEncoding.Encode(encodedKey, p.ks.PublicKey())
 	// removes redundant elements from the allocated byte slice
 	encodedKey = bytes.Trim(encodedKey, "\x00")
 
 	// creating own did and did doc
-	didDoc := dh.CreateDIDDoc(cfg.Hostname+domain.ExchangeEndpoint, `message-service`, encodedKey)
-	dd, err := dh.CreatePeerDID(didDoc)
+	didDoc := p.ds.CreateDIDDoc(c.Cfg.ExchangeEndpoint, `message-service`, encodedKey)
+	dd, err := p.ds.CreatePeerDID(didDoc)
 	if err != nil {
 		return nil, fmt.Errorf(`creating peer did failed - %v`, err)
 	}
 
-	return &Prober{
-		invEndpoint: cfg.Hostname + domain.InvitationEndpoint,
-		did:         dd,
-		didDoc:      didDoc,
-		km:          km,
-		transport:   t,
-		enc:         enc,
-		logger:      logger,
-		dh:          dh,
-		oob:         oob,
-		inChan:      inChan,
-		outChan:     outChan,
-		state:       stateInitial,
-	}, nil
+	p.did = dd
+	p.didDoc = didDoc
+	return p, nil
 }
 
 func (p *Prober) Listen() {
@@ -97,25 +93,25 @@ func (p *Prober) Listen() {
 }
 
 func (p *Prober) PublicKey() []byte {
-	return p.km.PublicKey()
+	return p.ks.PublicKey()
 }
 
-func (p *Prober) GenerateInv() (url string, err error) {
-	if err = p.km.GenerateInvKeys(); err != nil {
+func (p *Prober) Invite() (url string, err error) {
+	if err = p.ks.GenerateInvKeys(); err != nil {
 		return ``, fmt.Errorf(`generating invitation keys failed - %v`, err)
 	}
 
 	// encoding invitation public key
 	encodedKey := make([]byte, 64)
-	base64.StdEncoding.Encode(encodedKey, p.km.InvPublicKey())
+	base64.StdEncoding.Encode(encodedKey, p.ks.InvPublicKey())
 	// removes redundant elements from the allocated byte slice
 	encodedKey = bytes.Trim(encodedKey, "\x00")
 
 	// creates a did doc for connection request with a separate endpoint and public key
-	invDidDoc := p.dh.CreateDIDDoc(p.invEndpoint, `did-exchange`, encodedKey)
+	invDidDoc := p.ds.CreateDIDDoc(p.invEndpoint, `did-exchange`, encodedKey)
 
 	// but uses did created from default did doc as it serves as the identifier in invitation
-	url, err = p.oob.CreateInvitation(p.did, invDidDoc)
+	url, err = p.oob.CreateInv(p.did, invDidDoc)
 	if err != nil {
 		return ``, fmt.Errorf(`creating invitation failed - %v`, err)
 	}
@@ -124,9 +120,9 @@ func (p *Prober) GenerateInv() (url string, err error) {
 	return url, nil
 }
 
-// ProcessInv creates a connection request and sends it to the invitation endpoint
-func (p *Prober) ProcessInv(encodedInv string) error {
-	inv, invEndpoint, peerInvPubKey, err := p.oob.ParseInvitation(encodedInv)
+// Accept creates a connection request and sends it to the invitation endpoint
+func (p *Prober) Accept(encodedInv string) error {
+	inv, invEndpoint, peerInvPubKey, err := p.oob.ParseInv(encodedInv)
 	if err != nil {
 		return fmt.Errorf(`parsing invitation failed - %v`, err)
 	}
@@ -138,13 +134,13 @@ func (p *Prober) ProcessInv(encodedInv string) error {
 	}
 
 	// encrypts did doc with peer invitation public key and default own key pair
-	encDoc, err := p.enc.Pack(docBytes, peerInvPubKey, p.km.PublicKey(), p.km.PrivateKey())
+	encDoc, err := p.packer.Pack(docBytes, peerInvPubKey, p.ks.PublicKey(), p.ks.PrivateKey())
 	if err != nil {
 		return fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
 	// creates connection request
-	connReq, err := p.dh.CreateConnReq(inv.Id, p.did, encDoc)
+	connReq, err := p.ds.CreateConnReq(inv.Id, p.did, encDoc)
 	if err != nil {
 		return fmt.Errorf(`creating connection request failed - %v`, err)
 	}
@@ -155,7 +151,7 @@ func (p *Prober) ProcessInv(encodedInv string) error {
 		return fmt.Errorf(`marshalling connection request failed - %v`, err)
 	}
 
-	if err = p.transport.Send(connReqBytes, invEndpoint); err != nil {
+	if err = p.tr.Send(connReqBytes, invEndpoint); err != nil {
 		return fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
@@ -166,13 +162,13 @@ func (p *Prober) ProcessInv(encodedInv string) error {
 
 // ProcessConnReq parses the connection request, creates a connection response and sends it to did endpoint
 func (p *Prober) ProcessConnReq(data []byte) error {
-	thId, peerDid, peerEncDocBytes, err := p.dh.ParseConnReq(data)
+	thId, peerDid, peerEncDocBytes, err := p.ds.ParseConnReq(data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
 	}
 
 	// decrypts peer did doc which is encrypted with invitation keys
-	peerEndpoint, peerPubKey, err := p.getPeerInfo(peerEncDocBytes, p.km.InvPublicKey(), p.km.InvPrivateKey())
+	peerEndpoint, peerPubKey, err := p.getPeerInfo(peerEncDocBytes, p.ks.InvPublicKey(), p.ks.InvPrivateKey())
 	if err != nil {
 		return fmt.Errorf(`getting peer data failed - %v`, err)
 	}
@@ -184,12 +180,12 @@ func (p *Prober) ProcessConnReq(data []byte) error {
 	}
 
 	// encrypts did doc with peer invitation public key and default own key pair
-	encDidDoc, err := p.enc.Pack(docBytes, peerPubKey, p.km.PublicKey(), p.km.PrivateKey())
+	encDidDoc, err := p.packer.Pack(docBytes, peerPubKey, p.ks.PublicKey(), p.ks.PrivateKey())
 	if err != nil {
 		return fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
-	connRes, err := p.dh.CreateConnRes(thId, p.did, encDidDoc)
+	connRes, err := p.ds.CreateConnRes(thId, p.did, encDidDoc)
 	if err != nil {
 		return fmt.Errorf(`creating connection response failed - %v`, err)
 	}
@@ -199,26 +195,26 @@ func (p *Prober) ProcessConnReq(data []byte) error {
 		return fmt.Errorf(`marshalling connection response failed - %v`, err)
 	}
 
-	if err = p.transport.Send(connResBytes, peerEndpoint); err != nil {
+	if err = p.tr.Send(connResBytes, peerEndpoint); err != nil {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
 	p.conn = &connection{peerEndpoint: peerEndpoint, peerPubKey: peerPubKey}
 	p.state = stateConnected
 	p.peerDid = peerDid
-	fmt.Printf("-> Connection established with %s\n", p.peerDid)
+	fmt.Printf("\n-> Connection established with %s\n", p.peerDid)
 
 	return nil
 }
 
 func (p *Prober) ProcessConnRes(data []byte) error {
-	_, peerEncDocBytes, err := p.dh.ParseConnRes(data)
+	_, peerEncDocBytes, err := p.ds.ParseConnRes(data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
 	}
 
 	// decrypts peer did doc which is encrypted with default keys
-	peerEndpoint, peerPubKey, err := p.getPeerInfo(peerEncDocBytes, p.km.PublicKey(), p.km.PrivateKey())
+	peerEndpoint, peerPubKey, err := p.getPeerInfo(peerEncDocBytes, p.ks.PublicKey(), p.ks.PrivateKey())
 	if err != nil {
 		return fmt.Errorf(`getting peer data failed - %v`, err)
 	}
@@ -227,13 +223,13 @@ func (p *Prober) ProcessConnRes(data []byte) error {
 
 	p.conn = &connection{peerEndpoint: peerEndpoint, peerPubKey: peerPubKey}
 	p.state = stateConnected
-	fmt.Printf("-> Connection established with %s\n", p.peerDid)
+	fmt.Printf("\n-> Connection established with %s\n", p.peerDid)
 
 	return nil
 }
 
 func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (endpoint string, pubKey []byte, err error) {
-	peerDocBytes, err := p.enc.Unpack(encDocBytes, recPubKey, recPrvKey)
+	peerDocBytes, err := p.packer.Unpack(encDocBytes, recPubKey, recPrvKey)
 	if err != nil {
 		return ``, nil, fmt.Errorf(`decrypting did doc failed - %v`, err)
 	}
@@ -263,7 +259,7 @@ func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (endpoint
 }
 
 func (p *Prober) SendMessage(text string) error {
-	msg, err := p.enc.Pack([]byte(text), p.conn.peerPubKey, p.km.PublicKey(), p.km.PrivateKey())
+	msg, err := p.packer.Pack([]byte(text), p.conn.peerPubKey, p.ks.PublicKey(), p.ks.PrivateKey())
 	if err != nil {
 		p.logger.Error(err)
 		return err
@@ -275,7 +271,7 @@ func (p *Prober) SendMessage(text string) error {
 		return err
 	}
 
-	err = p.transport.Send(data, p.conn.peerEndpoint)
+	err = p.tr.Send(data, p.conn.peerEndpoint)
 	if err != nil {
 		p.logger.Error(err)
 		return err
@@ -285,7 +281,7 @@ func (p *Prober) SendMessage(text string) error {
 }
 
 func (p *Prober) ReadMessage(data []byte) error {
-	textBytes, err := p.enc.Unpack(data, p.km.PublicKey(), p.km.PrivateKey())
+	textBytes, err := p.packer.Unpack(data, p.ks.PublicKey(), p.ks.PrivateKey())
 	if err != nil {
 		return fmt.Errorf(`unpacking message failed - %v`, err)
 	}

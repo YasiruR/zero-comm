@@ -3,7 +3,6 @@ package transport
 import (
 	"bytes"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/crypto"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/gorilla/mux"
 	"github.com/tryfix/log"
@@ -14,24 +13,23 @@ import (
 
 type HTTP struct {
 	port   int
+	packer domain.Packer
+	ks     domain.KeyService
+	logger log.Logger
 	router *mux.Router
 	client *http.Client
-	enc    *crypto.Packer
-	km     *crypto.KeyManager
-	logger log.Logger // remove later
-
 	inChan chan []byte
 }
 
-func NewHTTP(port int, enc *crypto.Packer, km *crypto.KeyManager, inChan chan []byte, logger log.Logger) *HTTP {
+func NewHTTP(c *domain.Container) *HTTP {
 	return &HTTP{
-		port:   port,
-		router: mux.NewRouter(),
+		port:   c.Cfg.Port,
+		packer: c.Packer,
+		ks:     c.KS,
+		logger: c.Logger,
 		client: &http.Client{},
-		enc:    enc,
-		km:     km,
-		inChan: inChan,
-		logger: logger,
+		router: mux.NewRouter(),
+		inChan: c.InChan,
 	}
 }
 

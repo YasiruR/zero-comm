@@ -25,6 +25,16 @@ func (k *KeyManager) GenerateKeys() error {
 	return nil
 }
 
+func (k *KeyManager) PrivateKey() []byte {
+	tmpPrvKey := *k.prvKey
+	return tmpPrvKey[:]
+}
+
+func (k *KeyManager) PublicKey() []byte {
+	tmpPubKey := *k.pubKey
+	return tmpPubKey[:]
+}
+
 func (k *KeyManager) GenerateInvKeys() error {
 	reader := rand.Reader
 	pubKey, prvKey, err := box.GenerateKey(reader)
@@ -36,16 +46,6 @@ func (k *KeyManager) GenerateInvKeys() error {
 	k.invPubKey = pubKey
 
 	return nil
-}
-
-func (k *KeyManager) PrivateKey() []byte {
-	tmpPrvKey := *k.prvKey
-	return tmpPrvKey[:]
-}
-
-func (k *KeyManager) PublicKey() []byte {
-	tmpPubKey := *k.pubKey
-	return tmpPubKey[:]
 }
 
 func (k *KeyManager) InvPrivateKey() []byte {
