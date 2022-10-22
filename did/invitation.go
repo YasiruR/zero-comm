@@ -13,8 +13,8 @@ type OOBService struct {
 	invEndpoint string
 }
 
-func NewOOBService(invEndpoint string) *OOBService {
-	return &OOBService{invEndpoint: invEndpoint}
+func NewOOBService(cfg *domain.Config) *OOBService {
+	return &OOBService{invEndpoint: cfg.Hostname + domain.InvitationEndpoint}
 }
 
 func (o *OOBService) CreateInvitation(did string, didDoc domain.DIDDocument) (url string, err error) {

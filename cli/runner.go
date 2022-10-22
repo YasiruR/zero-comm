@@ -17,7 +17,7 @@ import (
 )
 
 type runner struct {
-	cfg     domain.Config
+	cfg     *domain.Config
 	reader  *bufio.Reader
 	oob     *did.OOBService
 	prober  *prober.Prober
@@ -25,20 +25,20 @@ type runner struct {
 	disCmds uint64 // flag to identify whether output cursor is on basic commands or not
 }
 
-func ParseArgs() domain.Config {
+func ParseArgs() *domain.Config {
 	// todo verbose and log errors
 	name := flag.String(`label`, ``, `agent's name'`)
 	port := flag.Int(`port`, 0, `agent's port'`)
 	flag.Parse()
 
-	return domain.Config{
+	return &domain.Config{
 		Name:     *name,
 		Port:     *port,
 		Hostname: "http://localhost:" + strconv.Itoa(*port), // todo change later for remote urls
 	}
 }
 
-func Init(cfg domain.Config, prb *prober.Prober, recChan chan string) {
+func Init(cfg *domain.Config, prb *prober.Prober, recChan chan string) {
 	encodedKey := make([]byte, 64)
 	base64.StdEncoding.Encode(encodedKey, prb.PublicKey())
 	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n\t- Public key: %s\n", cfg.Name, cfg.Hostname, string(encodedKey))
@@ -50,7 +50,7 @@ func Init(cfg domain.Config, prb *prober.Prober, recChan chan string) {
 
 func (r *runner) basicCommands() {
 basicCmds:
-	fmt.Printf("\n-> Enter the corresponding number of a command to proceed;\n\t[1] Generate invitation\n\t[2] Set recipient via invitation\n\t[3] Set recipient manually\n\t[4] Send a message\n\t[5] Exit\n   Command: ")
+	fmt.Printf("\n-> Enter the corresponding number of a command to proceed;\n\t[1] Generate invitation\n\t[2] Connect via invitation\n\t[3] Set recipient manually\n\t[4] Send a message\n\t[5] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
 	cmd, err := r.reader.ReadString('\n')
@@ -82,7 +82,6 @@ basicCmds:
 }
 
 func (r *runner) generateInvitation() {
-
 	inv, err := r.oob.CreateInvitation(r.prober.PeerDID(), r.prober.DIDDoc())
 	if err != nil {
 		fmt.Println("-> Error: generating invitation failed")
@@ -149,14 +148,13 @@ readUrl:
 		goto readUrl
 	}
 
-	peerDid, peerEndpoint, peerPubKey, err := r.oob.ParseInvitation(inv[0])
+	peerDid, err := r.prober.ProcessInv(inv[0])
 	if err != nil {
-		fmt.Println("   Error: invalid invitation, please try again")
+		fmt.Println("   Error: invitation may be invalid, please try again")
 		goto readUrl
 	}
 
-	r.prober.SetRecipient(peerDid, peerEndpoint, peerPubKey)
-	fmt.Printf("-> Recipient saved {id: %s, endpoint: %s}\n", peerDid, peerEndpoint)
+	fmt.Printf("-> Connection established with %s\n", peerDid)
 }
 
 func (r *runner) sendMsg() {

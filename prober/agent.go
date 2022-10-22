@@ -43,7 +43,9 @@ type Prober struct {
 	outChan     chan string
 }
 
-func NewProber(cfg *domain.Config, dh *did.Handler, t domain.Transporter, enc domain.Packer, km *crypto.KeyManager, logger log.Logger) (p *Prober, err error) {
+// todo container for services
+
+func NewProber(cfg *domain.Config, dh *did.Handler, oob *did.OOBService, t domain.Transporter, enc domain.Packer, km *crypto.KeyManager, inChan chan []byte, outChan chan string, logger log.Logger) (p *Prober, err error) {
 	encodedKey := make([]byte, 64)
 	base64.StdEncoding.Encode(encodedKey, p.km.PublicKey())
 	// removes redundant elements from the allocated byte slice
@@ -57,12 +59,18 @@ func NewProber(cfg *domain.Config, dh *did.Handler, t domain.Transporter, enc do
 	}
 
 	return &Prober{
-		did:       dd,
-		didDoc:    didDoc,
-		km:        km,
-		transport: t,
-		enc:       enc,
-		logger:    logger,
+		invEndpoint: cfg.Hostname + domain.InvitationEndpoint,
+		did:         dd,
+		didDoc:      didDoc,
+		km:          km,
+		transport:   t,
+		enc:         enc,
+		logger:      logger,
+		dh:          dh,
+		oob:         oob,
+		inChan:      inChan,
+		outChan:     outChan,
+		state:       stateInitial,
 	}, nil
 }
 
@@ -110,6 +118,8 @@ func (p *Prober) Listen() {
 	for {
 		data := <-p.inChan
 		switch p.state {
+		case stateInitial:
+			p.logger.Error(`no invitation has been processed yet`)
 		case stateInvSent:
 			if err := p.ProcessConnReq(data); err != nil {
 				p.logger.Error(err)
@@ -127,42 +137,42 @@ func (p *Prober) Listen() {
 }
 
 // ProcessInv creates a connection request and sends it to the invitation endpoint
-func (p *Prober) ProcessInv(encodedInv string) error {
+func (p *Prober) ProcessInv(encodedInv string) (from string, err error) {
 	inv, invEndpoint, peerInvPubKey, err := p.oob.ParseInvitation(encodedInv)
 	if err != nil {
-		return fmt.Errorf(`parsing invitation failed - %v`, err)
+		return ``, fmt.Errorf(`parsing invitation failed - %v`, err)
 	}
 
 	// marshals did doc to proceed with packing process
 	docBytes, err := json.Marshal(p.didDoc)
 	if err != nil {
-		return fmt.Errorf(`marshalling did doc failed - %v`, err)
+		return ``, fmt.Errorf(`marshalling did doc failed - %v`, err)
 	}
 
 	// encrypts did doc with peer invitation public key and default own key pair
 	encDoc, err := p.enc.Pack(docBytes, peerInvPubKey, p.km.PublicKey(), p.km.PrivateKey())
 	if err != nil {
-		return fmt.Errorf(`encrypting did doc failed - %v`, err)
+		return ``, fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
 	// creates connection request
 	connReq, err := p.dh.CreateConnReq(inv.Id, p.did, encDoc)
 	if err != nil {
-		return fmt.Errorf(`creating connection request failed - %v`, err)
+		return ``, fmt.Errorf(`creating connection request failed - %v`, err)
 	}
 
 	// marshals connection request
 	connReqBytes, err := json.Marshal(connReq)
 	if err != nil {
-		return fmt.Errorf(`marshalling connection request failed - %v`, err)
+		return ``, fmt.Errorf(`marshalling connection request failed - %v`, err)
 	}
 
 	if err = p.transport.Send(connReqBytes, invEndpoint); err != nil {
-		return fmt.Errorf(`sending connection request failed - %v`, err)
+		return ``, fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
 	p.state = stateReqSent
-	return nil
+	return inv.From, nil
 }
 
 // ProcessConnReq parses the connection request, creates a connection response and sends it to did endpoint
