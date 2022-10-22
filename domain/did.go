@@ -47,7 +47,24 @@ type ConnReq struct {
 		Data     struct {
 			Base64 string `json:"base64"`
 		}
-	}
+	} `json:"did_doc~attach"`
+}
+
+// ConnRes reference: https://github.com/hyperledger/aries-rfcs/tree/main/features/0023-did-exchange#response-message-example
+type ConnRes struct {
+	Id     string `json:"@id"`
+	Type   string `json:"@type"`
+	Thread struct {
+		ThId string `json:"thid"`
+	} `json:"~thread"`
+	DID          string `json:"did"`
+	DIDDocAttach struct {
+		Id       string `json:"@id"`
+		MimeType string `json:"mime-type"`
+		Data     struct {
+			Base64 string `json:"base64"`
+		}
+	} `json:"did_doc~attach"`
 }
 
 //type PeerDIDDoc struct {
