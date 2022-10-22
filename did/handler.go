@@ -84,22 +84,18 @@ func (h *Handler) CreateConnReq(pthid, did string, encDidDoc domain.AuthCryptMsg
 	return req, nil
 }
 
-func (h *Handler) ParseConnReq(data []byte) (thId string, encDocBytes []byte, err error) {
+func (h *Handler) ParseConnReq(data []byte) (thId, peerDid string, encDocBytes []byte, err error) {
 	var req domain.ConnReq
 	if err = json.Unmarshal(data, &req); err != nil {
-		return ``, nil, fmt.Errorf(`unmarshalling connection request failed - %v`, err)
+		return ``, ``, nil, fmt.Errorf(`unmarshalling connection request failed - %v`, err)
 	}
 
 	encDocBytes, err = base64.StdEncoding.DecodeString(req.DIDDocAttach.Data.Base64)
 	if err != nil {
-		return ``, nil, fmt.Errorf(`decoding did doc failed - %v`, err)
+		return ``, ``, nil, fmt.Errorf(`decoding did doc failed - %v`, err)
 	}
 
-	//if err = json.Unmarshal(encDocBytes, &encDidDoc); err != nil {
-	//	return ``, nil, fmt.Errorf(`unmarshalling encrypted did doc failed - %v`, err)
-	//}
-
-	return req.Thread.ThId, encDocBytes, nil
+	return req.Thread.ThId, req.DID, encDocBytes, nil
 }
 
 func (h *Handler) CreateConnRes(thId, did string, encDidDoc domain.AuthCryptMsg) (domain.ConnRes, error) {

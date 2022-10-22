@@ -37,5 +37,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cli.Init(cfg, prb, outChan)
+	go prb.Listen()
+	cli.Init(cfg, prb, oob, outChan)
 }
