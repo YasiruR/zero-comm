@@ -41,10 +41,9 @@ func NewZmq(c *domain.Container) (*Zmq, error) {
 	return &Zmq{client: reqSkt, server: repSkt, log: c.Log, inChan: c.InChan}, nil
 }
 
-func (z *Zmq) Start() error {
+func (z *Zmq) Start() {
 	for {
-		msg, err := z.server.RecvMessage(zmq.DONTWAIT)
-		// todo might be costly (and in send too)
+		msg, err := z.server.RecvMessage(0)
 		if err != nil {
 			if err.Error() != errTempUnavail {
 				z.log.Error(fmt.Sprintf(`receiving zmq message by receiver failed - %v`, err))
@@ -59,26 +58,26 @@ func (z *Zmq) Start() error {
 
 		z.inChan <- []byte(msg[0])
 
-		if _, err = z.server.Send(`done`, zmq.DONTWAIT); err != nil {
-			return fmt.Errorf(`sending zmq message by receiver failed - %v`, err)
+		if _, err = z.server.Send(`done`, 0); err != nil {
+			z.log.Error(`sending zmq message by receiver failed - %v`, err)
 		}
 	}
 }
 
-// todo instead of connecting per msg, try reusing the same
-
+// Send connects to the endpoint per each message since it is more appropriate
+// with DIDComm as by nature it manifests an asynchronous simplex communication.
 func (z *Zmq) Send(data []byte, endpoint string) error {
 	if err := z.client.Connect(endpoint); err != nil {
 		return fmt.Errorf(`connecting to zmq socket (%s) failed - %v`, endpoint, err)
 	}
 
-	if _, err := z.client.Send(string(data), zmq.DONTWAIT); err != nil {
+	if _, err := z.client.Send(string(data), 0); err != nil {
 		return fmt.Errorf(`sending zmq message by sender failed - %v`, err)
 	}
 
 receive:
-	if _, err := z.client.RecvMessage(zmq.DONTWAIT); err != nil {
-		if err.Error() == `resource temporarily unavailable` {
+	if _, err := z.client.RecvMessage(0); err != nil {
+		if err.Error() == errTempUnavail {
 			goto receive
 		}
 		return fmt.Errorf(`receiving zmq message by sender failed - %v`, err)

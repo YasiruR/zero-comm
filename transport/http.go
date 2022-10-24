@@ -33,13 +33,12 @@ func NewHTTP(c *domain.Container) *HTTP {
 	}
 }
 
-func (h *HTTP) Start() error {
+func (h *HTTP) Start() {
 	h.router.HandleFunc(domain.InvitationEndpoint, h.handleConnReqs).Methods(http.MethodPost)
 	h.router.HandleFunc(domain.ExchangeEndpoint, h.handleInbound).Methods(http.MethodPost)
 	if err := http.ListenAndServe(":"+strconv.Itoa(h.port), h.router); err != nil {
-		return fmt.Errorf(`http server initialization failed - %v`, err)
+		h.log.Fatal(`http server initialization failed - %v`, err)
 	}
-	return nil
 }
 
 func (h *HTTP) Send(data []byte, endpoint string) error {

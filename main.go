@@ -16,12 +16,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	go func() {
-		if err = c.Tr.Start(); err != nil {
-			c.Log.Fatal(err)
-		}
-	}()
-
+	go c.Tr.Start()
 	go prb.Listen()
 	cli.Init(c, prb)
 }
