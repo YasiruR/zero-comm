@@ -5,7 +5,8 @@ import (
 )
 
 const (
-	InvitationEndpoint = `/invitation/`
+	//InvitationEndpoint = `/invitation/`
+	InvitationEndpoint = ``
 	ExchangeEndpoint   = `/did-exchange/`
 	MessageEndpoint    = `/didcomm-message/` // todo use this
 )
@@ -28,7 +29,7 @@ type Container struct {
 	Tr      Transporter
 	DS      DIDService
 	OOB     OOBService
-	Logger  log.Logger
+	Log     log.Logger
 	InChan  chan []byte
 	OutChan chan string
 }

@@ -4,13 +4,14 @@ import (
 	"github.com/YasiruR/didcomm-prober/crypto"
 	"github.com/YasiruR/didcomm-prober/did"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/log"
 	"github.com/YasiruR/didcomm-prober/transport"
-	"github.com/tryfix/log"
 	"strconv"
 )
 
 func setConfigs(name string, port int, verbose bool) *domain.Config {
-	hostname := `http://localhost:` + strconv.Itoa(port)
+	//hostname := `http://localhost:` + strconv.Itoa(port)
+	hostname := `tcp://127.0.0.1:` + strconv.Itoa(port)
 	return &domain.Config{
 		Name:             name,
 		Hostname:         hostname,
@@ -24,8 +25,7 @@ func setConfigs(name string, port int, verbose bool) *domain.Config {
 }
 
 func initContainer(cfg *domain.Config) *domain.Container {
-	logger := log.Constructor.Log(log.WithColors(true), log.WithLevel("DEBUG"), log.WithFilePath(true))
-
+	logger := log.NewLogger(cfg.Verbose)
 	packer := crypto.NewPacker(logger)
 	km := crypto.KeyManager{}
 	if err := km.GenerateKeys(); err != nil {
@@ -38,11 +38,17 @@ func initContainer(cfg *domain.Config) *domain.Container {
 		Packer:  packer,
 		DS:      &did.Handler{},
 		OOB:     did.NewOOBService(cfg),
-		Logger:  logger,
+		Log:     logger,
 		InChan:  make(chan []byte),
 		OutChan: make(chan string),
 	}
 
-	c.Tr = transport.NewHTTP(c)
+	//c.Tr = transport.NewHTTP(c)
+	zmq, err := transport.NewZmq(c)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	c.Tr = zmq
+
 	return c
 }

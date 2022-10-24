@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/prober"
+	log2 "github.com/tryfix/log"
 	"log"
 	"net/url"
 	"os"
@@ -18,17 +19,18 @@ type runner struct {
 	cfg     *domain.Config
 	reader  *bufio.Reader
 	prober  *prober.Prober
+	log     log2.Logger
 	outChan chan string
 	disCmds uint64 // flag to identify whether output cursor is on basic commands or not
 }
 
 func ParseArgs() (name string, port int, verbose bool) {
-	// todo verbose and log errors
 	n := flag.String(`label`, ``, `agent's name'`)
 	p := flag.Int(`port`, 0, `agent's port'`)
+	v := flag.Bool(`v`, false, `logging`)
 	flag.Parse()
 
-	return *n, *p, false
+	return *n, *p, *v
 }
 
 func Init(c *domain.Container, prb *prober.Prober) {
@@ -36,7 +38,7 @@ func Init(c *domain.Container, prb *prober.Prober) {
 	base64.StdEncoding.Encode(encodedKey, prb.PublicKey())
 	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n\t- Public key: %s\n", c.Cfg.Name, c.Cfg.Hostname, string(encodedKey))
 
-	r := runner{cfg: c.Cfg, reader: bufio.NewReader(os.Stdin), prober: prb, outChan: c.OutChan}
+	r := runner{cfg: c.Cfg, reader: bufio.NewReader(os.Stdin), prober: prb, log: c.Log, outChan: c.OutChan}
 	go r.listen()
 	r.basicCommands()
 }
@@ -104,7 +106,8 @@ readUrl:
 	}
 
 	if err = r.prober.Accept(inv[0]); err != nil {
-		fmt.Println("   Error: invitation may be invalid, please try again")
+		fmt.Println("   Error: invitation may be invalid, please try again --")
+		r.log.Error(err)
 		goto readUrl
 	}
 }

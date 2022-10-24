@@ -27,7 +27,9 @@ type OOBService interface {
 /* dependencies */
 
 type Transporter interface {
-	Start()
+	Start() error
+	// Send transmits the message but marshalling should be independent of the
+	// transport layer to support multiple encoding mechanisms
 	Send(data []byte, endpoint string) error
 	Stop() error
 }
