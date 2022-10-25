@@ -17,29 +17,21 @@ const (
 	stateConnected = `connected` // ideally after complete message is sent and received
 )
 
-type connection struct {
-	peerEndpoint string
-	peerPubKey   []byte
-}
-
 type Prober struct {
-	did    string
-	didDoc domain.DIDDocument
-	//peerDid     string
+	did         string
+	didDoc      domain.DIDDocument
 	invEndpoint string
 	state       string
 	inChan      chan []byte
 	outChan     chan string
-	//conn        *connection       // single connection for now
-	ks     domain.KeyService // single key-pair for now
-	tr     domain.Transporter
-	packer domain.Packer
-	ds     domain.DIDService
-	oob    domain.OOBService
-	log    log.Logger
-
-	label string
-	peers map[string]domain.Peer
+	ks          domain.KeyService // single key-pair for now
+	tr          domain.Transporter
+	packer      domain.Packer
+	ds          domain.DIDService
+	oob         domain.OOBService
+	log         log.Logger
+	label       string
+	peers       map[string]domain.Peer
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -54,9 +46,8 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		inChan:      c.InChan,
 		outChan:     c.OutChan,
 		state:       stateInitial,
-
-		label: c.Cfg.Name,
-		peers: map[string]domain.Peer{}, // name as the key may not be ideal
+		label:       c.Cfg.Name,
+		peers:       map[string]domain.Peer{}, // name as the key may not be ideal
 	}
 
 	encodedKey := make([]byte, 64)
@@ -205,7 +196,6 @@ func (p *Prober) ProcessConnReq(data []byte) error {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
-	//p.conn = &connection{peerEndpoint: peerEndpoint, peerPubKey: peerPubKey}
 	p.state = stateConnected
 	p.peers[peerLabel] = domain.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
 	fmt.Printf("\n-> Connection established with %s\n", peerLabel)
@@ -227,7 +217,6 @@ func (p *Prober) ProcessConnRes(data []byte) error {
 
 	// todo send complete message
 
-	//p.conn = &connection{peerEndpoint: peerEndpoint, peerPubKey: peerPubKey}
 	p.state = stateConnected
 	for name, peer := range p.peers {
 		if peer.ExchangeThId == pthId {
@@ -272,6 +261,7 @@ func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (endpoint
 }
 
 func (p *Prober) SendMessage(to, text string) error {
+	// todo sending to 3rd peer
 	peer, ok := p.peers[to]
 	if !ok {
 		return fmt.Errorf(`no didcomm connection found for the recipient %s`, to)
