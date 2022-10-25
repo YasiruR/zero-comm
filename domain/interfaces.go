@@ -5,7 +5,7 @@ package domain
 type DIDCommService interface {
 	Invite() (url string, err error)
 	Accept(encodedInv string) error
-	SendMessage(text string) error
+	SendMessage(to, text string) error
 	ReadMessage(data []byte) error
 }
 
@@ -13,15 +13,20 @@ type DIDService interface {
 	CreateDIDDoc(endpoint, typ string, encPubKey []byte) DIDDocument
 	CreatePeerDID(doc DIDDocument) (did string, err error)
 	ValidatePeerDID(did string) error
-	CreateConnReq(pthid, did string, encDidDoc AuthCryptMsg) (ConnReq, error)
-	ParseConnReq(data []byte) (thId, peerDid string, encDocBytes []byte, err error)
-	CreateConnRes(thId, did string, encDidDoc AuthCryptMsg) (ConnRes, error)
-	ParseConnRes(data []byte) (thId string, encDocBytes []byte, err error)
+	CreateConnReq(label, pthid, did string, encDidDoc AuthCryptMsg) (ConnReq, error)
+	ParseConnReq(data []byte) (label, pthId, peerDid string, encDocBytes []byte, err error)
+	CreateConnRes(pthId, did string, encDidDoc AuthCryptMsg) (ConnRes, error)
+	ParseConnRes(data []byte) (pthId string, encDocBytes []byte, err error)
 }
 
 type OOBService interface {
-	CreateInv(did string, didDoc DIDDocument) (url string, err error)
+	CreateInv(label, did string, didDoc DIDDocument) (url string, err error)
 	ParseInv(encInv string) (inv Invitation, endpoint string, pubKey []byte, err error)
+}
+
+type QueueService interface {
+	Publish()
+	Subscribe()
 }
 
 /* dependencies */

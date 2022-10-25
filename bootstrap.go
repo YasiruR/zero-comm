@@ -52,3 +52,7 @@ func initContainer(cfg *domain.Config) *domain.Container {
 
 	return c
 }
+
+func shutdown(c *domain.Container) {
+	c.Tr.Stop()
+}

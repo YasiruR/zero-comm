@@ -17,11 +17,12 @@ func NewOOBService(cfg *domain.Config) *OOBService {
 	return &OOBService{invEndpoint: cfg.Hostname + domain.InvitationEndpoint}
 }
 
-func (o *OOBService) CreateInv(did string, didDoc domain.DIDDocument) (url string, err error) {
+func (o *OOBService) CreateInv(label, did string, didDoc domain.DIDDocument) (url string, err error) {
 	inv := domain.Invitation{
-		Id:       uuid.New().String(), // todo use this as pthid in request
+		Id:       uuid.New().String(),
 		Type:     "https://didcomm.org/out-of-band/1.0/invitation",
 		From:     did,
+		Label:    label,
 		Services: didDoc.Service, // a separate service to reach back for exchange
 		//Services: createDIDDoc(didEndpoint, `did-communication`, encodedKey).Service, // a separate service to reach back for exchange
 	}

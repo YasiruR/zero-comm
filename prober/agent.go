@@ -23,20 +23,23 @@ type connection struct {
 }
 
 type Prober struct {
-	did         string
-	didDoc      domain.DIDDocument
-	peerDid     string
+	did    string
+	didDoc domain.DIDDocument
+	//peerDid     string
 	invEndpoint string
 	state       string
 	inChan      chan []byte
 	outChan     chan string
-	conn        *connection       // single connection for now
-	ks          domain.KeyService // single key-pair for now
-	tr          domain.Transporter
-	packer      domain.Packer
-	ds          domain.DIDService
-	oob         domain.OOBService
-	log         log.Logger
+	//conn        *connection       // single connection for now
+	ks     domain.KeyService // single key-pair for now
+	tr     domain.Transporter
+	packer domain.Packer
+	ds     domain.DIDService
+	oob    domain.OOBService
+	log    log.Logger
+
+	label string
+	peers map[string]domain.Peer
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -51,6 +54,9 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		inChan:      c.InChan,
 		outChan:     c.OutChan,
 		state:       stateInitial,
+
+		label: c.Cfg.Name,
+		peers: map[string]domain.Peer{}, // name as the key may not be ideal
 	}
 
 	encodedKey := make([]byte, 64)
@@ -111,7 +117,7 @@ func (p *Prober) Invite() (url string, err error) {
 	invDidDoc := p.ds.CreateDIDDoc(p.invEndpoint, `did-exchange`, encodedKey)
 
 	// but uses did created from default did doc as it serves as the identifier in invitation
-	url, err = p.oob.CreateInv(p.did, invDidDoc)
+	url, err = p.oob.CreateInv(p.label, p.did, invDidDoc)
 	if err != nil {
 		return ``, fmt.Errorf(`creating invitation failed - %v`, err)
 	}
@@ -140,7 +146,7 @@ func (p *Prober) Accept(encodedInv string) error {
 	}
 
 	// creates connection request
-	connReq, err := p.ds.CreateConnReq(inv.Id, p.did, encDoc)
+	connReq, err := p.ds.CreateConnReq(p.label, inv.Id, p.did, encDoc)
 	if err != nil {
 		return fmt.Errorf(`creating connection request failed - %v`, err)
 	}
@@ -156,13 +162,13 @@ func (p *Prober) Accept(encodedInv string) error {
 	}
 
 	p.state = stateReqSent
-	p.peerDid = inv.From
+	p.peers[inv.Label] = domain.Peer{DID: inv.From, ExchangeThId: inv.Id}
 	return nil
 }
 
 // ProcessConnReq parses the connection request, creates a connection response and sends it to did endpoint
 func (p *Prober) ProcessConnReq(data []byte) error {
-	thId, peerDid, peerEncDocBytes, err := p.ds.ParseConnReq(data)
+	peerLabel, pthId, peerDid, peerEncDocBytes, err := p.ds.ParseConnReq(data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
 	}
@@ -185,7 +191,7 @@ func (p *Prober) ProcessConnReq(data []byte) error {
 		return fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
-	connRes, err := p.ds.CreateConnRes(thId, p.did, encDidDoc)
+	connRes, err := p.ds.CreateConnRes(pthId, p.did, encDidDoc)
 	if err != nil {
 		return fmt.Errorf(`creating connection response failed - %v`, err)
 	}
@@ -199,16 +205,16 @@ func (p *Prober) ProcessConnReq(data []byte) error {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
-	p.conn = &connection{peerEndpoint: peerEndpoint, peerPubKey: peerPubKey}
+	//p.conn = &connection{peerEndpoint: peerEndpoint, peerPubKey: peerPubKey}
 	p.state = stateConnected
-	p.peerDid = peerDid
-	fmt.Printf("\n-> Connection established with %s\n", p.peerDid)
+	p.peers[peerLabel] = domain.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
+	fmt.Printf("\n-> Connection established with %s\n", peerLabel)
 
 	return nil
 }
 
 func (p *Prober) ProcessConnRes(data []byte) error {
-	_, peerEncDocBytes, err := p.ds.ParseConnRes(data)
+	pthId, peerEncDocBytes, err := p.ds.ParseConnRes(data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
 	}
@@ -221,11 +227,18 @@ func (p *Prober) ProcessConnRes(data []byte) error {
 
 	// todo send complete message
 
-	p.conn = &connection{peerEndpoint: peerEndpoint, peerPubKey: peerPubKey}
+	//p.conn = &connection{peerEndpoint: peerEndpoint, peerPubKey: peerPubKey}
 	p.state = stateConnected
-	fmt.Printf("\n-> Connection established with %s\n", p.peerDid)
+	for name, peer := range p.peers {
+		if peer.ExchangeThId == pthId {
+			peerDid := peer.DID
+			p.peers[name] = domain.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
+			fmt.Printf("\n-> Connection established with %s\n", name)
+			return nil
+		}
+	}
 
-	return nil
+	return fmt.Errorf(`requested peer is unknown to the agent`)
 }
 
 func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (endpoint string, pubKey []byte, err error) {
@@ -258,8 +271,13 @@ func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (endpoint
 	return peerEndpoint, peerPubKey, nil
 }
 
-func (p *Prober) SendMessage(text string) error {
-	msg, err := p.packer.Pack([]byte(text), p.conn.peerPubKey, p.ks.PublicKey(), p.ks.PrivateKey())
+func (p *Prober) SendMessage(to, text string) error {
+	peer, ok := p.peers[to]
+	if !ok {
+		return fmt.Errorf(`no didcomm connection found for the recipient %s`, to)
+	}
+
+	msg, err := p.packer.Pack([]byte(text), peer.PubKey, p.ks.PublicKey(), p.ks.PrivateKey())
 	if err != nil {
 		p.log.Error(err)
 		return err
@@ -271,12 +289,13 @@ func (p *Prober) SendMessage(text string) error {
 		return err
 	}
 
-	err = p.tr.Send(data, p.conn.peerEndpoint)
+	err = p.tr.Send(data, peer.Endpoint)
 	if err != nil {
 		p.log.Error(err)
 		return err
 	}
 
+	fmt.Printf("-> Message sent\n")
 	return nil
 }
 

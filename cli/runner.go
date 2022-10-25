@@ -113,6 +113,14 @@ readUrl:
 }
 
 func (r *runner) sendMsg() {
+readName:
+	fmt.Printf("-> Enter recipient: ")
+	peer, err := r.reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("   Error: reading recipient failed, please try again")
+		goto readName
+	}
+
 readMsg:
 	fmt.Printf("-> Enter message: ")
 	msg, err := r.reader.ReadString('\n')
@@ -121,10 +129,9 @@ readMsg:
 		goto readMsg
 	}
 
-	if err = r.prober.SendMessage(msg); err != nil {
+	if err = r.prober.SendMessage(strings.TrimSpace(peer), msg); err != nil {
 		fmt.Printf("   Error: sending message failed due to %s", err.Error())
 	}
-	fmt.Printf("-> Message sent\n")
 }
 
 func (r *runner) listen() {
