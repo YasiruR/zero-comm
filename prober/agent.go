@@ -36,7 +36,7 @@ type Prober struct {
 	packer      domain.Packer
 	ds          domain.DIDService
 	oob         domain.OOBService
-	logger      log.Logger
+	log         log.Logger
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -45,7 +45,7 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		ks:          c.KS,
 		tr:          c.Tr,
 		packer:      c.Packer,
-		logger:      c.Logger,
+		log:         c.Log,
 		ds:          c.DS,
 		oob:         c.OOB,
 		inChan:      c.InChan,
@@ -75,18 +75,18 @@ func (p *Prober) Listen() {
 		data := <-p.inChan
 		switch p.state {
 		case stateInitial:
-			p.logger.Error(`no invitation has been processed yet`)
+			p.log.Error(`no invitation has been processed yet`)
 		case stateInvSent:
 			if err := p.ProcessConnReq(data); err != nil {
-				p.logger.Error(err)
+				p.log.Error(err)
 			}
 		case stateReqSent:
 			if err := p.ProcessConnRes(data); err != nil {
-				p.logger.Error(err)
+				p.log.Error(err)
 			}
 		case stateConnected:
 			if err := p.ReadMessage(data); err != nil {
-				p.logger.Error(err)
+				p.log.Error(err)
 			}
 		}
 	}
@@ -261,19 +261,19 @@ func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (endpoint
 func (p *Prober) SendMessage(text string) error {
 	msg, err := p.packer.Pack([]byte(text), p.conn.peerPubKey, p.ks.PublicKey(), p.ks.PrivateKey())
 	if err != nil {
-		p.logger.Error(err)
+		p.log.Error(err)
 		return err
 	}
 
 	data, err := json.Marshal(msg)
 	if err != nil {
-		p.logger.Error(err)
+		p.log.Error(err)
 		return err
 	}
 
 	err = p.tr.Send(data, p.conn.peerEndpoint)
 	if err != nil {
-		p.logger.Error(err)
+		p.log.Error(err)
 		return err
 	}
 

@@ -15,7 +15,7 @@ type HTTP struct {
 	port   int
 	packer domain.Packer
 	ks     domain.KeyService
-	logger log.Logger
+	log    log.Logger
 	router *mux.Router
 	client *http.Client
 	inChan chan []byte
@@ -26,7 +26,7 @@ func NewHTTP(c *domain.Container) *HTTP {
 		port:   c.Cfg.Port,
 		packer: c.Packer,
 		ks:     c.KS,
-		logger: c.Logger,
+		log:    c.Log,
 		client: &http.Client{},
 		router: mux.NewRouter(),
 		inChan: c.InChan,
@@ -37,14 +37,14 @@ func (h *HTTP) Start() {
 	h.router.HandleFunc(domain.InvitationEndpoint, h.handleConnReqs).Methods(http.MethodPost)
 	h.router.HandleFunc(domain.ExchangeEndpoint, h.handleInbound).Methods(http.MethodPost)
 	if err := http.ListenAndServe(":"+strconv.Itoa(h.port), h.router); err != nil {
-		h.logger.Fatal(err)
+		h.log.Fatal(`http server initialization failed - %v`, err)
 	}
 }
 
 func (h *HTTP) Send(data []byte, endpoint string) error {
 	res, err := h.client.Post(endpoint, `application/json`, bytes.NewBuffer(data))
 	if err != nil {
-		h.logger.Error(err)
+		h.log.Error(err)
 		return err
 	}
 	defer res.Body.Close()
@@ -60,7 +60,7 @@ func (h *HTTP) handleConnReqs(_ http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		h.logger.Error(err)
+		h.log.Error(err)
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *HTTP) handleInbound(_ http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		h.logger.Error(err)
+		h.log.Error(err)
 		return
 	}
 
