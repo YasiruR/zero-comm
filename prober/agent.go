@@ -198,7 +198,7 @@ func (p *Prober) ProcessConnReq(data []byte) error {
 
 	p.state = stateConnected
 	p.peers[peerLabel] = domain.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
-	fmt.Printf("\n-> Connection established with %s\n", peerLabel)
+	fmt.Printf("-> Connection established with %s\n", peerLabel)
 
 	return nil
 }
@@ -222,7 +222,7 @@ func (p *Prober) ProcessConnRes(data []byte) error {
 		if peer.ExchangeThId == pthId {
 			peerDid := peer.DID
 			p.peers[name] = domain.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
-			fmt.Printf("\n-> Connection established with %s\n", name)
+			fmt.Printf("-> Connection established with %s\n", name)
 			return nil
 		}
 	}
@@ -261,7 +261,6 @@ func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (endpoint
 }
 
 func (p *Prober) SendMessage(to, text string) error {
-	// todo sending to 3rd peer
 	peer, ok := p.peers[to]
 	if !ok {
 		return fmt.Errorf(`no didcomm connection found for the recipient %s`, to)

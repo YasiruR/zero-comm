@@ -71,7 +71,20 @@ basicCmds:
 	}
 
 	atomic.StoreUint64(&r.disCmds, 0)
-	r.basicCommands()
+	r.enableCommands()
+}
+
+func (r *runner) enableCommands() {
+	input, err := r.reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("   Error: reading instruction failed, please try again")
+	}
+
+	if strings.TrimSpace(input) == `c` {
+		r.basicCommands()
+	} else {
+		r.enableCommands()
+	}
 }
 
 func (r *runner) generateInvitation() {
@@ -141,6 +154,6 @@ func (r *runner) listen() {
 			atomic.StoreUint64(&r.disCmds, 0)
 			fmt.Println()
 		}
-		fmt.Printf("\n-> Message received: %s", text)
+		fmt.Printf("-> Message received: %s", text)
 	}
 }
