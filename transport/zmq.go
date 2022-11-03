@@ -13,11 +13,10 @@ const (
 
 type Zmq struct {
 	server *zmq.Socket
-	client *zmq.Socket
 	log    log.Logger
 	inChan chan []byte
 	ctx    *zmq.Context
-	peers  map[string]*zmq.Socket
+	peers  map[string]*zmq.Socket // use sync map if accessed concurrently
 }
 
 func NewZmq(c *domain.Container) (*Zmq, error) {
@@ -104,8 +103,17 @@ receive:
 	return nil
 }
 
+func (z *Zmq) Subscribe(topic string) {
+
+}
+
 func (z *Zmq) Stop() error {
 	z.server.Close()
-	z.client.Close()
+	for _, sckt := range z.peers {
+		sckt.Close()
+	}
+
+	zmq.NewPoller()
+
 	return nil
 }

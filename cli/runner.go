@@ -37,10 +37,11 @@ func Init(c *domain.Container, prb *prober.Prober) {
 	encodedKey := make([]byte, 64)
 	base64.StdEncoding.Encode(encodedKey, prb.PublicKey())
 	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n\t- Public key: %s\n", c.Cfg.Name, c.Cfg.Hostname, string(encodedKey))
-
+	//fmt.Printf("-> Press c and enter for commands\n")
 	r := runner{cfg: c.Cfg, reader: bufio.NewReader(os.Stdin), prober: prb, log: c.Log, outChan: c.OutChan}
 	go r.listen()
-	r.basicCommands()
+	//r.basicCommands()
+	r.enableCommands()
 }
 
 func (r *runner) basicCommands() {
@@ -71,6 +72,7 @@ basicCmds:
 	}
 
 	atomic.StoreUint64(&r.disCmds, 0)
+	//r.basicCommands()
 	r.enableCommands()
 }
 
@@ -80,7 +82,7 @@ func (r *runner) enableCommands() {
 		fmt.Println("   Error: reading instruction failed, please try again")
 	}
 
-	if strings.TrimSpace(input) == `c` {
+	if strings.TrimSpace(input) == `c` || strings.TrimSpace(input) == `C` {
 		r.basicCommands()
 	} else {
 		r.enableCommands()

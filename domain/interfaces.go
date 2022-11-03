@@ -50,8 +50,8 @@ type Encryptor interface {
 	BoxOpen(cipher, nonce, peerPubKey, mySecKey []byte) (msg []byte, err error)
 	SealBox(payload, peerPubKey []byte) (encMsg []byte, err error)
 	SealBoxOpen(cipher, peerPubKey, mySecKey []byte) (msg []byte, err error)
-	EncryptDetached(msg string, nonce, key []byte) (cipher, mac []byte, err error)
-	DecryptDetached(cipher, mac, nonce, key []byte) (msg []byte, err error)
+	EncryptDetached(msg, protectedVal string, nonce, key []byte) (cipher, mac []byte, err error)
+	DecryptDetached(cipher, mac, protectedVal, nonce, key []byte) (msg []byte, err error)
 }
 
 type KeyService interface {
