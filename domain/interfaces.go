@@ -10,7 +10,7 @@ type DIDCommService interface {
 }
 
 type DIDService interface {
-	CreateDIDDoc(endpoint, typ string, encPubKey []byte) DIDDocument
+	CreateDIDDoc(endpoint, typ string, pubKey []byte) DIDDocument
 	CreatePeerDID(doc DIDDocument) (did string, err error)
 	ValidatePeerDID(did string) error
 	CreateConnReq(label, pthid, did string, encDidDoc AuthCryptMsg) (ConnReq, error)
@@ -55,9 +55,10 @@ type Encryptor interface {
 }
 
 type KeyService interface {
-	GenerateKeys() error
-	PublicKey() []byte
-	PrivateKey() []byte
+	GenerateKeys(peer string) error
+	Peer(pubKey []byte) (name string, err error)
+	PublicKey(peer string) ([]byte, error)
+	PrivateKey(peer string) ([]byte, error)
 	GenerateInvKeys() error
 	InvPublicKey() []byte
 	InvPrivateKey() []byte

@@ -1,67 +1,51 @@
 package prober
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/btcsuite/btcutil/base58"
 	"github.com/tryfix/log"
 )
 
-//const (
-//	stateInitial   = `initial`
-//	stateInvSent   = `invitation-sent`
-//	stateReqSent   = `request-sent`
-//	stateResSent   = `response-sent`
-//	stateConnected = `connected` // ideally after complete message is sent and received
-//)
-
 type Prober struct {
-	did         string
-	didDoc      domain.DIDDocument
-	invEndpoint string
-	inChan      chan domain.ChanMsg
-	outChan     chan string
-	ks          domain.KeyService // single key-pair for now
-	tr          domain.Transporter
-	packer      domain.Packer
-	ds          domain.DIDService
-	oob         domain.OOBService
-	log         log.Logger
-	label       string
-	peers       map[string]domain.Peer
+	invEndpoint  string
+	exchEndpoint string
+	inChan       chan domain.ChanMsg
+	outChan      chan string
+	ks           domain.KeyService // single key-pair for now
+	tr           domain.Transporter
+	packer       domain.Packer
+	ds           domain.DIDService
+	oob          domain.OOBService
+	log          log.Logger
+	label        string
+	peers        map[string]domain.Peer
+
+	didDocs map[string]domain.DIDDocument
+	dids    map[string]string
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
 	p = &Prober{
-		invEndpoint: c.Cfg.InvEndpoint,
-		ks:          c.KS,
-		tr:          c.Tr,
-		packer:      c.Packer,
-		log:         c.Log,
-		ds:          c.DS,
-		oob:         c.OOB,
-		inChan:      c.InChan,
-		outChan:     c.OutChan,
-		label:       c.Cfg.Name,
-		peers:       map[string]domain.Peer{}, // name as the key may not be ideal
+		invEndpoint:  c.Cfg.InvEndpoint,
+		exchEndpoint: c.Cfg.InvEndpoint,
+		ks:           c.KS,
+		tr:           c.Tr,
+		packer:       c.Packer,
+		log:          c.Log,
+		ds:           c.DS,
+		oob:          c.OOB,
+		inChan:       c.InChan,
+		outChan:      c.OutChan,
+		label:        c.Cfg.Name,
+		peers:        map[string]domain.Peer{}, // name as the key may not be ideal
+
+		didDocs: map[string]domain.DIDDocument{},
+		dids:    map[string]string{},
 	}
 
-	encodedKey := make([]byte, 64)
-	base64.StdEncoding.Encode(encodedKey, p.ks.PublicKey())
-	// removes redundant elements from the allocated byte slice
-	encodedKey = bytes.Trim(encodedKey, "\x00")
-
-	// creating own did and did doc
-	didDoc := p.ds.CreateDIDDoc(c.Cfg.ExchangeEndpoint, `message-service`, encodedKey)
-	dd, err := p.ds.CreatePeerDID(didDoc)
-	if err != nil {
-		return nil, fmt.Errorf(`creating peer did failed - %v`, err)
-	}
-
-	p.did = dd
-	p.didDoc = didDoc
 	return p, nil
 }
 
@@ -85,26 +69,16 @@ func (p *Prober) Listen() {
 	}
 }
 
-func (p *Prober) PublicKey() []byte {
-	return p.ks.PublicKey()
-}
-
 func (p *Prober) Invite() (url string, err error) {
 	if err = p.ks.GenerateInvKeys(); err != nil {
 		return ``, fmt.Errorf(`generating invitation keys failed - %v`, err)
 	}
 
-	// encoding invitation public key
-	encodedKey := make([]byte, 64)
-	base64.StdEncoding.Encode(encodedKey, p.ks.InvPublicKey())
-	// removes redundant elements from the allocated byte slice
-	encodedKey = bytes.Trim(encodedKey, "\x00")
-
 	// creates a did doc for connection request with a separate endpoint and public key
-	invDidDoc := p.ds.CreateDIDDoc(p.invEndpoint, `did-exchange`, encodedKey)
+	invDidDoc := p.ds.CreateDIDDoc(p.invEndpoint, `did-exchange`, p.ks.InvPublicKey())
 
 	// but uses did created from default did doc as it serves as the identifier in invitation
-	url, err = p.oob.CreateInv(p.label, p.did, invDidDoc)
+	url, err = p.oob.CreateInv(p.label, ``, invDidDoc) // todo null did
 	if err != nil {
 		return ``, fmt.Errorf(`creating invitation failed - %v`, err)
 	}
@@ -119,20 +93,26 @@ func (p *Prober) Accept(encodedInv string) error {
 		return fmt.Errorf(`parsing invitation failed - %v`, err)
 	}
 
+	// set up prerequisites for a connection (diddoc, did, keys)
+	pubKey, prvKey, err := p.setConnPrereqs(inv.Label)
+	if err != nil {
+		return fmt.Errorf(`setting up prerequisites for connection with %s failed - %v`, inv.Label, err)
+	}
+
 	// marshals did doc to proceed with packing process
-	docBytes, err := json.Marshal(p.didDoc)
+	docBytes, err := json.Marshal(p.didDocs[inv.Label])
 	if err != nil {
 		return fmt.Errorf(`marshalling did doc failed - %v`, err)
 	}
 
 	// encrypts did doc with peer invitation public key and default own key pair
-	encDoc, err := p.packer.Pack(docBytes, peerInvPubKey, p.ks.PublicKey(), p.ks.PrivateKey())
+	encDoc, err := p.packer.Pack(docBytes, peerInvPubKey, pubKey, prvKey)
 	if err != nil {
 		return fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
 	// creates connection request
-	connReq, err := p.ds.CreateConnReq(p.label, inv.Id, p.did, encDoc)
+	connReq, err := p.ds.CreateConnReq(p.label, inv.Id, p.dids[inv.Label], encDoc)
 	if err != nil {
 		return fmt.Errorf(`creating connection request failed - %v`, err)
 	}
@@ -164,19 +144,25 @@ func (p *Prober) ProcessConnReq(data []byte) error {
 		return fmt.Errorf(`getting peer data failed - %v`, err)
 	}
 
+	// set up prerequisites for a connection (diddoc, did, keys)
+	pubKey, prvKey, err := p.setConnPrereqs(peerLabel)
+	if err != nil {
+		return fmt.Errorf(`setting up prerequisites for connection with %s failed - %v`, peerLabel, err)
+	}
+
 	// marshals own did doc to proceed with packing process
-	docBytes, err := json.Marshal(p.didDoc)
+	docBytes, err := json.Marshal(p.didDocs[peerLabel])
 	if err != nil {
 		return fmt.Errorf(`marshalling did doc failed - %v`, err)
 	}
 
 	// encrypts did doc with peer invitation public key and default own key pair
-	encDidDoc, err := p.packer.Pack(docBytes, peerPubKey, p.ks.PublicKey(), p.ks.PrivateKey())
+	encDidDoc, err := p.packer.Pack(docBytes, peerPubKey, pubKey, prvKey)
 	if err != nil {
 		return fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
-	connRes, err := p.ds.CreateConnRes(pthId, p.did, encDidDoc)
+	connRes, err := p.ds.CreateConnRes(pthId, p.dids[peerLabel], encDidDoc)
 	if err != nil {
 		return fmt.Errorf(`creating connection response failed - %v`, err)
 	}
@@ -202,18 +188,27 @@ func (p *Prober) ProcessConnRes(data []byte) error {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
 	}
 
-	// decrypts peer did doc which is encrypted with default keys
-	peerEndpoint, peerPubKey, err := p.getPeerInfo(peerEncDocBytes, p.ks.PublicKey(), p.ks.PrivateKey())
-	if err != nil {
-		return fmt.Errorf(`getting peer data failed - %v`, err)
-	}
-
 	// todo send complete message
 
 	for name, peer := range p.peers {
 		if peer.ExchangeThId == pthId {
-			peerDid := peer.DID
-			p.peers[name] = domain.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
+			ownPubKey, err := p.ks.PublicKey(name)
+			if err != nil {
+				return fmt.Errorf(`getting public key for connection with %s failed - %v`, name, err)
+			}
+
+			ownPrvKey, err := p.ks.PrivateKey(name)
+			if err != nil {
+				return fmt.Errorf(`getting private key for connection with %s failed - %v`, name, err)
+			}
+
+			// decrypts peer did doc which is encrypted with default keys
+			peerEndpoint, peerPubKey, err := p.getPeerInfo(peerEncDocBytes, ownPubKey, ownPrvKey)
+			if err != nil {
+				return fmt.Errorf(`getting peer data failed - %v`, err)
+			}
+
+			p.peers[name] = domain.Peer{DID: peer.DID, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
 			fmt.Printf("-> Connection established with %s\n", name)
 			return nil
 		}
@@ -258,7 +253,17 @@ func (p *Prober) SendMessage(to, text string) error {
 		return fmt.Errorf(`no didcomm connection found for the recipient %s`, to)
 	}
 
-	msg, err := p.packer.Pack([]byte(text), peer.PubKey, p.ks.PublicKey(), p.ks.PrivateKey())
+	ownPubKey, err := p.ks.PublicKey(to)
+	if err != nil {
+		return fmt.Errorf(`getting public key for connection with %s failed - %v`, to, err)
+	}
+
+	ownPrvKey, err := p.ks.PrivateKey(to)
+	if err != nil {
+		return fmt.Errorf(`getting private key for connection with %s failed - %v`, to, err)
+	}
+
+	msg, err := p.packer.Pack([]byte(text), peer.PubKey, ownPubKey, ownPrvKey)
 	if err != nil {
 		p.log.Error(err)
 		return err
@@ -281,10 +286,76 @@ func (p *Prober) SendMessage(to, text string) error {
 }
 
 func (p *Prober) ReadMessage(data []byte) error {
-	textBytes, err := p.packer.Unpack(data, p.ks.PublicKey(), p.ks.PrivateKey())
+	peerName, err := p.peerByMsg(data)
+	if err != nil {
+		return fmt.Errorf(`getting peer info failed - %v`, err)
+	}
+
+	ownPubKey, err := p.ks.PublicKey(peerName)
+	if err != nil {
+		return fmt.Errorf(`getting public key for connection with %s failed - %v`, peerName, err)
+	}
+
+	ownPrvKey, err := p.ks.PrivateKey(peerName)
+	if err != nil {
+		return fmt.Errorf(`getting private key for connection with %s failed - %v`, peerName, err)
+	}
+
+	textBytes, err := p.packer.Unpack(data, ownPubKey, ownPrvKey)
 	if err != nil {
 		return fmt.Errorf(`unpacking message failed - %v`, err)
 	}
 	p.outChan <- string(textBytes)
 	return nil
+}
+
+func (p *Prober) setConnPrereqs(peer string) (pubKey, prvKey []byte, err error) {
+	if err = p.ks.GenerateKeys(peer); err != nil {
+		return nil, nil, fmt.Errorf(`generating keys failed - %v`, err)
+	}
+
+	// omitted error since it should occur
+	pubKey, _ = p.ks.PublicKey(peer)
+	prvKey, _ = p.ks.PrivateKey(peer)
+
+	// creating own did and did doc
+	didDoc := p.ds.CreateDIDDoc(p.exchEndpoint, `message-service`, pubKey)
+	did, err := p.ds.CreatePeerDID(didDoc)
+	if err != nil {
+		return nil, nil, fmt.Errorf(`creating peer did failed - %v`, err)
+	}
+
+	p.didDocs[peer] = didDoc
+	p.dids[peer] = did
+	return pubKey, prvKey, nil
+}
+
+// todo can improve this since all this unmarshalling will be done again in unpack
+// todo recipient[0] is hardcoded for now
+func (p *Prober) peerByMsg(data []byte) (name string, err error) {
+	// unmarshal into authcrypt message
+	var msg domain.AuthCryptMsg
+	err = json.Unmarshal(data, &msg)
+	if err != nil {
+		p.log.Error(err)
+		return ``, err
+	}
+
+	// decode protected payload
+	var payload domain.Payload
+	decodedVal, err := base64.StdEncoding.DecodeString(msg.Protected)
+	if err != nil {
+		p.log.Error(err)
+		return ``, err
+	}
+
+	err = json.Unmarshal(decodedVal, &payload)
+	if err != nil {
+		p.log.Error(err)
+		return ``, err
+	}
+
+	decodedPubKey := base58.Decode(payload.Recipients[0].Header.Kid)
+
+	return p.ks.Peer(decodedPubKey)
 }

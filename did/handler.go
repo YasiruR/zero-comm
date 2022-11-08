@@ -1,6 +1,7 @@
 package did
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -12,11 +13,16 @@ import (
 
 type Handler struct{}
 
-func (h *Handler) CreateDIDDoc(endpoint, typ string, encPubKey []byte) domain.DIDDocument {
+func (h *Handler) CreateDIDDoc(endpoint, typ string, pubKey []byte) domain.DIDDocument {
+	encodedKey := make([]byte, 64)
+	base64.StdEncoding.Encode(encodedKey, pubKey)
+	// removes redundant elements from the allocated byte slice
+	encodedKey = bytes.Trim(encodedKey, "\x00")
+
 	s := domain.Service{
 		Id:              uuid.New().String(),
 		Type:            typ,
-		RecipientKeys:   []string{string(encPubKey)},
+		RecipientKeys:   []string{string(encodedKey)},
 		RoutingKeys:     nil,
 		ServiceEndpoint: endpoint,
 		Accept:          nil,

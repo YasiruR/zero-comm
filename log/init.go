@@ -14,7 +14,7 @@ func NewLogger(logEnabled bool) *Logger {
 		logEnabled: logEnabled,
 		Logger: log.Constructor.Log(
 			log.WithColors(true),
-			log.WithLevel("DEBUG"),
+			log.WithLevel("TRACE"),
 			log.WithFilePath(true),
 			log.WithSkipFrameCount(3),
 		),

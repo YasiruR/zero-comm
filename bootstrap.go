@@ -26,14 +26,14 @@ func setConfigs(name string, port int, verbose bool) *domain.Config {
 func initContainer(cfg *domain.Config) *domain.Container {
 	logger := log.NewLogger(cfg.Verbose)
 	packer := crypto.NewPacker(logger)
-	km := crypto.KeyManager{}
-	if err := km.GenerateKeys(); err != nil {
-		logger.Fatal(err)
-	}
+	km := crypto.NewKeyManager()
+	//if err := km.GenerateKeys(); err != nil {
+	//	logger.Fatal(err)
+	//}
 
 	c := &domain.Container{
 		Cfg:     cfg,
-		KS:      &km,
+		KS:      km,
 		Packer:  packer,
 		DS:      &did.Handler{},
 		OOB:     did.NewOOBService(cfg),

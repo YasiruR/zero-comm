@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
@@ -35,7 +34,7 @@ func ParseArgs() (name string, port int, verbose bool) {
 
 func Init(c *domain.Container, prb *prober.Prober) {
 	encodedKey := make([]byte, 64)
-	base64.StdEncoding.Encode(encodedKey, prb.PublicKey())
+	//base64.StdEncoding.Encode(encodedKey, prb.PublicKey())
 	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n\t- Public key: %s\n", c.Cfg.Name, c.Cfg.Hostname, string(encodedKey))
 	//fmt.Printf("-> Press c and enter for commands\n")
 	r := runner{cfg: c.Cfg, reader: bufio.NewReader(os.Stdin), prober: prb, log: c.Log, outChan: c.OutChan}

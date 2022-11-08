@@ -9,7 +9,7 @@ func NewPublisher() {
 
 func Register(topic string) {
 	// create a pub socket for topic_pubs
-	// generate an invitation - currently only 1 acceptor is supported
+	// generate one invitation for the topic
 	// publish status with inv to topic_pubs
 
 	// prober receives multiple conn requests
