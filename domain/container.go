@@ -22,7 +22,7 @@ type Container struct {
 	DS         DIDService
 	OOB        OOBService
 	Log        log.Logger
-	InChanExch chan []byte
+	InChan     chan ChanMsg
 	InChanData chan []byte
 	OutChan    chan string
 }

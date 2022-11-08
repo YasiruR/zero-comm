@@ -9,21 +9,19 @@ import (
 	"github.com/tryfix/log"
 )
 
-const (
-	stateInitial   = `initial`
-	stateInvSent   = `invitation-sent`
-	stateReqSent   = `request-sent`
-	stateResSent   = `response-sent`
-	stateConnected = `connected` // ideally after complete message is sent and received
-)
+//const (
+//	stateInitial   = `initial`
+//	stateInvSent   = `invitation-sent`
+//	stateReqSent   = `request-sent`
+//	stateResSent   = `response-sent`
+//	stateConnected = `connected` // ideally after complete message is sent and received
+//)
 
 type Prober struct {
 	did         string
 	didDoc      domain.DIDDocument
 	invEndpoint string
-	state       string
-	inChanExch  chan []byte
-	inChanData  chan []byte
+	inChan      chan domain.ChanMsg
 	outChan     chan string
 	ks          domain.KeyService // single key-pair for now
 	tr          domain.Transporter
@@ -44,10 +42,8 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		log:         c.Log,
 		ds:          c.DS,
 		oob:         c.OOB,
-		inChanExch:  c.InChanExch,
-		inChanData:  c.InChanData,
+		inChan:      c.InChan,
 		outChan:     c.OutChan,
-		state:       stateInitial,
 		label:       c.Cfg.Name,
 		peers:       map[string]domain.Peer{}, // name as the key may not be ideal
 	}
@@ -70,37 +66,21 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 }
 
 func (p *Prober) Listen() {
-	go p.listenForReqs()
-	p.listenForData()
-}
-
-func (p *Prober) listenForReqs() {
 	for {
-		data := <-p.inChanExch
-		switch p.state {
-		case stateInitial:
-			p.log.Error(`no invitation has been processed yet`)
-		case stateInvSent:
-			if err := p.ProcessConnReq(data); err != nil {
+		chanMsg := <-p.inChan
+		switch chanMsg.Type {
+		case domain.MsgTypConnReq:
+			if err := p.ProcessConnReq(chanMsg.Data); err != nil {
 				p.log.Error(err)
 			}
-		case stateReqSent:
-			if err := p.ProcessConnRes(data); err != nil {
+		case domain.MsgTypConnRes:
+			if err := p.ProcessConnRes(chanMsg.Data); err != nil {
 				p.log.Error(err)
 			}
-		case stateConnected:
-			if err := p.ProcessConnReq(data); err != nil {
+		case domain.MsgTypData:
+			if err := p.ReadMessage(chanMsg.Data); err != nil {
 				p.log.Error(err)
 			}
-		}
-	}
-}
-
-func (p *Prober) listenForData() {
-	for {
-		data := <-p.inChanData
-		if err := p.ReadMessage(data); err != nil {
-			p.log.Error(err)
 		}
 	}
 }
@@ -129,7 +109,6 @@ func (p *Prober) Invite() (url string, err error) {
 		return ``, fmt.Errorf(`creating invitation failed - %v`, err)
 	}
 
-	p.state = stateInvSent
 	return url, nil
 }
 
@@ -164,11 +143,10 @@ func (p *Prober) Accept(encodedInv string) error {
 		return fmt.Errorf(`marshalling connection request failed - %v`, err)
 	}
 
-	if err = p.tr.Send(domain.MsgTypExchange, connReqBytes, invEndpoint); err != nil {
+	if err = p.tr.Send(domain.MsgTypConnReq, connReqBytes, invEndpoint); err != nil {
 		return fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
-	p.state = stateReqSent
 	p.peers[inv.Label] = domain.Peer{DID: inv.From, ExchangeThId: inv.Id}
 	return nil
 }
@@ -208,11 +186,10 @@ func (p *Prober) ProcessConnReq(data []byte) error {
 		return fmt.Errorf(`marshalling connection response failed - %v`, err)
 	}
 
-	if err = p.tr.Send(domain.MsgTypExchange, connResBytes, peerEndpoint); err != nil {
+	if err = p.tr.Send(domain.MsgTypConnRes, connResBytes, peerEndpoint); err != nil {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
-	p.state = stateConnected
 	p.peers[peerLabel] = domain.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
 	fmt.Printf("-> Connection established with %s\n", peerLabel)
 
@@ -233,7 +210,6 @@ func (p *Prober) ProcessConnRes(data []byte) error {
 
 	// todo send complete message
 
-	p.state = stateConnected
 	for name, peer := range p.peers {
 		if peer.ExchangeThId == pthId {
 			peerDid := peer.DID

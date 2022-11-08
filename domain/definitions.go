@@ -8,6 +8,7 @@ const (
 )
 
 const (
-	MsgTypExchange = `exchange`
-	MsgTypData     = `data`
+	MsgTypConnReq = `conn-req`
+	MsgTypConnRes = `conn-res`
+	MsgTypData    = `data`
 )

@@ -32,15 +32,14 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	}
 
 	c := &domain.Container{
-		Cfg:        cfg,
-		KS:         &km,
-		Packer:     packer,
-		DS:         &did.Handler{},
-		OOB:        did.NewOOBService(cfg),
-		Log:        logger,
-		InChanExch: make(chan []byte),
-		InChanData: make(chan []byte),
-		OutChan:    make(chan string),
+		Cfg:     cfg,
+		KS:      &km,
+		Packer:  packer,
+		DS:      &did.Handler{},
+		OOB:     did.NewOOBService(cfg),
+		Log:     logger,
+		InChan:  make(chan domain.ChanMsg),
+		OutChan: make(chan string),
 	}
 
 	//c.Tr = transport.NewHTTP(c)
