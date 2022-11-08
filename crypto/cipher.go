@@ -11,6 +11,8 @@ const (
 
 type encryptor struct{}
 
+// Box encrypts the given message with nonce, receiver's public key and
+// sender's private key. MAC and encrypted message are stored together.
 func (e *encryptor) Box(payload, nonce, peerPubKey, mySecKey []byte) (encMsg []byte, err error) {
 	nonce = e.modifyNonce(nonce)
 	encMsg, _ = cryptobox.CryptoBoxEasy(payload, nonce, peerPubKey, mySecKey)
@@ -33,24 +35,24 @@ func (e *encryptor) SealBoxOpen(cipher, peerPubKey, mySecKey []byte) (msg []byte
 	return msg, nil
 }
 
-func (e *encryptor) EncryptDetached(msg string, nonce, key []byte) (cipher, mac []byte, err error) {
+func (e *encryptor) EncryptDetached(msg, protectedVal string, nonce, key []byte) (cipher, mac []byte, err error) {
 	var convertedIv [chacha.NonceBytes]byte
 	copy(convertedIv[:], nonce)
 
 	var convertedCek [chacha.KeyBytes]byte
 	copy(convertedCek[:], key)
 
-	cipher, mac = chacha.EncryptDetached([]byte(msg), nil, &convertedIv, &convertedCek)
+	cipher, mac = chacha.EncryptDetached([]byte(msg), []byte(protectedVal), &convertedIv, &convertedCek)
 	return cipher, mac, nil
 }
 
-func (e *encryptor) DecryptDetached(cipher, mac, nonce, key []byte) (msg []byte, err error) {
+func (e *encryptor) DecryptDetached(cipher, mac, protectedVal, nonce, key []byte) (msg []byte, err error) {
 	var convertedIv [chacha.NonceBytes]byte
 	copy(convertedIv[:], nonce)
 
 	var convertedCek [chacha.KeyBytes]byte
 	copy(convertedCek[:], key)
-	msg, err = chacha.DecryptDetached(cipher, mac, nil, &convertedIv, &convertedCek)
+	msg, err = chacha.DecryptDetached(cipher, mac, protectedVal, &convertedIv, &convertedCek)
 	if err != nil {
 		return nil, err
 	}

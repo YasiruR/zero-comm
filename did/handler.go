@@ -57,7 +57,7 @@ func (h *Handler) ValidatePeerDID(did string) error {
 	return nil
 }
 
-func (h *Handler) CreateConnReq(pthid, did string, encDidDoc domain.AuthCryptMsg) (domain.ConnReq, error) {
+func (h *Handler) CreateConnReq(label, pthid, did string, encDidDoc domain.AuthCryptMsg) (domain.ConnReq, error) {
 	id := uuid.New().String()
 	req := domain.ConnReq{
 		Id:   id,
@@ -66,7 +66,7 @@ func (h *Handler) CreateConnReq(pthid, did string, encDidDoc domain.AuthCryptMsg
 			ThId  string `json:"thid"`
 			PThId string `json:"pthid"`
 		}{ThId: id, PThId: pthid},
-		Label: `test-label`,
+		Label: label,
 		Goal:  "connection establishment",
 		DID:   did,
 	}
@@ -84,27 +84,27 @@ func (h *Handler) CreateConnReq(pthid, did string, encDidDoc domain.AuthCryptMsg
 	return req, nil
 }
 
-func (h *Handler) ParseConnReq(data []byte) (thId, peerDid string, encDocBytes []byte, err error) {
+func (h *Handler) ParseConnReq(data []byte) (label, pthId, peerDid string, encDocBytes []byte, err error) {
 	var req domain.ConnReq
 	if err = json.Unmarshal(data, &req); err != nil {
-		return ``, ``, nil, fmt.Errorf(`unmarshalling connection request failed - %v`, err)
+		return ``, ``, ``, nil, fmt.Errorf(`unmarshalling connection request failed - %v`, err)
 	}
 
 	encDocBytes, err = base64.StdEncoding.DecodeString(req.DIDDocAttach.Data.Base64)
 	if err != nil {
-		return ``, ``, nil, fmt.Errorf(`decoding did doc failed - %v`, err)
+		return ``, ``, ``, nil, fmt.Errorf(`decoding did doc failed - %v`, err)
 	}
 
-	return req.Thread.ThId, req.DID, encDocBytes, nil
+	return req.Label, req.Thread.PThId, req.DID, encDocBytes, nil
 }
 
-func (h *Handler) CreateConnRes(thId, did string, encDidDoc domain.AuthCryptMsg) (domain.ConnRes, error) {
+func (h *Handler) CreateConnRes(pthId, did string, encDidDoc domain.AuthCryptMsg) (domain.ConnRes, error) {
 	res := domain.ConnRes{
 		Id:   uuid.New().String(),
 		Type: "https://didcomm.org/didexchange/1.0/response",
 		Thread: struct {
 			ThId string `json:"thid"`
-		}{ThId: thId},
+		}{ThId: pthId},
 		DID: did,
 	}
 
@@ -121,7 +121,7 @@ func (h *Handler) CreateConnRes(thId, did string, encDidDoc domain.AuthCryptMsg)
 	return res, nil
 }
 
-func (h *Handler) ParseConnRes(data []byte) (thId string, encDocBytes []byte, err error) {
+func (h *Handler) ParseConnRes(data []byte) (pthId string, encDocBytes []byte, err error) {
 	var res domain.ConnRes
 	if err = json.Unmarshal(data, &res); err != nil {
 		return ``, nil, fmt.Errorf(`unmarshalling connection response failed - %v`, err)

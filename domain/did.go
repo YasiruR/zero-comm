@@ -2,10 +2,11 @@ package domain
 
 // Invitation reference: https://identity.foundation/didcomm-messaging/spec/#invitation
 type Invitation struct {
-	Id   string `json:"id"`
-	Type string `json:"type"`
-	From string `json:"from"`
-	Body struct {
+	Id    string `json:"id"`
+	Type  string `json:"type"`
+	From  string `json:"from"`
+	Label string `json:"label"` // from aries rfc-0160
+	Body  struct {
 		GoalCode string   `json:"goal_code"`
 		Goal     string   `json:"goal"`
 		Accept   []string `json:"accept"`
@@ -34,7 +35,8 @@ type ConnReq struct {
 	Id     string `json:"@id"`
 	Type   string `json:"@type"`
 	Thread struct {
-		ThId  string `json:"thid"`
+		ThId string `json:"thid"`
+		// should contain the id of the corresponding invitation (https://github.com/hyperledger/aries-rfcs/tree/main/features/0023-did-exchange#request-message-attributes)
 		PThId string `json:"pthid"`
 	} `json:"~thread"`
 	Label        string `json:"label"`
@@ -55,6 +57,7 @@ type ConnRes struct {
 	Id     string `json:"@id"`
 	Type   string `json:"@type"`
 	Thread struct {
+		// must be a reference to the request message (https://github.com/hyperledger/aries-rfcs/tree/main/features/0023-did-exchange#response-message-attributes)
 		ThId string `json:"thid"`
 	} `json:"~thread"`
 	DID          string `json:"did"`

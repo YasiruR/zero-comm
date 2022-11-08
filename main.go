@@ -18,5 +18,6 @@ func main() {
 
 	go c.Tr.Start()
 	go prb.Listen()
+	defer shutdown(c)
 	cli.Init(c, prb)
 }

@@ -47,7 +47,7 @@ func (p *Packer) Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (d
 
 	// constructing payload
 	payload := domain.Payload{
-		// enc: "type",
+		Enc: "xchacha20poly1305_ietf",
 		Typ: "JWM/1.0",
 		Alg: "Authcrypt",
 		Recipients: []domain.Recipient{
@@ -71,7 +71,7 @@ func (p *Packer) Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (d
 
 	// encrypt with chachapoly1305 detached mode
 	iv := []byte(strconv.Itoa(rand2.Int()))
-	cipher, mac, err := p.enc.EncryptDetached(string(input), iv, cek)
+	cipher, mac, err := p.enc.EncryptDetached(string(input), string(encPayload), iv, cek)
 	if err != nil {
 		return domain.AuthCryptMsg{}, err
 	}
@@ -165,7 +165,7 @@ func (p *Packer) Unpack(data, recPubKey, recPrvKey []byte) (output []byte, err e
 		return nil, err
 	}
 
-	output, err = p.enc.DecryptDetached(decodedCipher, mac, iv, cek)
+	output, err = p.enc.DecryptDetached(decodedCipher, mac, decodedVal, iv, cek)
 	if err != nil {
 		p.log.Error(err)
 		return nil, err

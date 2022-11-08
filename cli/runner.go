@@ -37,10 +37,11 @@ func Init(c *domain.Container, prb *prober.Prober) {
 	encodedKey := make([]byte, 64)
 	base64.StdEncoding.Encode(encodedKey, prb.PublicKey())
 	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n\t- Public key: %s\n", c.Cfg.Name, c.Cfg.Hostname, string(encodedKey))
-
+	//fmt.Printf("-> Press c and enter for commands\n")
 	r := runner{cfg: c.Cfg, reader: bufio.NewReader(os.Stdin), prober: prb, log: c.Log, outChan: c.OutChan}
 	go r.listen()
-	r.basicCommands()
+	//r.basicCommands()
+	r.enableCommands()
 }
 
 func (r *runner) basicCommands() {
@@ -71,7 +72,21 @@ basicCmds:
 	}
 
 	atomic.StoreUint64(&r.disCmds, 0)
-	r.basicCommands()
+	//r.basicCommands()
+	r.enableCommands()
+}
+
+func (r *runner) enableCommands() {
+	input, err := r.reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("   Error: reading instruction failed, please try again")
+	}
+
+	if strings.TrimSpace(input) == `c` || strings.TrimSpace(input) == `C` {
+		r.basicCommands()
+	} else {
+		r.enableCommands()
+	}
 }
 
 func (r *runner) generateInvitation() {
@@ -106,13 +121,21 @@ readUrl:
 	}
 
 	if err = r.prober.Accept(inv[0]); err != nil {
-		fmt.Println("   Error: invitation may be invalid, please try again --")
+		fmt.Println("   Error: invitation may be invalid, please try again")
 		r.log.Error(err)
 		goto readUrl
 	}
 }
 
 func (r *runner) sendMsg() {
+readName:
+	fmt.Printf("-> Enter recipient: ")
+	peer, err := r.reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("   Error: reading recipient failed, please try again")
+		goto readName
+	}
+
 readMsg:
 	fmt.Printf("-> Enter message: ")
 	msg, err := r.reader.ReadString('\n')
@@ -121,10 +144,9 @@ readMsg:
 		goto readMsg
 	}
 
-	if err = r.prober.SendMessage(msg); err != nil {
+	if err = r.prober.SendMessage(strings.TrimSpace(peer), msg); err != nil {
 		fmt.Printf("   Error: sending message failed due to %s", err.Error())
 	}
-	fmt.Printf("-> Message sent\n")
 }
 
 func (r *runner) listen() {
@@ -134,6 +156,6 @@ func (r *runner) listen() {
 			atomic.StoreUint64(&r.disCmds, 0)
 			fmt.Println()
 		}
-		fmt.Printf("\n-> Message received: %s", text)
+		fmt.Printf("-> Message received: %s", text)
 	}
 }
