@@ -22,7 +22,8 @@ type Prober struct {
 	didDoc      domain.DIDDocument
 	invEndpoint string
 	state       string
-	inChan      chan []byte
+	inChanExch  chan []byte
+	inChanData  chan []byte
 	outChan     chan string
 	ks          domain.KeyService // single key-pair for now
 	tr          domain.Transporter
@@ -43,7 +44,8 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		log:         c.Log,
 		ds:          c.DS,
 		oob:         c.OOB,
-		inChan:      c.InChan,
+		inChanExch:  c.InChanExch,
+		inChanData:  c.InChanData,
 		outChan:     c.OutChan,
 		state:       stateInitial,
 		label:       c.Cfg.Name,
@@ -68,8 +70,13 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 }
 
 func (p *Prober) Listen() {
+	go p.listenForReqs()
+	p.listenForData()
+}
+
+func (p *Prober) listenForReqs() {
 	for {
-		data := <-p.inChan
+		data := <-p.inChanExch
 		switch p.state {
 		case stateInitial:
 			p.log.Error(`no invitation has been processed yet`)
@@ -82,9 +89,18 @@ func (p *Prober) Listen() {
 				p.log.Error(err)
 			}
 		case stateConnected:
-			if err := p.ReadMessage(data); err != nil {
+			if err := p.ProcessConnReq(data); err != nil {
 				p.log.Error(err)
 			}
+		}
+	}
+}
+
+func (p *Prober) listenForData() {
+	for {
+		data := <-p.inChanData
+		if err := p.ReadMessage(data); err != nil {
+			p.log.Error(err)
 		}
 	}
 }
@@ -148,7 +164,7 @@ func (p *Prober) Accept(encodedInv string) error {
 		return fmt.Errorf(`marshalling connection request failed - %v`, err)
 	}
 
-	if err = p.tr.Send(connReqBytes, invEndpoint); err != nil {
+	if err = p.tr.Send(domain.MsgTypExchange, connReqBytes, invEndpoint); err != nil {
 		return fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
@@ -192,7 +208,7 @@ func (p *Prober) ProcessConnReq(data []byte) error {
 		return fmt.Errorf(`marshalling connection response failed - %v`, err)
 	}
 
-	if err = p.tr.Send(connResBytes, peerEndpoint); err != nil {
+	if err = p.tr.Send(domain.MsgTypExchange, connResBytes, peerEndpoint); err != nil {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
@@ -278,7 +294,7 @@ func (p *Prober) SendMessage(to, text string) error {
 		return err
 	}
 
-	err = p.tr.Send(data, peer.Endpoint)
+	err = p.tr.Send(domain.MsgTypData, data, peer.Endpoint)
 	if err != nil {
 		p.log.Error(err)
 		return err

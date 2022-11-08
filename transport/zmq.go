@@ -12,11 +12,12 @@ const (
 )
 
 type Zmq struct {
-	server *zmq.Socket
-	log    log.Logger
-	inChan chan []byte
-	ctx    *zmq.Context
-	peers  map[string]*zmq.Socket // use sync map if accessed concurrently
+	server     *zmq.Socket
+	log        log.Logger
+	inChanExch chan []byte
+	inChanData chan []byte
+	ctx        *zmq.Context
+	peers      map[string]*zmq.Socket // use sync map if accessed concurrently
 }
 
 func NewZmq(c *domain.Container) (*Zmq, error) {
@@ -34,7 +35,7 @@ func NewZmq(c *domain.Container) (*Zmq, error) {
 		return nil, fmt.Errorf(`binding zmq socket to %s failed - %v`, c.Cfg.InvEndpoint, err)
 	}
 
-	return &Zmq{ctx: ctx, peers: map[string]*zmq.Socket{}, server: repSkt, log: c.Log, inChan: c.InChan}, nil
+	return &Zmq{ctx: ctx, peers: map[string]*zmq.Socket{}, server: repSkt, log: c.Log, inChanExch: c.InChanExch, inChanData: c.InChanData}, nil
 }
 
 func (z *Zmq) Socket(endpoint string) (skt *zmq.Socket, err error) {
@@ -67,12 +68,19 @@ func (z *Zmq) Start() {
 			continue
 		}
 
-		if len(msg) == 0 {
-			z.log.Error(`received an empty message`)
+		if len(msg) != 2 {
+			z.log.Error(`received an empty/invalid message`, msg)
 			continue
 		}
 
-		z.inChan <- []byte(msg[0])
+		switch msg[0] {
+		case domain.MsgTypExchange:
+			z.inChanExch <- []byte(msg[1])
+		case domain.MsgTypData:
+			z.inChanData <- []byte(msg[1])
+		default:
+			z.log.Error(`invalid message type`, msg)
+		}
 
 		if _, err = z.server.Send(`done`, 0); err != nil {
 			z.log.Error(`sending zmq message by receiver failed - %v`, err)
@@ -82,13 +90,13 @@ func (z *Zmq) Start() {
 
 // Send connects to the endpoint per each message since it is more appropriate
 // with DIDComm as by nature it manifests an asynchronous simplex communication.
-func (z *Zmq) Send(data []byte, endpoint string) error {
+func (z *Zmq) Send(typ string, data []byte, endpoint string) error {
 	skt, err := z.Socket(endpoint)
 	if err != nil {
 		return fmt.Errorf(`fetching zmq socket failed - %v`, err)
 	}
 
-	if _, err = skt.Send(string(data), 0); err != nil {
+	if _, err = skt.SendMessage(typ, string(data)); err != nil {
 		return fmt.Errorf(`sending zmq message by sender failed - %v`, err)
 	}
 

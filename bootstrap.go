@@ -18,7 +18,6 @@ func setConfigs(name string, port int, verbose bool) *domain.Config {
 		Port:             port,
 		InvEndpoint:      hostname + domain.InvitationEndpoint,
 		ExchangeEndpoint: hostname + domain.InvitationEndpoint,
-		MessageEndpoint:  hostname + domain.InvitationEndpoint,
 		Verbose:          verbose,
 		LogLevel:         "DEBUG",
 	}
@@ -33,14 +32,15 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	}
 
 	c := &domain.Container{
-		Cfg:     cfg,
-		KS:      &km,
-		Packer:  packer,
-		DS:      &did.Handler{},
-		OOB:     did.NewOOBService(cfg),
-		Log:     logger,
-		InChan:  make(chan []byte),
-		OutChan: make(chan string),
+		Cfg:        cfg,
+		KS:         &km,
+		Packer:     packer,
+		DS:         &did.Handler{},
+		OOB:        did.NewOOBService(cfg),
+		Log:        logger,
+		InChanExch: make(chan []byte),
+		InChanData: make(chan []byte),
+		OutChan:    make(chan string),
 	}
 
 	//c.Tr = transport.NewHTTP(c)

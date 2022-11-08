@@ -36,7 +36,7 @@ type Transporter interface {
 	Start()
 	// Send transmits the message but marshalling should be independent of the
 	// transport layer to support multiple encoding mechanisms
-	Send(data []byte, endpoint string) error
+	Send(typ string, data []byte, endpoint string) error
 	Stop() error
 }
 

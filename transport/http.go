@@ -29,7 +29,7 @@ func NewHTTP(c *domain.Container) *HTTP {
 		log:    c.Log,
 		client: &http.Client{},
 		router: mux.NewRouter(),
-		inChan: c.InChan,
+		inChan: c.InChanExch,
 	}
 }
 
