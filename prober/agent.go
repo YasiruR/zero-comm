@@ -251,7 +251,7 @@ func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (endpoint
 	return peerEndpoint, peerPubKey, nil
 }
 
-func (p *Prober) SendMessage(to, text string) error {
+func (p *Prober) SendMessage(typ, to, text string) error {
 	peer, ok := p.peers[to]
 	if !ok {
 		return fmt.Errorf(`no didcomm connection found for the recipient %s`, to)
@@ -279,7 +279,7 @@ func (p *Prober) SendMessage(to, text string) error {
 		return err
 	}
 
-	err = p.tr.Send(domain.MsgTypData, data, peer.Endpoint)
+	err = p.tr.Send(typ, data, peer.Endpoint)
 	if err != nil {
 		p.log.Error(err)
 		return err

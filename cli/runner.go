@@ -143,7 +143,7 @@ readMsg:
 		goto readMsg
 	}
 
-	if err = r.prober.SendMessage(strings.TrimSpace(peer), msg); err != nil {
+	if err = r.prober.SendMessage(domain.MsgTypData, strings.TrimSpace(peer), msg); err != nil {
 		fmt.Printf("   Error: sending message failed due to %s", err.Error())
 	}
 }

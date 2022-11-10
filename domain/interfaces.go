@@ -26,9 +26,16 @@ type OOBService interface {
 	ParseInv(encInv string) (inv messages.Invitation, endpoint string, pubKey []byte, err error)
 }
 
+/* message queue functions */
+
 type QueueService interface {
-	Publish()
+	Publisher
 	Subscribe()
+}
+
+type Publisher interface {
+	Register(topic string) error
+	Publish(topic, msg string) error
 }
 
 /* dependencies */

@@ -31,6 +31,8 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	//	logger.Fatal(err)
 	//}
 
+	// todo add pub endpoint
+
 	c := &domain.Container{
 		Cfg:     cfg,
 		KS:      km,
