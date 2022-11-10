@@ -1,5 +1,7 @@
 package domain
 
+import "github.com/YasiruR/didcomm-prober/domain/messages"
+
 /* core services */
 
 type DIDCommService interface {
@@ -10,18 +12,18 @@ type DIDCommService interface {
 }
 
 type DIDService interface {
-	CreateDIDDoc(endpoint, typ string, pubKey []byte) DIDDocument
-	CreatePeerDID(doc DIDDocument) (did string, err error)
+	CreateDIDDoc(endpoint, typ string, pubKey []byte) messages.DIDDocument
+	CreatePeerDID(doc messages.DIDDocument) (did string, err error)
 	ValidatePeerDID(did string) error
-	CreateConnReq(label, pthid, did string, encDidDoc AuthCryptMsg) (ConnReq, error)
+	CreateConnReq(label, pthid, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnReq, error)
 	ParseConnReq(data []byte) (label, pthId, peerDid string, encDocBytes []byte, err error)
-	CreateConnRes(pthId, did string, encDidDoc AuthCryptMsg) (ConnRes, error)
+	CreateConnRes(pthId, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnRes, error)
 	ParseConnRes(data []byte) (pthId string, encDocBytes []byte, err error)
 }
 
 type OOBService interface {
-	CreateInv(label, did string, didDoc DIDDocument) (url string, err error)
-	ParseInv(encInv string) (inv Invitation, endpoint string, pubKey []byte, err error)
+	CreateInv(label, did string, didDoc messages.DIDDocument) (url string, err error)
+	ParseInv(encInv string) (inv messages.Invitation, endpoint string, pubKey []byte, err error)
 }
 
 type QueueService interface {
@@ -41,7 +43,7 @@ type Transporter interface {
 }
 
 type Packer interface {
-	Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (AuthCryptMsg, error)
+	Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (messages.AuthCryptMsg, error)
 	Unpack(data, recPubKey, recPrvKey []byte) (output []byte, err error)
 }
 

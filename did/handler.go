@@ -6,20 +6,20 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
 )
 
 type Handler struct{}
 
-func (h *Handler) CreateDIDDoc(endpoint, typ string, pubKey []byte) domain.DIDDocument {
+func (h *Handler) CreateDIDDoc(endpoint, typ string, pubKey []byte) messages.DIDDocument {
 	encodedKey := make([]byte, 64)
 	base64.StdEncoding.Encode(encodedKey, pubKey)
 	// removes redundant elements from the allocated byte slice
 	encodedKey = bytes.Trim(encodedKey, "\x00")
 
-	s := domain.Service{
+	s := messages.Service{
 		Id:              uuid.New().String(),
 		Type:            typ,
 		RecipientKeys:   []string{string(encodedKey)},
@@ -28,10 +28,10 @@ func (h *Handler) CreateDIDDoc(endpoint, typ string, pubKey []byte) domain.DIDDo
 		Accept:          nil,
 	}
 
-	return domain.DIDDocument{Service: []domain.Service{s}}
+	return messages.DIDDocument{Service: []messages.Service{s}}
 }
 
-func (h *Handler) CreatePeerDID(doc domain.DIDDocument) (did string, err error) {
+func (h *Handler) CreatePeerDID(doc messages.DIDDocument) (did string, err error) {
 	// make a did-doc but omit DID value from doc = stored variant
 	byts, err := json.Marshal(doc)
 	if err != nil {
@@ -63,9 +63,9 @@ func (h *Handler) ValidatePeerDID(did string) error {
 	return nil
 }
 
-func (h *Handler) CreateConnReq(label, pthid, did string, encDidDoc domain.AuthCryptMsg) (domain.ConnReq, error) {
+func (h *Handler) CreateConnReq(label, pthid, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnReq, error) {
 	id := uuid.New().String()
-	req := domain.ConnReq{
+	req := messages.ConnReq{
 		Id:   id,
 		Type: "https://didcomm.org/didexchange/1.0/request",
 		Thread: struct {
@@ -80,7 +80,7 @@ func (h *Handler) CreateConnReq(label, pthid, did string, encDidDoc domain.AuthC
 	// marshals the encrypted did doc
 	encDocBytes, err := json.Marshal(encDidDoc)
 	if err != nil {
-		return domain.ConnReq{}, fmt.Errorf(`marshalling encrypted did doc failed - %v`, err)
+		return messages.ConnReq{}, fmt.Errorf(`marshalling encrypted did doc failed - %v`, err)
 	}
 
 	req.DIDDocAttach.Id = uuid.New().String()
@@ -91,7 +91,7 @@ func (h *Handler) CreateConnReq(label, pthid, did string, encDidDoc domain.AuthC
 }
 
 func (h *Handler) ParseConnReq(data []byte) (label, pthId, peerDid string, encDocBytes []byte, err error) {
-	var req domain.ConnReq
+	var req messages.ConnReq
 	if err = json.Unmarshal(data, &req); err != nil {
 		return ``, ``, ``, nil, fmt.Errorf(`unmarshalling connection request failed - %v`, err)
 	}
@@ -104,8 +104,8 @@ func (h *Handler) ParseConnReq(data []byte) (label, pthId, peerDid string, encDo
 	return req.Label, req.Thread.PThId, req.DID, encDocBytes, nil
 }
 
-func (h *Handler) CreateConnRes(pthId, did string, encDidDoc domain.AuthCryptMsg) (domain.ConnRes, error) {
-	res := domain.ConnRes{
+func (h *Handler) CreateConnRes(pthId, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnRes, error) {
+	res := messages.ConnRes{
 		Id:   uuid.New().String(),
 		Type: "https://didcomm.org/didexchange/1.0/response",
 		Thread: struct {
@@ -117,7 +117,7 @@ func (h *Handler) CreateConnRes(pthId, did string, encDidDoc domain.AuthCryptMsg
 	// marshals the encrypted did doc
 	encDocBytes, err := json.Marshal(encDidDoc)
 	if err != nil {
-		return domain.ConnRes{}, fmt.Errorf(`marshalling encrypted did doc failed - %v`, err)
+		return messages.ConnRes{}, fmt.Errorf(`marshalling encrypted did doc failed - %v`, err)
 	}
 
 	res.DIDDocAttach.Id = uuid.New().String()
@@ -128,7 +128,7 @@ func (h *Handler) CreateConnRes(pthId, did string, encDidDoc domain.AuthCryptMsg
 }
 
 func (h *Handler) ParseConnRes(data []byte) (pthId string, encDocBytes []byte, err error) {
-	var res domain.ConnRes
+	var res messages.ConnRes
 	if err = json.Unmarshal(data, &res); err != nil {
 		return ``, nil, fmt.Errorf(`unmarshalling connection response failed - %v`, err)
 	}

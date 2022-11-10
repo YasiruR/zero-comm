@@ -1,4 +1,4 @@
-package domain
+package messages
 
 // Invitation reference: https://identity.foundation/didcomm-messaging/spec/#invitation
 type Invitation struct {

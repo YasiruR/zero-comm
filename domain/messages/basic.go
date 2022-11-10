@@ -1,4 +1,4 @@
-package domain
+package messages
 
 type AuthCryptMsg struct {
 	Protected  string `json:"protected"`

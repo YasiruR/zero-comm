@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/tryfix/log"
 )
@@ -22,9 +23,10 @@ type Prober struct {
 	log          log.Logger
 	label        string
 	peers        map[string]domain.Peer
+	didDocs      map[string]messages.DIDDocument
+	dids         map[string]string
 
-	didDocs map[string]domain.DIDDocument
-	dids    map[string]string
+	//subscribers map[string][]string // topic to sub list - todo use a sync map
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -41,15 +43,17 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		outChan:      c.OutChan,
 		label:        c.Cfg.Name,
 		peers:        map[string]domain.Peer{}, // name as the key may not be ideal
+		didDocs:      map[string]messages.DIDDocument{},
+		dids:         map[string]string{},
 
-		didDocs: map[string]domain.DIDDocument{},
-		dids:    map[string]string{},
+		//subscribers: map[string][]string{},
 	}
 
 	return p, nil
 }
 
 func (p *Prober) Listen() {
+	// can introduce concurrency
 	for {
 		chanMsg := <-p.inChan
 		switch chanMsg.Type {
@@ -62,9 +66,13 @@ func (p *Prober) Listen() {
 				p.log.Error(err)
 			}
 		case domain.MsgTypData:
-			if err := p.ReadMessage(chanMsg.Data); err != nil {
+			if _, err := p.ReadMessage(chanMsg.Data); err != nil {
 				p.log.Error(err)
 			}
+			//case domain.MsgTypSubscribe:
+			//	if err := p.AddSubscriber(chanMsg.Data); err != nil {
+			//		p.log.Error(err)
+			//	}
 		}
 	}
 }
@@ -209,6 +217,8 @@ func (p *Prober) ProcessConnRes(data []byte) error {
 			}
 
 			p.peers[name] = domain.Peer{DID: peer.DID, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
+
+			// todo send subscribe msg if flag is true
 			fmt.Printf("-> Connection established with %s\n", name)
 			return nil
 		}
@@ -224,7 +234,7 @@ func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (endpoint
 	}
 
 	// unmarshalls decrypted did doc
-	var peerDidDoc domain.DIDDocument
+	var peerDidDoc messages.DIDDocument
 	if err = json.Unmarshal(peerDocBytes, &peerDidDoc); err != nil {
 		return ``, nil, fmt.Errorf(`unmarshalling decrypted did doc failed - %v`, err)
 	}
@@ -285,36 +295,60 @@ func (p *Prober) SendMessage(to, text string) error {
 	return nil
 }
 
-func (p *Prober) ReadMessage(data []byte) error {
+func (p *Prober) ReadMessage(data []byte) (msg string, err error) {
 	peerName, err := p.peerByMsg(data)
 	if err != nil {
-		return fmt.Errorf(`getting peer info failed - %v`, err)
+		p.log.Debug(fmt.Sprintf(`getting peer info failed - %v`, err))
+		return ``, nil
 	}
 
 	ownPubKey, err := p.ks.PublicKey(peerName)
 	if err != nil {
-		return fmt.Errorf(`getting public key for connection with %s failed - %v`, peerName, err)
+		return ``, fmt.Errorf(`getting public key for connection with %s failed - %v`, peerName, err)
 	}
 
 	ownPrvKey, err := p.ks.PrivateKey(peerName)
 	if err != nil {
-		return fmt.Errorf(`getting private key for connection with %s failed - %v`, peerName, err)
+		return ``, fmt.Errorf(`getting private key for connection with %s failed - %v`, peerName, err)
 	}
 
 	textBytes, err := p.packer.Unpack(data, ownPubKey, ownPrvKey)
 	if err != nil {
-		return fmt.Errorf(`unpacking message failed - %v`, err)
+		return ``, fmt.Errorf(`unpacking message failed - %v`, err)
 	}
 	p.outChan <- string(textBytes)
-	return nil
+	return msg, nil
 }
+
+// AddSubscriber follows subscription of a topic which is done through a separate
+// DIDComm message. Alternatively, it can be included in connection request.
+//func (p *Prober) AddSubscriber(data []byte) error {
+//	msg, err := p.ReadMessage(data)
+//	if err != nil {
+//		return fmt.Errorf(`reading subscribe msg failed - %v`, err)
+//	}
+//
+//	var sub domain.SubscribeMsg
+//	if err = json.Unmarshal([]byte(msg), &sub); err != nil {
+//		return fmt.Errorf(`unmarshalling subscribe failed - %v`, err)
+//	}
+//
+//	for _, t := range sub.Topics {
+//		if p.subscribers[t] == nil {
+//			p.subscribers[t] = []string{}
+//		}
+//		p.subscribers[t] = append(p.subscribers[t], sub.Label)
+//	}
+//
+//	return nil
+//}
 
 func (p *Prober) setConnPrereqs(peer string) (pubKey, prvKey []byte, err error) {
 	if err = p.ks.GenerateKeys(peer); err != nil {
 		return nil, nil, fmt.Errorf(`generating keys failed - %v`, err)
 	}
 
-	// omitted error since it should occur
+	// omitted errors since they should not occur
 	pubKey, _ = p.ks.PublicKey(peer)
 	prvKey, _ = p.ks.PrivateKey(peer)
 
@@ -330,11 +364,11 @@ func (p *Prober) setConnPrereqs(peer string) (pubKey, prvKey []byte, err error) 
 	return pubKey, prvKey, nil
 }
 
-// todo can improve this since all this unmarshalling will be done again in unpack
-// todo recipient[0] is hardcoded for now
+// can improve this since all this unmarshalling will be done again in unpack todo
+// recipient[0] is hardcoded for now
 func (p *Prober) peerByMsg(data []byte) (name string, err error) {
 	// unmarshal into authcrypt message
-	var msg domain.AuthCryptMsg
+	var msg messages.AuthCryptMsg
 	err = json.Unmarshal(data, &msg)
 	if err != nil {
 		p.log.Error(err)
@@ -342,7 +376,7 @@ func (p *Prober) peerByMsg(data []byte) (name string, err error) {
 	}
 
 	// decode protected payload
-	var payload domain.Payload
+	var payload messages.Payload
 	decodedVal, err := base64.StdEncoding.DecodeString(msg.Protected)
 	if err != nil {
 		p.log.Error(err)

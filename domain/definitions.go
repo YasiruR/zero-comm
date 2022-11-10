@@ -8,7 +8,8 @@ const (
 )
 
 const (
-	MsgTypConnReq = `conn-req`
-	MsgTypConnRes = `conn-res`
-	MsgTypData    = `data`
+	MsgTypConnReq   = `conn-req`
+	MsgTypConnRes   = `conn-res`
+	MsgTypData      = `data`
+	MsgTypSubscribe = `subscribe`
 )
