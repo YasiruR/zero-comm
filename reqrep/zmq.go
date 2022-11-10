@@ -1,4 +1,4 @@
-package transport
+package reqrep
 
 import (
 	"fmt"
@@ -111,10 +111,6 @@ receive:
 	}
 
 	return nil
-}
-
-func (z *Zmq) Subscribe(topic string) {
-
 }
 
 func (z *Zmq) Stop() error {

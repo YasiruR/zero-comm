@@ -6,6 +6,7 @@ type PublisherStatus struct {
 }
 
 type SubscribeMsg struct {
-	Label  string   `json:"label"`
+	Peer   string   `json:"peer"`
+	PubKey string   `json:"pubKey"` // base58 encoding of public key
 	Topics []string `json:"topics"`
 }

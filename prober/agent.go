@@ -45,8 +45,6 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		peers:        map[string]domain.Peer{}, // name as the key may not be ideal
 		didDocs:      map[string]messages.DIDDocument{},
 		dids:         map[string]string{},
-
-		//subscribers: map[string][]string{},
 	}
 
 	return p, nil
@@ -69,10 +67,6 @@ func (p *Prober) Listen() {
 			if _, err := p.ReadMessage(chanMsg.Data); err != nil {
 				p.log.Error(err)
 			}
-			//case domain.MsgTypSubscribe:
-			//	if err := p.AddSubscriber(chanMsg.Data); err != nil {
-			//		p.log.Error(err)
-			//	}
 		}
 	}
 }
@@ -319,29 +313,6 @@ func (p *Prober) ReadMessage(data []byte) (msg string, err error) {
 	p.outChan <- string(textBytes)
 	return msg, nil
 }
-
-// AddSubscriber follows subscription of a topic which is done through a separate
-// DIDComm message. Alternatively, it can be included in connection request.
-//func (p *Prober) AddSubscriber(data []byte) error {
-//	msg, err := p.ReadMessage(data)
-//	if err != nil {
-//		return fmt.Errorf(`reading subscribe msg failed - %v`, err)
-//	}
-//
-//	var sub domain.SubscribeMsg
-//	if err = json.Unmarshal([]byte(msg), &sub); err != nil {
-//		return fmt.Errorf(`unmarshalling subscribe failed - %v`, err)
-//	}
-//
-//	for _, t := range sub.Topics {
-//		if p.subscribers[t] == nil {
-//			p.subscribers[t] = []string{}
-//		}
-//		p.subscribers[t] = append(p.subscribers[t], sub.Label)
-//	}
-//
-//	return nil
-//}
 
 func (p *Prober) setConnPrereqs(peer string) (pubKey, prvKey []byte, err error) {
 	if err = p.ks.GenerateKeys(peer); err != nil {

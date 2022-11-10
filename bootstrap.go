@@ -5,7 +5,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/did"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/log"
-	"github.com/YasiruR/didcomm-prober/transport"
+	"github.com/YasiruR/didcomm-prober/reqrep"
 	"strconv"
 )
 
@@ -42,8 +42,8 @@ func initContainer(cfg *domain.Config) *domain.Container {
 		OutChan: make(chan string),
 	}
 
-	//c.Tr = transport.NewHTTP(c)
-	zmq, err := transport.NewZmq(c)
+	//c.Tr = reqrep.NewHTTP(c)
+	zmq, err := reqrep.NewZmq(c)
 	if err != nil {
 		logger.Fatal(err)
 	}

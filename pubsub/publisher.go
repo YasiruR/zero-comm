@@ -6,21 +6,48 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/prober"
+	"github.com/btcsuite/btcutil/base58"
 	zmq "github.com/pebbe/zmq4"
+	"github.com/tryfix/log"
 )
 
 type Publisher struct {
-	ctx *zmq.Context
-	skt *zmq.Socket
-	prb *prober.Prober
-	ks  domain.KeyService
-
-	peerKeyMap   map[string][]string
-	topicPeerMap map[string]map[string][]string
+	label       string
+	skt         *zmq.Socket
+	prb         *prober.Prober
+	ks          domain.KeyService
+	packer      domain.Packer
+	log         log.Logger
+	subChan     chan domain.ChanMsg
+	topicSubMap map[string]map[string][]byte // topic to subscriber to pub key map - use sync map, can extend to multiple keys per peer
 }
 
-func NewPublisher() {
-	// init pub struct
+func NewPublisher(c *domain.Container, prb *prober.Prober) (*Publisher, error) {
+	// todo use a global context
+	ctx, err := zmq.NewContext()
+	if err != nil {
+		return nil, fmt.Errorf(`generating zmq context failed - %v`, err)
+	}
+
+	skt, err := ctx.NewSocket(zmq.PUB)
+	if err != nil {
+		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
+	}
+
+	if err = skt.Bind(c.Cfg.PubEndpoint); err != nil {
+		return nil, fmt.Errorf(`binding zmq pub socket to %s failed - %v`, c.Cfg.PubEndpoint, err)
+	}
+
+	return &Publisher{
+		label:       c.Cfg.Name,
+		skt:         skt,
+		prb:         prb,
+		ks:          c.KS,
+		packer:      c.Packer,
+		log:         c.Log,
+		subChan:     c.SubChan,
+		topicSubMap: map[string]map[string][]byte{},
+	}, nil
 }
 
 func (p *Publisher) Register(topic string) error {
@@ -36,27 +63,75 @@ func (p *Publisher) Register(topic string) error {
 		return fmt.Errorf(`marshalling publisher status failed - %v`, err)
 	}
 
-	if _, err = p.skt.SendMessage(fmt.Sprintf(`%s %s`, topic, string(byts))); err != nil {
+	if _, err = p.skt.SendMessage(fmt.Sprintf(`%s_pubs %s`, topic, string(byts))); err != nil {
 		return fmt.Errorf(`publishing active status failed - %v`, err)
 	}
 
 	return nil
 }
 
-func (p *Publisher) addDIDConn() {
+// AddSubs follows subscription of a topic which is done through a separate
+// DIDComm message. Alternatively, it can be included in connection request.
+func (p *Publisher) AddSubs() {
+	for {
+		// add termination
+		msg := <-p.subChan
+		unpackedMsg, err := p.prb.ReadMessage(msg.Data)
+		if err != nil {
+			p.log.Error(fmt.Sprintf(`reading subscribe msg failed - %v`, err))
+		}
 
+		var sub messages.SubscribeMsg
+		if err = json.Unmarshal([]byte(unpackedMsg), &sub); err != nil {
+			p.log.Error(fmt.Sprintf(`unmarshalling subscribe message failed - %v`, err))
+		}
+
+		subKey := base58.Decode(sub.PubKey)
+		for _, t := range sub.Topics {
+			if p.topicSubMap[t] == nil {
+				p.topicSubMap[t] = map[string][]byte{}
+			}
+			p.topicSubMap[t][sub.Peer] = subKey
+		}
+	}
 }
 
-func (p *Publisher) AddSubscription() {
+func (p *Publisher) Publish(topic, msg string) error {
+	for sub, subKey := range p.topicSubMap[topic] {
+		ownPubKey, err := p.ks.PublicKey(sub)
+		if err != nil {
+			return fmt.Errorf(`getting public key for connection with %s failed - %v`, sub, err)
+		}
 
-}
+		ownPrvKey, err := p.ks.PrivateKey(sub)
+		if err != nil {
+			return fmt.Errorf(`getting private key for connection with %s failed - %v`, sub, err)
+		}
 
-func (p *Publisher) Publish() {
+		encryptdMsg, err := p.packer.Pack([]byte(msg), subKey, ownPubKey, ownPrvKey)
+		if err != nil {
+			p.log.Error(err)
+			return err
+		}
 
+		data, err := json.Marshal(encryptdMsg)
+		if err != nil {
+			p.log.Error(err)
+			return err
+		}
+
+		if _, err = p.skt.SendMessage(fmt.Sprintf(`%s_%s_%s %s`, topic, p.label, sub, string(data))); err != nil {
+			return fmt.Errorf(`publishing message (%s) failed for %s - %v`, msg, sub, err)
+		}
+	}
+
+	return nil
 }
 
 func (p *Publisher) Close() {
-
+	// publish inactive to all _pubs
+	// close sockets
+	// close context
 }
 
 // create a pub socket for topic_pubs

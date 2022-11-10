@@ -10,19 +10,20 @@ type Config struct {
 	Port             int
 	InvEndpoint      string
 	ExchangeEndpoint string
+	PubEndpoint      string
 	Verbose          bool
 	LogLevel         string
 }
 
 type Container struct {
-	Cfg        *Config
-	KS         KeyService
-	Packer     Packer
-	Tr         Transporter
-	DS         DIDService
-	OOB        OOBService
-	Log        log.Logger
-	InChan     chan ChanMsg
-	InChanData chan []byte
-	OutChan    chan string
+	Cfg     *Config
+	KS      KeyService
+	Packer  Packer
+	Tr      Transporter
+	DS      DIDService
+	OOB     OOBService
+	Log     log.Logger
+	InChan  chan ChanMsg
+	SubChan chan ChanMsg
+	OutChan chan string // todo remove
 }
