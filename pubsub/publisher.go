@@ -133,10 +133,3 @@ func (p *Publisher) Close() error {
 
 	return nil
 }
-
-// create a pub socket for topic_pubs
-// generate one invitation for the topic
-// publish status with inv to topic_pubs
-
-// prober receives multiple conn requests
-// for each request, establish didcomm conn - auto

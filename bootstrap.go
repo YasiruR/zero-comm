@@ -14,17 +14,14 @@ import (
 )
 
 func setConfigs(args *domain.Args) *domain.Config {
-	//hostname := `http://localhost:` + strconv.Itoa(args.Port)
-	hostname := `tcp://127.0.0.1:` + strconv.Itoa(args.Port)
+	//hostname := `http://localhost:`
+	hostname := `tcp://127.0.0.1:`
 	return &domain.Config{
-		Args: domain.Args{
-			Name:    args.Name,
-			Port:    args.Port,
-			Verbose: args.Verbose,
-		},
+		Args:             *args,
 		Hostname:         hostname,
-		InvEndpoint:      hostname + domain.InvitationEndpoint,
-		ExchangeEndpoint: hostname + domain.InvitationEndpoint,
+		InvEndpoint:      hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
+		ExchangeEndpoint: hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
+		PubEndpoint:      hostname + strconv.Itoa(args.PubPort),
 		LogLevel:         "DEBUG",
 	}
 }

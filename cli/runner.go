@@ -26,7 +26,7 @@ type runner struct {
 func ParseArgs() *domain.Args {
 	n := flag.String(`label`, ``, `agent's name'`)
 	p := flag.Int(`port`, 0, `agent's port'`)
-	pub := flag.Int(`pub_port`, 0, `agent's publishing port'`)
+	pub := flag.Int(`pub`, 0, `agent's publishing port'`)
 	v := flag.Bool(`v`, false, `logging`)
 	flag.Parse()
 
@@ -36,7 +36,17 @@ func ParseArgs() *domain.Args {
 func Init(c *domain.Container) {
 	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n", c.Cfg.Args.Name, c.Cfg.Hostname)
 	fmt.Printf("-> Press c and enter for commands\n")
-	r := runner{cfg: c.Cfg, reader: bufio.NewReader(os.Stdin), prober: c.Prober, log: c.Log, outChan: c.OutChan}
+
+	r := &runner{
+		cfg:     c.Cfg,
+		reader:  bufio.NewReader(os.Stdin),
+		prober:  c.Prober,
+		pub:     c.Pub,
+		sub:     c.Sub,
+		outChan: c.OutChan,
+		log:     c.Log,
+	}
+
 	go r.listen()
 	//r.basicCommands()
 	r.enableCommands()
@@ -170,13 +180,14 @@ readTopic:
 		goto readTopic
 	}
 
+	topic = strings.TrimSpace(topic)
 	if err = r.pub.Register(topic); err != nil {
 		fmt.Println("   Error: topic may be invalid, please try again")
 		r.log.Error(err)
 		goto readTopic
 	}
 
-	fmt.Printf("-> Publisher is registered")
+	fmt.Printf("-> Publisher registered with topic %s\n", topic)
 }
 
 func (r *runner) addSubscriber() {
@@ -196,16 +207,17 @@ readBrokers:
 		goto readBrokers
 	}
 
-	brokers := strings.Split(strBrokers, `,`)
+	brokers := strings.Split(strings.TrimSpace(strBrokers), `,`)
+	topic = strings.TrimSpace(topic)
 	r.sub.AddBrokers(topic, brokers)
 
 	if err = r.sub.Subscribe(topic); err != nil {
-		fmt.Println("   Error: topic may be invalid, please try again")
+		fmt.Println("   Error: failed to subscribe, please try again")
 		r.log.Error(err)
 		goto readTopic
 	}
 
-	fmt.Printf("-> Subscribed to %s", topic)
+	fmt.Printf("-> Subscribed to %s\n", topic)
 }
 
 func (r *runner) publishMsg() {
@@ -225,7 +237,7 @@ readMsg:
 		goto readMsg
 	}
 
-	if err = r.pub.Publish(topic, msg); err != nil {
+	if err = r.pub.Publish(strings.TrimSpace(topic), strings.TrimSpace(msg)); err != nil {
 		fmt.Println("   Error: publishing message failed, please try again")
 		r.log.Error(err)
 		goto readTopic
