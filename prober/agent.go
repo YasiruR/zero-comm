@@ -41,7 +41,7 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		oob:          c.OOB,
 		inChan:       c.InChan,
 		outChan:      c.OutChan,
-		label:        c.Cfg.Name,
+		label:        c.Cfg.Args.Name,
 		peers:        map[string]domain.Peer{}, // name as the key may not be ideal
 		didDocs:      map[string]messages.DIDDocument{},
 		dids:         map[string]string{},

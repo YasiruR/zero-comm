@@ -7,8 +7,8 @@ import (
 )
 
 func main() {
-	name, port, verbose := cli.ParseArgs()
-	cfg := setConfigs(name, port, verbose)
+	args := cli.ParseArgs()
+	cfg := setConfigs(args)
 	c := initContainer(cfg)
 
 	prb, err := prober.NewProber(c)

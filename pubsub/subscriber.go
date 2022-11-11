@@ -35,7 +35,7 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container, prb *prober.Prober)
 	}
 
 	s := &Subscriber{
-		label:          c.Cfg.Name,
+		label:          c.Cfg.Args.Name,
 		sktPubs:        sktPubs,
 		sktMsgs:        sktMsgs,
 		prb:            prb,
@@ -51,6 +51,10 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container, prb *prober.Prober)
 	go s.listen()
 
 	return s, nil
+}
+
+func (s *Subscriber) AddBrokers(topic string, brokers []string) {
+	s.topicBrokrMap[topic] = brokers
 }
 
 func (s *Subscriber) Subscribe(topic string) error {

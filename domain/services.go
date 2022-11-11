@@ -40,6 +40,7 @@ type Publisher interface {
 }
 
 type Subscriber interface {
+	AddBrokers(topic string, brokers []string)
 	Subscribe(topic string) error
 }
 

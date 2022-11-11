@@ -32,8 +32,8 @@ func NewPublisher(zmqCtx *zmq.Context, c *domain.Container, prb *prober.Prober) 
 		return nil, fmt.Errorf(`binding zmq pub socket to %s failed - %v`, c.Cfg.PubEndpoint, err)
 	}
 
-	return &Publisher{
-		label:       c.Cfg.Name,
+	p := &Publisher{
+		label:       c.Cfg.Args.Name,
 		skt:         skt,
 		prb:         prb,
 		ks:          c.KS,
@@ -41,7 +41,10 @@ func NewPublisher(zmqCtx *zmq.Context, c *domain.Container, prb *prober.Prober) 
 		log:         c.Log,
 		subChan:     c.SubChan,
 		topicSubMap: map[string]map[string][]byte{},
-	}, nil
+	}
+
+	go p.initAddSubs()
+	return p, err
 }
 
 func (p *Publisher) Register(topic string) error {
@@ -64,20 +67,22 @@ func (p *Publisher) Register(topic string) error {
 	return nil
 }
 
-// AddSubs follows subscription of a topic which is done through a separate
+// initAddSubs follows subscription of a topic which is done through a separate
 // DIDComm message. Alternatively, it can be included in connection request.
-func (p *Publisher) AddSubs() {
+func (p *Publisher) initAddSubs() {
 	for {
 		// add termination
 		msg := <-p.subChan
 		unpackedMsg, err := p.prb.ReadMessage(msg.Data)
 		if err != nil {
 			p.log.Error(fmt.Sprintf(`reading subscribe msg failed - %v`, err))
+			continue
 		}
 
 		var sub messages.SubscribeMsg
 		if err = json.Unmarshal([]byte(unpackedMsg), &sub); err != nil {
 			p.log.Error(fmt.Sprintf(`unmarshalling subscribe message failed - %v`, err))
+			continue
 		}
 
 		subKey := base58.Decode(sub.PubKey)

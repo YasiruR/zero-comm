@@ -4,14 +4,19 @@ import (
 	"github.com/tryfix/log"
 )
 
+type Args struct {
+	Name    string
+	Port    int
+	Verbose bool
+	PubPort int
+}
+
 type Config struct {
-	Name             string
+	Args
 	Hostname         string
-	Port             int
 	InvEndpoint      string
 	ExchangeEndpoint string
 	PubEndpoint      string
-	Verbose          bool
 	LogLevel         string
 }
 

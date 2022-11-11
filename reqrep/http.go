@@ -23,7 +23,7 @@ type HTTP struct {
 
 func NewHTTP(c *domain.Container) *HTTP {
 	return &HTTP{
-		port:   c.Cfg.Port,
+		port:   c.Cfg.Args.Port,
 		packer: c.Packer,
 		ks:     c.KS,
 		log:    c.Log,

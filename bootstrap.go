@@ -9,22 +9,24 @@ import (
 	"strconv"
 )
 
-func setConfigs(name string, port int, verbose bool) *domain.Config {
-	//hostname := `http://localhost:` + strconv.Itoa(port)
-	hostname := `tcp://127.0.0.1:` + strconv.Itoa(port)
+func setConfigs(args *domain.Args) *domain.Config {
+	//hostname := `http://localhost:` + strconv.Itoa(args.Port)
+	hostname := `tcp://127.0.0.1:` + strconv.Itoa(args.Port)
 	return &domain.Config{
-		Name:             name,
+		Args: domain.Args{
+			Name:    args.Name,
+			Port:    args.Port,
+			Verbose: args.Verbose,
+		},
 		Hostname:         hostname,
-		Port:             port,
 		InvEndpoint:      hostname + domain.InvitationEndpoint,
 		ExchangeEndpoint: hostname + domain.InvitationEndpoint,
-		Verbose:          verbose,
 		LogLevel:         "DEBUG",
 	}
 }
 
 func initContainer(cfg *domain.Config) *domain.Container {
-	logger := log.NewLogger(cfg.Verbose)
+	logger := log.NewLogger(cfg.Args.Verbose)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
 	//if err := km.GenerateKeys(); err != nil {
