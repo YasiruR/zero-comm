@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
-	"github.com/YasiruR/didcomm-prober/prober"
 	"github.com/btcsuite/btcutil/base58"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
@@ -14,7 +13,7 @@ import (
 type Publisher struct {
 	label       string
 	skt         *zmq.Socket
-	prb         *prober.Prober
+	prb         domain.DIDCommService
 	ks          domain.KeyService
 	packer      domain.Packer
 	log         log.Logger
@@ -22,7 +21,7 @@ type Publisher struct {
 	topicSubMap map[string]map[string][]byte // topic to subscriber to pub key map - use sync map, can extend to multiple keys per peer
 }
 
-func NewPublisher(zmqCtx *zmq.Context, c *domain.Container, prb *prober.Prober) (*Publisher, error) {
+func NewPublisher(zmqCtx *zmq.Context, c *domain.Container) (*Publisher, error) {
 	skt, err := zmqCtx.NewSocket(zmq.PUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
@@ -35,7 +34,7 @@ func NewPublisher(zmqCtx *zmq.Context, c *domain.Container, prb *prober.Prober) 
 	p := &Publisher{
 		label:       c.Cfg.Args.Name,
 		skt:         skt,
-		prb:         prb,
+		prb:         c.Prober,
 		ks:          c.KS,
 		packer:      c.Packer,
 		log:         c.Log,

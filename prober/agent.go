@@ -26,7 +26,7 @@ type Prober struct {
 	didDocs      map[string]messages.DIDDocument
 	dids         map[string]string
 
-	//subscribers map[string][]string // topic to sub list - todo use a sync map
+	connDone chan domain.Connection
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -45,8 +45,10 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		peers:        map[string]domain.Peer{}, // name as the key may not be ideal
 		didDocs:      map[string]messages.DIDDocument{},
 		dids:         map[string]string{},
+		connDone:     c.ConnDoneChan,
 	}
 
+	go p.Listen()
 	return p, nil
 }
 
@@ -56,11 +58,11 @@ func (p *Prober) Listen() {
 		chanMsg := <-p.inChan
 		switch chanMsg.Type {
 		case domain.MsgTypConnReq:
-			if err := p.ProcessConnReq(chanMsg.Data); err != nil {
+			if err := p.processConnReq(chanMsg.Data); err != nil {
 				p.log.Error(err)
 			}
 		case domain.MsgTypConnRes:
-			if err := p.ProcessConnRes(chanMsg.Data); err != nil {
+			if err := p.processConnRes(chanMsg.Data); err != nil {
 				p.log.Error(err)
 			}
 		case domain.MsgTypData:
@@ -133,8 +135,8 @@ func (p *Prober) Accept(encodedInv string) error {
 	return nil
 }
 
-// ProcessConnReq parses the connection request, creates a connection response and sends it to did endpoint
-func (p *Prober) ProcessConnReq(data []byte) error {
+// processConnReq parses the connection request, creates a connection response and sends it to did endpoint
+func (p *Prober) processConnReq(data []byte) error {
 	peerLabel, pthId, peerDid, peerEncDocBytes, err := p.ds.ParseConnReq(data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
@@ -184,7 +186,7 @@ func (p *Prober) ProcessConnReq(data []byte) error {
 	return nil
 }
 
-func (p *Prober) ProcessConnRes(data []byte) error {
+func (p *Prober) processConnRes(data []byte) error {
 	pthId, peerEncDocBytes, err := p.ds.ParseConnRes(data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
@@ -212,7 +214,10 @@ func (p *Prober) ProcessConnRes(data []byte) error {
 
 			p.peers[name] = domain.Peer{DID: peer.DID, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
 
-			// todo send subscribe msg if flag is true
+			if p.connDone != nil {
+				p.connDone <- domain.Connection{Peer: name, PubKey: peerPubKey}
+			}
+
 			fmt.Printf("-> Connection established with %s\n", name)
 			return nil
 		}

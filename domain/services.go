@@ -7,8 +7,8 @@ import "github.com/YasiruR/didcomm-prober/domain/messages"
 type DIDCommService interface {
 	Invite() (url string, err error)
 	Accept(encodedInv string) error
-	SendMessage(to, text string) error
-	ReadMessage(data []byte) error
+	SendMessage(typ, to, text string) error
+	ReadMessage(data []byte) (msg string, err error)
 }
 
 type DIDService interface {

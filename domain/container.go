@@ -31,5 +31,8 @@ type Container struct {
 	InChan       chan Message
 	SubChan      chan Message
 	ConnDoneChan chan Connection
+	Pub          Publisher
+	Sub          Subscriber
+	Prober       DIDCommService
 	OutChan      chan string // todo remove
 }

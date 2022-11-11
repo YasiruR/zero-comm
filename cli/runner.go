@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
-	"github.com/YasiruR/didcomm-prober/prober"
 	"github.com/tryfix/log"
 	"net/url"
 	"os"
@@ -16,7 +15,7 @@ import (
 type runner struct {
 	cfg     *domain.Config
 	reader  *bufio.Reader
-	prober  *prober.Prober
+	prober  domain.DIDCommService
 	pub     domain.Publisher
 	sub     domain.Subscriber
 	log     log.Logger
@@ -34,10 +33,10 @@ func ParseArgs() *domain.Args {
 	return &domain.Args{Name: *n, Port: *p, PubPort: *pub, Verbose: *v}
 }
 
-func Init(c *domain.Container, prb *prober.Prober) {
+func Init(c *domain.Container) {
 	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n", c.Cfg.Args.Name, c.Cfg.Hostname)
 	fmt.Printf("-> Press c and enter for commands\n")
-	r := runner{cfg: c.Cfg, reader: bufio.NewReader(os.Stdin), prober: prb, log: c.Log, outChan: c.OutChan}
+	r := runner{cfg: c.Cfg, reader: bufio.NewReader(os.Stdin), prober: c.Prober, log: c.Log, outChan: c.OutChan}
 	go r.listen()
 	//r.basicCommands()
 	r.enableCommands()

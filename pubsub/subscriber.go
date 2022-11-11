@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
-	"github.com/YasiruR/didcomm-prober/prober"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 )
@@ -15,7 +14,7 @@ type Subscriber struct {
 	sktPubs       *zmq.Socket
 	sktMsgs       *zmq.Socket
 	topicBrokrMap map[string][]string // publisher list for each topic
-	prb           *prober.Prober
+	prb           domain.DIDCommService
 	ks            domain.KeyService
 	log           log.Logger
 
@@ -23,7 +22,7 @@ type Subscriber struct {
 	brokrPubKeyMap map[string][]byte
 }
 
-func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container, prb *prober.Prober) (*Subscriber, error) {
+func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error) {
 	sktPubs, err := zmqCtx.NewSocket(zmq.SUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating sub socket for _pubs topics failed - %v`, err)
@@ -38,7 +37,7 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container, prb *prober.Prober)
 		label:          c.Cfg.Args.Name,
 		sktPubs:        sktPubs,
 		sktMsgs:        sktMsgs,
-		prb:            prb,
+		prb:            c.Prober,
 		ks:             c.KS,
 		log:            c.Log,
 		connDone:       c.ConnDoneChan,

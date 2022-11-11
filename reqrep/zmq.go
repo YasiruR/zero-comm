@@ -12,20 +12,16 @@ const (
 )
 
 type Zmq struct {
-	server *zmq.Socket
-	log    log.Logger
-	inChan chan domain.Message
-	ctx    *zmq.Context
-	peers  map[string]*zmq.Socket // use sync map if accessed concurrently
+	ctx     *zmq.Context
+	server  *zmq.Socket
+	log     log.Logger
+	inChan  chan domain.Message
+	subChan chan domain.Message
+	peers   map[string]*zmq.Socket // use sync map if accessed concurrently
 }
 
-func NewZmq(c *domain.Container) (*Zmq, error) {
-	ctx, err := zmq.NewContext()
-	if err != nil {
-		return nil, fmt.Errorf(`zmq context initialization failed - %v`, err)
-	}
-
-	repSkt, err := ctx.NewSocket(zmq.REP)
+func NewZmq(zmqCtx *zmq.Context, c *domain.Container) (*Zmq, error) {
+	repSkt, err := zmqCtx.NewSocket(zmq.REP)
 	if err != nil {
 		return nil, fmt.Errorf(`constructing zmq server socket failed - %v`, err)
 	}
@@ -34,7 +30,14 @@ func NewZmq(c *domain.Container) (*Zmq, error) {
 		return nil, fmt.Errorf(`binding zmq socket to %s failed - %v`, c.Cfg.InvEndpoint, err)
 	}
 
-	return &Zmq{ctx: ctx, peers: map[string]*zmq.Socket{}, server: repSkt, log: c.Log, inChan: c.InChan}, nil
+	return &Zmq{
+		ctx:     zmqCtx,
+		peers:   map[string]*zmq.Socket{},
+		server:  repSkt,
+		log:     c.Log,
+		inChan:  c.InChan,
+		subChan: c.SubChan,
+	}, nil
 }
 
 func (z *Zmq) Socket(endpoint string) (skt *zmq.Socket, err error) {
@@ -72,14 +75,16 @@ func (z *Zmq) Start() {
 			continue
 		}
 
-		cm := domain.Message{Type: msg[0], Data: []byte(msg[1])}
+		m := domain.Message{Type: msg[0], Data: []byte(msg[1])}
 		switch msg[0] {
 		case domain.MsgTypConnReq:
-			z.inChan <- cm
+			z.inChan <- m
 		case domain.MsgTypConnRes:
-			z.inChan <- cm
+			z.inChan <- m
 		case domain.MsgTypData:
-			z.inChan <- cm
+			z.inChan <- m
+		case domain.MsgTypSubscribe:
+			z.subChan <- m
 		default:
 			z.log.Error(`invalid message type`, msg)
 		}
