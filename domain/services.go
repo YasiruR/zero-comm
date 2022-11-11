@@ -30,12 +30,17 @@ type OOBService interface {
 
 type QueueService interface {
 	Publisher
-	Subscribe()
+	Subscriber
+	Close() error
 }
 
 type Publisher interface {
 	Register(topic string) error
 	Publish(topic, msg string) error
+}
+
+type Subscriber interface {
+	Subscribe(topic string) error
 }
 
 /* dependencies */

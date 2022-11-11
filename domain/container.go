@@ -16,14 +16,15 @@ type Config struct {
 }
 
 type Container struct {
-	Cfg     *Config
-	KS      KeyService
-	Packer  Packer
-	Tr      Transporter
-	DS      DIDService
-	OOB     OOBService
-	Log     log.Logger
-	InChan  chan ChanMsg
-	SubChan chan ChanMsg
-	OutChan chan string // todo remove
+	Cfg          *Config
+	KS           KeyService
+	Packer       Packer
+	Tr           Transporter
+	DS           DIDService
+	OOB          OOBService
+	Log          log.Logger
+	InChan       chan Message
+	SubChan      chan Message
+	ConnDoneChan chan Connection
+	OutChan      chan string // todo remove
 }

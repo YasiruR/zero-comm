@@ -19,19 +19,49 @@ type Subscriber struct {
 	ks            domain.KeyService
 	log           log.Logger
 
-	connDone       chan domain.ChanConnDone
+	connDone       chan domain.Connection // todo send msgs from agent only if not null
 	brokrPubKeyMap map[string][]byte
 }
 
-func NewSubscriber() {
-	// init sub struct
+func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container, prb *prober.Prober) (*Subscriber, error) {
+	sktPubs, err := zmqCtx.NewSocket(zmq.SUB)
+	if err != nil {
+		return nil, fmt.Errorf(`creating sub socket for _pubs topics failed - %v`, err)
+	}
+
+	sktMsgs, err := zmqCtx.NewSocket(zmq.SUB)
+	if err != nil {
+		return nil, fmt.Errorf(`creating sub socket for data topics failed - %v`, err)
+	}
+
+	s := &Subscriber{
+		label:          c.Cfg.Name,
+		sktPubs:        sktPubs,
+		sktMsgs:        sktMsgs,
+		prb:            prb,
+		ks:             c.KS,
+		log:            c.Log,
+		connDone:       c.ConnDoneChan,
+		topicBrokrMap:  make(map[string][]string),
+		brokrPubKeyMap: make(map[string][]byte),
+	}
+
+	go s.initReqConns()
+	go s.initAddPubs()
+	go s.listen()
+
+	return s, nil
 }
 
-func (s *Subscriber) Subscribe(topic string) {
+func (s *Subscriber) Subscribe(topic string) error {
+	if err := s.subscribePubs(topic); err != nil {
+		return fmt.Errorf(`subscribing to %s_pubs topic failed - %v`, topic, err)
+	}
 
+	return nil
 }
 
-func (s *Subscriber) SubscribePubs(topic string) error {
+func (s *Subscriber) subscribePubs(topic string) error {
 	// todo should be continuous for dynamic subscriptions and publishers
 	for _, pubEndpoint := range s.topicBrokrMap[topic] {
 		if err := s.sktPubs.Connect(pubEndpoint); err != nil {
@@ -39,14 +69,14 @@ func (s *Subscriber) SubscribePubs(topic string) error {
 		}
 
 		if err := s.sktPubs.SetSubscribe(topic + `_pubs`); err != nil {
-			return fmt.Errorf(`subscribing to topic (%s_pubs) failed - %v`, topic, err)
+			return fmt.Errorf(`setting zmq subscription failed - %v`, err)
 		}
 	}
 
 	return nil
 }
 
-func (s *Subscriber) InitPubConn() {
+func (s *Subscriber) initReqConns() {
 	for {
 		// add termination
 		msg, err := s.sktPubs.Recv(0)
@@ -72,7 +102,7 @@ func (s *Subscriber) InitPubConn() {
 	}
 }
 
-func (s *Subscriber) AddPubs() {
+func (s *Subscriber) initAddPubs() {
 	for {
 		// add termination
 		conn := <-s.connDone
@@ -117,7 +147,7 @@ func (s *Subscriber) AddPubs() {
 	}
 }
 
-func (s *Subscriber) Listen() {
+func (s *Subscriber) listen() {
 	for {
 		msg, err := s.sktMsgs.Recv(0)
 		if err != nil {
@@ -135,6 +165,6 @@ func (s *Subscriber) Listen() {
 	}
 }
 
-func (s *Subscriber) Close() {
-
+func (s *Subscriber) Close() error {
+	return nil
 }

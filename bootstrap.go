@@ -31,17 +31,19 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	//	logger.Fatal(err)
 	//}
 
-	// todo add pub endpoint
+	// todo add pub endpoint and topics
 
 	c := &domain.Container{
-		Cfg:     cfg,
-		KS:      km,
-		Packer:  packer,
-		DS:      &did.Handler{},
-		OOB:     did.NewOOBService(cfg),
-		Log:     logger,
-		InChan:  make(chan domain.ChanMsg),
-		OutChan: make(chan string),
+		Cfg:          cfg,
+		KS:           km,
+		Packer:       packer,
+		DS:           &did.Handler{},
+		OOB:          did.NewOOBService(cfg),
+		Log:          logger,
+		InChan:       make(chan domain.Message),
+		SubChan:      make(chan domain.Message),
+		ConnDoneChan: make(chan domain.Connection),
+		OutChan:      make(chan string),
 	}
 
 	//c.Tr = reqrep.NewHTTP(c)

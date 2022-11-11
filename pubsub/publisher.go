@@ -18,18 +18,12 @@ type Publisher struct {
 	ks          domain.KeyService
 	packer      domain.Packer
 	log         log.Logger
-	subChan     chan domain.ChanMsg
+	subChan     chan domain.Message
 	topicSubMap map[string]map[string][]byte // topic to subscriber to pub key map - use sync map, can extend to multiple keys per peer
 }
 
-func NewPublisher(c *domain.Container, prb *prober.Prober) (*Publisher, error) {
-	// todo use a global context
-	ctx, err := zmq.NewContext()
-	if err != nil {
-		return nil, fmt.Errorf(`generating zmq context failed - %v`, err)
-	}
-
-	skt, err := ctx.NewSocket(zmq.PUB)
+func NewPublisher(zmqCtx *zmq.Context, c *domain.Container, prb *prober.Prober) (*Publisher, error) {
+	skt, err := zmqCtx.NewSocket(zmq.PUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
 	}
@@ -128,10 +122,12 @@ func (p *Publisher) Publish(topic, msg string) error {
 	return nil
 }
 
-func (p *Publisher) Close() {
+func (p *Publisher) Close() error {
 	// publish inactive to all _pubs
 	// close sockets
 	// close context
+
+	return nil
 }
 
 // create a pub socket for topic_pubs

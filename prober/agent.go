@@ -13,7 +13,7 @@ import (
 type Prober struct {
 	invEndpoint  string
 	exchEndpoint string
-	inChan       chan domain.ChanMsg
+	inChan       chan domain.Message
 	outChan      chan string
 	ks           domain.KeyService // single key-pair for now
 	tr           domain.Transporter

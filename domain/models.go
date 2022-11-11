@@ -1,5 +1,15 @@
 package domain
 
+type Message struct {
+	Type string
+	Data []byte
+}
+
+type Connection struct {
+	Peer   string
+	PubKey []byte
+}
+
 type Peer struct {
 	DID          string
 	Endpoint     string

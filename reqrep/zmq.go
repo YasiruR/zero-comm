@@ -14,7 +14,7 @@ const (
 type Zmq struct {
 	server *zmq.Socket
 	log    log.Logger
-	inChan chan domain.ChanMsg
+	inChan chan domain.Message
 	ctx    *zmq.Context
 	peers  map[string]*zmq.Socket // use sync map if accessed concurrently
 }
@@ -72,7 +72,7 @@ func (z *Zmq) Start() {
 			continue
 		}
 
-		cm := domain.ChanMsg{Type: msg[0], Data: []byte(msg[1])}
+		cm := domain.Message{Type: msg[0], Data: []byte(msg[1])}
 		switch msg[0] {
 		case domain.MsgTypConnReq:
 			z.inChan <- cm
