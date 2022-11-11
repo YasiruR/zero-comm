@@ -6,8 +6,9 @@ type Message struct {
 }
 
 type Connection struct {
-	Peer   string
-	PubKey []byte
+	Peer     string
+	Endpoint string
+	PubKey   []byte
 }
 
 type Peer struct {

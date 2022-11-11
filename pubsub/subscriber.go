@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
+	"github.com/btcsuite/btcutil/base58"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
+	"net/url"
+	"strings"
 )
 
 type Subscriber struct {
@@ -88,9 +91,15 @@ func (s *Subscriber) initReqConns() {
 			continue
 		}
 
+		frames := strings.Split(msg, " ")
+		if len(frames) != 2 {
+			s.log.Error(fmt.Sprintf(`received a message (%v) with an invalid format - frame count should be 2`, msg))
+			continue
+		}
+
 		var pub messages.PublisherStatus
-		if err = json.Unmarshal([]byte(msg), &pub); err != nil {
-			s.log.Error(fmt.Sprintf(`unmarshalling publisher status failed - %v`, err))
+		if err = json.Unmarshal([]byte(frames[1]), &pub); err != nil {
+			s.log.Error(fmt.Sprintf(`unmarshalling publisher status failed (msg: %s) - %v`, frames[1], err))
 			continue
 		}
 
@@ -99,7 +108,12 @@ func (s *Subscriber) initReqConns() {
 			continue
 		}
 
-		if err = s.prb.Accept(pub.Inv); err != nil {
+		inv, err := s.parseInvURL(pub.Inv)
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`parsing invitation url of publisher failed - %v`, err))
+		}
+
+		if err = s.prb.Accept(inv); err != nil {
 			s.log.Error(fmt.Sprintf(`accepting did invitation failed - %v`, err))
 		}
 	}
@@ -108,24 +122,29 @@ func (s *Subscriber) initReqConns() {
 func (s *Subscriber) initAddPubs() {
 	for {
 		// add termination
-		conn := <-s.connDone
-		publPubKey, err := s.ks.PublicKey(conn.Peer)
+		conn := <-s.connDone // todo check if this works with just req rep
+
+		fmt.Println("CONN DONE: ", conn.Peer)
+		subPublicKey, err := s.ks.PublicKey(conn.Peer)
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`getting public key for the connection with %s failed - %v`, conn.Peer, err))
 			continue
 		}
 
+		fmt.Println("TOPIC BROKER MAP: ", s.topicBrokrMap)
+
 		// fetching topics of the publisher connected
 		var topics []string
 		for topic, pubs := range s.topicBrokrMap {
 			for _, pub := range pubs {
+				fmt.Println("CHECKING PUBS: ", pub, conn.Peer)
 				if pub == conn.Peer {
 					topics = append(topics, topic)
 				}
 			}
 		}
 
-		sm := messages.SubscribeMsg{Peer: s.label, PubKey: string(publPubKey), Topics: topics}
+		sm := messages.SubscribeMsg{Peer: s.label, PubKey: base58.Encode(subPublicKey), Topics: topics}
 		byts, err := json.Marshal(sm)
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`marshalling subscribe message failed - %v`, err))
@@ -136,6 +155,8 @@ func (s *Subscriber) initAddPubs() {
 			s.log.Error(fmt.Sprintf(`sending subscribe message failed - %v`, err))
 			continue
 		}
+
+		fmt.Println("SUBSCRIBED: ", string(byts))
 
 		// subscribing to all topics of the publisher (topic syntax: topic_pub_sub)
 		for _, t := range topics {
@@ -148,6 +169,20 @@ func (s *Subscriber) initAddPubs() {
 
 		s.brokrPubKeyMap[conn.Peer] = conn.PubKey
 	}
+}
+
+func (s *Subscriber) parseInvURL(rawUrl string) (inv string, err error) {
+	u, err := url.Parse(strings.TrimSpace(rawUrl))
+	if err != nil {
+		return ``, fmt.Errorf(`parsing url failed - %v`, err)
+	}
+
+	params, ok := u.Query()[`oob`]
+	if !ok {
+		return ``, fmt.Errorf(`url does not contain an 'oob' parameter`)
+	}
+
+	return params[0], nil
 }
 
 func (s *Subscriber) listen() {

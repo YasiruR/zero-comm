@@ -37,6 +37,7 @@ func (o *OOBService) CreateInv(label, did string, didDoc messages.DIDDocument) (
 }
 
 func (o *OOBService) ParseInv(encInv string) (inv messages.Invitation, endpoint string, pubKey []byte, err error) {
+	//fmt.Println("INV in sub : ", encInv)
 	bytInv := make([]byte, len(encInv))
 	if _, err = base64.URLEncoding.Decode(bytInv, []byte(encInv)); err != nil {
 		return messages.Invitation{}, ``, nil, fmt.Errorf(`base64 url decode failed - %v`, err)

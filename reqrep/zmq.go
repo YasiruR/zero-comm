@@ -84,6 +84,7 @@ func (z *Zmq) Start() {
 		case domain.MsgTypData:
 			z.inChan <- m
 		case domain.MsgTypSubscribe:
+			fmt.Println("SUB MSG TYPE")
 			z.subChan <- m
 		default:
 			z.log.Error(`invalid message type`, msg)

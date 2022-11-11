@@ -181,6 +181,8 @@ readTopic:
 	}
 
 	topic = strings.TrimSpace(topic)
+	topic = `testt`
+	
 	if err = r.pub.Register(topic); err != nil {
 		fmt.Println("   Error: topic may be invalid, please try again")
 		r.log.Error(err)
@@ -209,6 +211,10 @@ readBrokers:
 
 	brokers := strings.Split(strings.TrimSpace(strBrokers), `,`)
 	topic = strings.TrimSpace(topic)
+
+	brokers = []string{`tcp://127.0.0.1:9999`}
+	topic = `testt`
+
 	r.sub.AddBrokers(topic, brokers)
 
 	if err = r.sub.Subscribe(topic); err != nil {
@@ -242,6 +248,8 @@ readMsg:
 		r.log.Error(err)
 		goto readTopic
 	}
+
+	fmt.Printf("-> Published '%s' to %s\n", strings.TrimSpace(msg), strings.TrimSpace(topic))
 }
 
 func (r *runner) listen() {

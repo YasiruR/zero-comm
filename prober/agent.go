@@ -316,7 +316,8 @@ func (p *Prober) ReadMessage(data []byte) (msg string, err error) {
 		return ``, fmt.Errorf(`unpacking message failed - %v`, err)
 	}
 	p.outChan <- string(textBytes)
-	return msg, nil
+
+	return string(textBytes), nil
 }
 
 func (p *Prober) setConnPrereqs(peer string) (pubKey, prvKey []byte, err error) {

@@ -40,13 +40,13 @@ func initContainer(cfg *domain.Config) *domain.Container {
 		Log:          logger,
 		InChan:       make(chan domain.Message),
 		SubChan:      make(chan domain.Message),
-		ConnDoneChan: nil,
+		ConnDoneChan: make(chan domain.Connection),
 		OutChan:      make(chan string),
 	}
 
-	if c.Cfg.PubPort != 0 {
-		c.ConnDoneChan = make(chan domain.Connection)
-	}
+	//if c.Cfg.PubPort != 0 {
+	//	c.ConnDoneChan = make(chan domain.Connection)
+	//}
 
 	ctx, err := zmq.NewContext()
 	if err != nil {
