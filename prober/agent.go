@@ -297,8 +297,8 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 func (p *Prober) ReadMessage(data []byte) (msg string, err error) {
 	peerName, err := p.peerByMsg(data)
 	if err != nil {
-		p.log.Debug(fmt.Sprintf(`getting peer info failed - %v`, err))
-		return ``, nil
+		//p.log.Debug(fmt.Sprintf(`getting peer info failed - %v`, err))
+		return ``, fmt.Errorf(`getting peer info failed - %v`, err)
 	}
 
 	ownPubKey, err := p.ks.PublicKey(peerName)
@@ -348,25 +348,21 @@ func (p *Prober) peerByMsg(data []byte) (name string, err error) {
 	var msg messages.AuthCryptMsg
 	err = json.Unmarshal(data, &msg)
 	if err != nil {
-		p.log.Error(err)
-		return ``, err
+		return ``, fmt.Errorf(`unmarshalling authcrypt message failed - %v`, err)
 	}
 
 	// decode protected payload
 	var payload messages.Payload
 	decodedVal, err := base64.StdEncoding.DecodeString(msg.Protected)
 	if err != nil {
-		p.log.Error(err)
-		return ``, err
+		return ``, fmt.Errorf(`decoding protected value with base64 failed - %v`, err)
 	}
 
 	err = json.Unmarshal(decodedVal, &payload)
 	if err != nil {
-		p.log.Error(err)
-		return ``, err
+		return ``, fmt.Errorf(`unmarshalling protexted payload failed - %v`, err)
 	}
 
 	decodedPubKey := base58.Decode(payload.Recipients[0].Header.Kid)
-
 	return p.ks.Peer(decodedPubKey)
 }

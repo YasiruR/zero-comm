@@ -58,8 +58,8 @@ basicCmds:
 		"[1] Generate invitation\n\t" +
 		"[2] Connect via invitation\n\t" +
 		"[3] Send a message\n\t" +
-		"[4] Add a publisher\n\t" +
-		"[5] Add a subscriber\n\t" +
+		"[4] Register a publisher\n\t" +
+		"[5] Set a subscriber\n\t" +
 		"[6] Publish a message\n\t" +
 		"[7] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
@@ -181,8 +181,6 @@ readTopic:
 	}
 
 	topic = strings.TrimSpace(topic)
-	topic = `testt`
-
 	if err = r.pub.Register(topic); err != nil {
 		fmt.Println("   Error: topic may be invalid, please try again")
 		r.log.Error(err)
@@ -212,18 +210,13 @@ readBrokers:
 	brokers := strings.Split(strings.TrimSpace(strBrokers), `,`)
 	topic = strings.TrimSpace(topic)
 
-	brokers = []string{`tcp://127.0.0.1:9999`}
-	topic = `testt`
-
+	//brokers = []string{`tcp://127.0.0.1:9999`}
 	r.sub.AddBrokers(topic, brokers)
-
 	if err = r.sub.Subscribe(topic); err != nil {
 		fmt.Println("   Error: failed to subscribe, please try again")
 		r.log.Error(err)
 		goto readTopic
 	}
-
-	fmt.Printf("-> Subscribed to %s\n", topic)
 }
 
 func (r *runner) publishMsg() {
@@ -248,8 +241,6 @@ readMsg:
 		r.log.Error(err)
 		goto readTopic
 	}
-
-	fmt.Printf("-> Published '%s' to %s\n", strings.TrimSpace(msg), strings.TrimSpace(topic))
 }
 
 func (r *runner) listen() {
@@ -261,4 +252,11 @@ func (r *runner) listen() {
 		}
 		fmt.Printf("-> Message received: %s", text)
 	}
+}
+
+func (r *runner) cancelCmd(input string) bool {
+	if strings.TrimSpace(input) == `b` || strings.TrimSpace(input) == `B` {
+		return true
+	}
+	return false
 }

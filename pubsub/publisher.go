@@ -120,9 +120,12 @@ func (p *Publisher) Publish(topic, msg string) error {
 			return err
 		}
 
-		if _, err = p.skt.SendMessage(fmt.Sprintf(`%s_%s_%s %s`, topic, p.label, sub, string(data))); err != nil {
+		subTopic := topic + `_` + p.label + `_` + sub
+		if _, err = p.skt.SendMessage(fmt.Sprintf(`%s %s`, subTopic, string(data))); err != nil {
 			return fmt.Errorf(`publishing message (%s) failed for %s - %v`, msg, sub, err)
 		}
+
+		fmt.Printf("-> Published '%s' to %s\n", msg, subTopic)
 	}
 
 	return nil

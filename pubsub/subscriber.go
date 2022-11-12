@@ -12,24 +12,15 @@ import (
 	"strings"
 )
 
-type publisher struct {
-	peer     string
-	endpoint string
-	pubKey   []byte
-}
-
 type Subscriber struct {
-	label   string
-	sktPubs *zmq.Socket
-	sktMsgs *zmq.Socket
-	prb     domain.DIDCommService
-	ks      domain.KeyService
-	log     log.Logger
-
-	connDone chan domain.Connection // todo send msgs from agent only if not null
-	//brokrPubKeyMap map[string][]byte
-	//topicPubMap map[string][]publisher
-	topicBrokrMap map[string][]string // publisher list for each topic
+	label         string
+	sktPubs       *zmq.Socket
+	sktMsgs       *zmq.Socket
+	prb           domain.DIDCommService
+	ks            domain.KeyService
+	log           log.Logger
+	connDone      chan domain.Connection
+	topicBrokrMap map[string][]string // broker list for each topic
 	topicPeerMap  map[string][]string
 }
 
@@ -45,15 +36,13 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error
 	}
 
 	s := &Subscriber{
-		label:    c.Cfg.Args.Name,
-		sktPubs:  sktPubs,
-		sktMsgs:  sktMsgs,
-		prb:      c.Prober,
-		ks:       c.KS,
-		log:      c.Log,
-		connDone: c.ConnDoneChan,
-		//brokrPubKeyMap: make(map[string][]byte),
-		//topicPubMap:    make(map[string][]publisher),
+		label:         c.Cfg.Args.Name,
+		sktPubs:       sktPubs,
+		sktMsgs:       sktMsgs,
+		prb:           c.Prober,
+		ks:            c.KS,
+		log:           c.Log,
+		connDone:      c.ConnDoneChan,
 		topicBrokrMap: make(map[string][]string),
 		topicPeerMap:  make(map[string][]string),
 	}
@@ -67,13 +56,6 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error
 
 func (s *Subscriber) AddBrokers(topic string, brokers []string) {
 	s.topicBrokrMap[topic] = brokers
-
-	//for _, b := range brokers {
-	//	if s.topicPubMap[topic] == nil {
-	//		s.topicPubMap[topic] = []publisher{}
-	//	}
-	//	s.topicPubMap[topic] = append(s.topicPubMap[topic], publisher{endpoint: b})
-	//}
 }
 
 func (s *Subscriber) Subscribe(topic string) error {
@@ -88,7 +70,11 @@ func (s *Subscriber) subscribePubs(topic string) error {
 	// todo should be continuous for dynamic subscriptions and publishers
 	for _, pubEndpoint := range s.topicBrokrMap[topic] {
 		if err := s.sktPubs.Connect(pubEndpoint); err != nil {
-			return fmt.Errorf(`connecting to publisher (%s) failed - %v`, pubEndpoint, err)
+			return fmt.Errorf(`connecting to publisher for status (%s) failed - %v`, pubEndpoint, err)
+		}
+
+		if err := s.sktMsgs.Connect(pubEndpoint); err != nil {
+			return fmt.Errorf(`connecting to publisher for messages (%s) failed - %v`, pubEndpoint, err)
 		}
 
 		if err := s.sktPubs.SetSubscribe(topic + `_pubs`); err != nil {
@@ -156,7 +142,6 @@ func (s *Subscriber) initAddPubs() {
 		var topics []string
 		for topic, pubs := range s.topicPeerMap {
 			for _, pub := range pubs {
-				fmt.Println("CHECKING PUBS: ", pub, conn.Peer)
 				if pub == conn.Peer {
 					topics = append(topics, topic)
 				}
@@ -182,9 +167,8 @@ func (s *Subscriber) initAddPubs() {
 				s.log.Error(fmt.Sprintf(`setting zmq subscription failed for topic %s - %v`, subTopic, err))
 				continue
 			}
+			fmt.Printf("-> Subscribed to %s\n", subTopic)
 		}
-
-		//s.brokrPubKeyMap[conn.Peer] = conn.PubKey
 	}
 }
 
@@ -210,13 +194,19 @@ func (s *Subscriber) listen() {
 			continue
 		}
 
-		text, err := s.prb.ReadMessage([]byte(msg))
+		frames := strings.Split(msg, ` `)
+		if len(frames) != 2 {
+			s.log.Error(fmt.Sprintf(`received an invalid subscribed message (%v) - %v`, frames, err))
+			continue
+		}
+
+		text, err := s.prb.ReadMessage([]byte(frames[1]))
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`reading subscribed message failed - %v`, err))
 			continue
 		}
 
-		fmt.Printf("-> Message received: %s\n", text)
+		fmt.Printf("-> Message received from publisher: %s\n", text)
 	}
 }
 
