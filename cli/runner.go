@@ -114,132 +114,67 @@ func (r *runner) enableCommands() {
 func (r *runner) generateInvitation() {
 	inv, err := r.prober.Invite()
 	if err != nil {
-		fmt.Println("-> Error: generating invitation failed")
+		r.error(`generating invitation failed`, err)
 		return
 	}
 
-	fmt.Printf("-> Invitation URL: %s\n", inv)
+	r.output(fmt.Sprintf("Invitation URL: %s", inv))
 }
 
 func (r *runner) connectWithInv() {
-readUrl:
-	fmt.Printf("-> Provide invitation URL: ")
-	rawUrl, err := r.reader.ReadString('\n')
+	u, err := url.Parse(strings.TrimSpace(r.input(`Invitation (in URL form)`)))
 	if err != nil {
-		fmt.Println("   Error: reading url failed, please try again")
-		goto readUrl
-	}
-
-	u, err := url.Parse(strings.TrimSpace(rawUrl))
-	if err != nil {
-		fmt.Println("   Error: invalid url format, please try again")
-		goto readUrl
+		r.error(`invalid url format, please try again`, err)
+		return
 	}
 
 	inv, ok := u.Query()[`oob`]
 	if !ok {
-		fmt.Println("   Error: invitation url must contain 'oob' parameter, please try again")
-		goto readUrl
+		r.error(`invitation url must contain 'oob' parameter, please try again`, err)
+		return
 	}
 
 	if _, err = r.prober.Accept(inv[0]); err != nil {
-		fmt.Println("   Error: invitation may be invalid, please try again")
-		r.log.Error(err)
-		goto readUrl
+		r.error(`invitation may be invalid, please try again`, err)
 	}
 }
 
 func (r *runner) sendMsg() {
-readName:
-	fmt.Printf("-> Enter recipient: ")
-	peer, err := r.reader.ReadString('\n')
-	if err != nil {
-		fmt.Println("   Error: reading recipient failed, please try again")
-		goto readName
-	}
+	peer := strings.TrimSpace(r.input(`Recipient`))
+	msg := r.input(`Message`)
 
-readMsg:
-	fmt.Printf("-> Enter message: ")
-	msg, err := r.reader.ReadString('\n')
-	if err != nil {
-		fmt.Println("   Error: reading endpoint failed, please try again")
-		goto readMsg
-	}
-
-	if err = r.prober.SendMessage(domain.MsgTypData, strings.TrimSpace(peer), msg); err != nil {
-		fmt.Printf("   Error: sending message failed due to %s", err.Error())
+	if err := r.prober.SendMessage(domain.MsgTypData, peer, msg); err != nil {
+		r.error(`sending message failed`, err)
 	}
 }
 
 func (r *runner) addPublisher() {
-readTopic:
-	fmt.Printf("-> Topic: ")
-	topic, err := r.reader.ReadString('\n')
-	if err != nil {
-		fmt.Println("   Error: reading topic failed, please try again")
-		goto readTopic
+	topic := strings.TrimSpace(r.input(`Topic`))
+	if err := r.pub.Register(topic); err != nil {
+		r.error(`topic may be invalid, please try again`, err)
+		return
 	}
 
-	topic = strings.TrimSpace(topic)
-	if err = r.pub.Register(topic); err != nil {
-		fmt.Println("   Error: topic may be invalid, please try again")
-		r.log.Error(err)
-		goto readTopic
-	}
-
-	fmt.Printf("-> Publisher registered with topic %s\n", topic)
+	r.output(fmt.Sprintf("Publisher registered with topic %s", topic))
 }
 
 func (r *runner) addSubscriber() {
-readTopic:
-	fmt.Printf("-> Topic: ")
-	topic, err := r.reader.ReadString('\n')
-	if err != nil {
-		fmt.Println("   Error: reading topic failed, please try again")
-		goto readTopic
-	}
-
-readBrokers:
-	fmt.Printf("-> Brokers (as a comma-separated list): ")
-	strBrokers, err := r.reader.ReadString('\n')
-	if err != nil {
-		fmt.Println("   Error: reading brokers failed, please try again")
-		goto readBrokers
-	}
-
+	topic := strings.TrimSpace(r.input(`Topic`))
+	strBrokers := r.input(`Brokers (as a comma-separated list)`)
 	brokers := strings.Split(strings.TrimSpace(strBrokers), `,`)
-	topic = strings.TrimSpace(topic)
-
-	//brokers = []string{`tcp://127.0.0.1:9999`}
 	r.sub.AddBrokers(topic, brokers)
-	if err = r.sub.Subscribe(topic); err != nil {
-		fmt.Println("   Error: failed to subscribe, please try again")
-		r.log.Error(err)
-		goto readTopic
+
+	if err := r.sub.Subscribe(topic); err != nil {
+		r.error(`failed to subscribe, please try again`, err)
 	}
 }
 
 func (r *runner) publishMsg() {
-readTopic:
-	fmt.Printf("-> Topic: ")
-	topic, err := r.reader.ReadString('\n')
-	if err != nil {
-		fmt.Println("   Error: reading topic failed, please try again")
-		goto readTopic
-	}
+	topic := strings.TrimSpace(r.input(`Topic`))
+	msg := strings.TrimSpace(r.input(`Message`))
 
-readMsg:
-	fmt.Printf("-> Enter message: ")
-	msg, err := r.reader.ReadString('\n')
-	if err != nil {
-		fmt.Println("   Error: reading endpoint failed, please try again")
-		goto readMsg
-	}
-
-	if err = r.pub.Publish(strings.TrimSpace(topic), strings.TrimSpace(msg)); err != nil {
-		fmt.Println("   Error: publishing message failed, please try again")
-		r.log.Error(err)
-		goto readTopic
+	if err := r.pub.Publish(topic, msg); err != nil {
+		r.error(`publishing message failed, please try again`, err)
 	}
 }
 
@@ -250,8 +185,28 @@ func (r *runner) listen() {
 			atomic.StoreUint64(&r.disCmds, 0)
 			fmt.Println()
 		}
-		fmt.Printf("-> Message received: %s", text)
+		r.output(fmt.Sprintf("Message received: %s", text)) // todo should not be for published msgs
 	}
+}
+
+func (r *runner) input(label string) (input string) {
+readInput:
+	fmt.Printf("   ? %s: ", label)
+	msg, err := r.reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("   ! Error: reading %s failed, please try again\n", label)
+		goto readInput
+	}
+	return msg
+}
+
+func (r *runner) output(text string) {
+	fmt.Printf("-> %s\n", text)
+}
+
+func (r *runner) error(cmdOut string, err error) {
+	fmt.Printf("   ! Error: %s\n", cmdOut)
+	r.log.Error(err)
 }
 
 func (r *runner) cancelCmd(input string) bool {
