@@ -21,7 +21,7 @@ type Publisher struct {
 	topicSubMap map[string]map[string][]byte // topic to subscriber to pub key map - use sync map, can extend to multiple keys per peer
 }
 
-// todo add publisher as a service endpoint in did doc
+// todo add publisher as a service endpoint in did doc / invitation
 
 func NewPublisher(zmqCtx *zmq.Context, c *domain.Container) (*Publisher, error) {
 	skt, err := zmqCtx.NewSocket(zmq.PUB)
@@ -55,9 +55,7 @@ func (p *Publisher) Register(topic string) error {
 		return fmt.Errorf(`generating invitation failed - %v`, err)
 	}
 
-	//fmt.Println("INV in pub : ", inv)
-
-	status := messages.PublisherStatus{Active: true, Inv: inv}
+	status := messages.PublisherStatus{Active: true, Inv: inv, Topic: topic}
 	byts, err := json.Marshal(status)
 	if err != nil {
 		return fmt.Errorf(`marshalling publisher status failed - %v`, err)
@@ -82,9 +80,6 @@ func (p *Publisher) initAddSubs() {
 			continue
 		}
 
-		//fmt.Println("\nMSG DATA: ", string(msg.Data))
-		fmt.Println("UNPACKED SUB MSG: ", unpackedMsg)
-
 		var sub messages.SubscribeMsg
 		if err = json.Unmarshal([]byte(unpackedMsg), &sub); err != nil {
 			p.log.Error(fmt.Sprintf(`unmarshalling subscribe message failed - %v`, err))
@@ -102,7 +97,6 @@ func (p *Publisher) initAddSubs() {
 }
 
 func (p *Publisher) Publish(topic, msg string) error {
-	fmt.Println("PUBLISH 1: ", p.topicSubMap[topic])
 	for sub, subKey := range p.topicSubMap[topic] {
 		ownPubKey, err := p.ks.PublicKey(sub)
 		if err != nil {

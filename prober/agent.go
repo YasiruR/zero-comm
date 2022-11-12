@@ -91,48 +91,48 @@ func (p *Prober) Invite() (url string, err error) {
 }
 
 // Accept creates a connection request and sends it to the invitation endpoint
-func (p *Prober) Accept(encodedInv string) error {
+func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 	inv, invEndpoint, peerInvPubKey, err := p.oob.ParseInv(encodedInv)
 	if err != nil {
-		return fmt.Errorf(`parsing invitation failed - %v`, err)
+		return ``, fmt.Errorf(`parsing invitation failed - %v`, err)
 	}
 
 	// set up prerequisites for a connection (diddoc, did, keys)
 	pubKey, prvKey, err := p.setConnPrereqs(inv.Label)
 	if err != nil {
-		return fmt.Errorf(`setting up prerequisites for connection with %s failed - %v`, inv.Label, err)
+		return ``, fmt.Errorf(`setting up prerequisites for connection with %s failed - %v`, inv.Label, err)
 	}
 
 	// marshals did doc to proceed with packing process
 	docBytes, err := json.Marshal(p.didDocs[inv.Label])
 	if err != nil {
-		return fmt.Errorf(`marshalling did doc failed - %v`, err)
+		return ``, fmt.Errorf(`marshalling did doc failed - %v`, err)
 	}
 
 	// encrypts did doc with peer invitation public key and default own key pair
 	encDoc, err := p.packer.Pack(docBytes, peerInvPubKey, pubKey, prvKey)
 	if err != nil {
-		return fmt.Errorf(`encrypting did doc failed - %v`, err)
+		return ``, fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
 	// creates connection request
 	connReq, err := p.ds.CreateConnReq(p.label, inv.Id, p.dids[inv.Label], encDoc)
 	if err != nil {
-		return fmt.Errorf(`creating connection request failed - %v`, err)
+		return ``, fmt.Errorf(`creating connection request failed - %v`, err)
 	}
 
 	// marshals connection request
 	connReqBytes, err := json.Marshal(connReq)
 	if err != nil {
-		return fmt.Errorf(`marshalling connection request failed - %v`, err)
+		return ``, fmt.Errorf(`marshalling connection request failed - %v`, err)
 	}
 
 	if err = p.tr.Send(domain.MsgTypConnReq, connReqBytes, invEndpoint); err != nil {
-		return fmt.Errorf(`sending connection request failed - %v`, err)
+		return ``, fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
 	p.peers[inv.Label] = domain.Peer{DID: inv.From, ExchangeThId: inv.Id}
-	return nil
+	return inv.Label, nil
 }
 
 // processConnReq parses the connection request, creates a connection response and sends it to did endpoint

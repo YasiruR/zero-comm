@@ -142,7 +142,7 @@ readUrl:
 		goto readUrl
 	}
 
-	if err = r.prober.Accept(inv[0]); err != nil {
+	if _, err = r.prober.Accept(inv[0]); err != nil {
 		fmt.Println("   Error: invitation may be invalid, please try again")
 		r.log.Error(err)
 		goto readUrl
@@ -182,7 +182,7 @@ readTopic:
 
 	topic = strings.TrimSpace(topic)
 	topic = `testt`
-	
+
 	if err = r.pub.Register(topic); err != nil {
 		fmt.Println("   Error: topic may be invalid, please try again")
 		r.log.Error(err)
