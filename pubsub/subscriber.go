@@ -148,6 +148,10 @@ func (s *Subscriber) initAddPubs() {
 			}
 		}
 
+		if len(topics) == 0 {
+			continue
+		}
+
 		sm := messages.SubscribeMsg{Peer: s.label, PubKey: base58.Encode(subPublicKey), Topics: topics}
 		byts, err := json.Marshal(sm)
 		if err != nil {
@@ -200,13 +204,11 @@ func (s *Subscriber) listen() {
 			continue
 		}
 
-		text, err := s.prb.ReadMessage([]byte(frames[1]))
+		_, err = s.prb.ReadMessage([]byte(frames[1]))
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`reading subscribed message failed - %v`, err))
 			continue
 		}
-
-		fmt.Printf("-> Message received from publisher: %s\n", text)
 	}
 }
 

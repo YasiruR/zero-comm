@@ -214,6 +214,7 @@ func (p *Prober) processConnRes(data []byte) error {
 
 			p.peers[name] = domain.Peer{DID: peer.DID, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
 
+			// todo should not be sent to non-pubsub relationships
 			if p.connDone != nil {
 				p.connDone <- domain.Connection{Peer: name, PubKey: peerPubKey}
 			}

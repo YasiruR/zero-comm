@@ -34,7 +34,7 @@ func ParseArgs() *domain.Args {
 }
 
 func Init(c *domain.Container) {
-	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n", c.Cfg.Args.Name, c.Cfg.Hostname)
+	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n", c.Cfg.Args.Name, c.Cfg.Hostname[:len(c.Cfg.Hostname)-1])
 	fmt.Printf("-> Press c and enter for commands\n")
 
 	r := &runner{
