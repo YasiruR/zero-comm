@@ -1,32 +1,47 @@
 package domain
 
+import "github.com/YasiruR/didcomm-prober/domain/messages"
+
 /* core services */
 
 type DIDCommService interface {
 	Invite() (url string, err error)
-	Accept(encodedInv string) error
-	SendMessage(to, text string) error
-	ReadMessage(data []byte) error
+	Accept(encodedInv string) (sender string, err error)
+	SendMessage(typ, to, text string) error
+	ReadMessage(data []byte) (msg string, err error)
 }
 
 type DIDService interface {
-	CreateDIDDoc(endpoint, typ string, encPubKey []byte) DIDDocument
-	CreatePeerDID(doc DIDDocument) (did string, err error)
+	CreateDIDDoc(endpoint, typ string, pubKey []byte) messages.DIDDocument
+	CreatePeerDID(doc messages.DIDDocument) (did string, err error)
 	ValidatePeerDID(did string) error
-	CreateConnReq(label, pthid, did string, encDidDoc AuthCryptMsg) (ConnReq, error)
+	CreateConnReq(label, pthid, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnReq, error)
 	ParseConnReq(data []byte) (label, pthId, peerDid string, encDocBytes []byte, err error)
-	CreateConnRes(pthId, did string, encDidDoc AuthCryptMsg) (ConnRes, error)
+	CreateConnRes(pthId, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnRes, error)
 	ParseConnRes(data []byte) (pthId string, encDocBytes []byte, err error)
 }
 
 type OOBService interface {
-	CreateInv(label, did string, didDoc DIDDocument) (url string, err error)
-	ParseInv(encInv string) (inv Invitation, endpoint string, pubKey []byte, err error)
+	CreateInv(label, did string, didDoc messages.DIDDocument) (url string, err error)
+	ParseInv(encInv string) (inv messages.Invitation, endpoint string, pubKey []byte, err error)
 }
 
+/* message queue functions */
+
 type QueueService interface {
-	Publish()
-	Subscribe()
+	Publisher
+	Subscriber
+	Close() error
+}
+
+type Publisher interface {
+	Register(topic string) error
+	Publish(topic, msg string) error
+}
+
+type Subscriber interface {
+	AddBrokers(topic string, brokers []string)
+	Subscribe(topic string) error
 }
 
 /* dependencies */
@@ -36,12 +51,12 @@ type Transporter interface {
 	Start()
 	// Send transmits the message but marshalling should be independent of the
 	// transport layer to support multiple encoding mechanisms
-	Send(data []byte, endpoint string) error
+	Send(typ string, data []byte, endpoint string) error
 	Stop() error
 }
 
 type Packer interface {
-	Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (AuthCryptMsg, error)
+	Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (messages.AuthCryptMsg, error)
 	Unpack(data, recPubKey, recPrvKey []byte) (output []byte, err error)
 }
 
@@ -55,9 +70,10 @@ type Encryptor interface {
 }
 
 type KeyService interface {
-	GenerateKeys() error
-	PublicKey() []byte
-	PrivateKey() []byte
+	GenerateKeys(peer string) error
+	Peer(pubKey []byte) (name string, err error)
+	PublicKey(peer string) ([]byte, error)
+	PrivateKey(peer string) ([]byte, error)
 	GenerateInvKeys() error
 	InvPublicKey() []byte
 	InvPrivateKey() []byte

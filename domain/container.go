@@ -4,32 +4,35 @@ import (
 	"github.com/tryfix/log"
 )
 
-const (
-	//InvitationEndpoint = `/invitation/`
-	InvitationEndpoint = ``
-	ExchangeEndpoint   = `/did-exchange/`
-	MessageEndpoint    = `/didcomm-message/` // todo use this
-)
+type Args struct {
+	Name    string
+	Port    int
+	Verbose bool
+	PubPort int
+}
 
 type Config struct {
-	Name             string
+	Args
 	Hostname         string
-	Port             int
 	InvEndpoint      string
 	ExchangeEndpoint string
-	MessageEndpoint  string
-	Verbose          bool
+	PubEndpoint      string
 	LogLevel         string
 }
 
 type Container struct {
-	Cfg     *Config
-	KS      KeyService
-	Packer  Packer
-	Tr      Transporter
-	DS      DIDService
-	OOB     OOBService
-	Log     log.Logger
-	InChan  chan []byte
-	OutChan chan string
+	Cfg          *Config
+	KS           KeyService
+	Packer       Packer
+	Tr           Transporter
+	DS           DIDService
+	OOB          OOBService
+	Log          log.Logger
+	InChan       chan Message
+	SubChan      chan Message
+	ConnDoneChan chan Connection
+	Pub          Publisher
+	Sub          Subscriber
+	Prober       DIDCommService
+	OutChan      chan string // todo remove
 }

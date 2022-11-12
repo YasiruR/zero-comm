@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/tryfix/log"
 	rand2 "math/rand"
@@ -21,7 +22,7 @@ func NewPacker(logger log.Logger) *Packer {
 	return &Packer{enc: &encryptor{}, log: logger}
 }
 
-func (p *Packer) Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (domain.AuthCryptMsg, error) {
+func (p *Packer) Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (messages.AuthCryptMsg, error) {
 	// generating and encoding the nonce
 	cekIv := []byte(strconv.Itoa(rand2.Int()))
 	encodedCekIv := base64.StdEncoding.EncodeToString(cekIv)
@@ -30,30 +31,30 @@ func (p *Packer) Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (d
 	cek := make([]byte, 64)
 	_, err := rand.Read(cek)
 	if err != nil {
-		return domain.AuthCryptMsg{}, err
+		return messages.AuthCryptMsg{}, err
 	}
 
 	// encrypting cek so it will be decrypted by recipient
 	encryptedCek, err := p.enc.Box(cek, cekIv, recPubKey, sendPrvKey)
 	if err != nil {
-		return domain.AuthCryptMsg{}, err
+		return messages.AuthCryptMsg{}, err
 	}
 
 	// encrypting sender ver key
 	encryptedSendKey, err := p.enc.SealBox(sendPubKey, recPubKey)
 	if err != nil {
-		return domain.AuthCryptMsg{}, err
+		return messages.AuthCryptMsg{}, err
 	}
 
 	// constructing payload
-	payload := domain.Payload{
+	payload := messages.Payload{
 		Enc: "xchacha20poly1305_ietf",
 		Typ: "JWM/1.0",
 		Alg: "Authcrypt",
-		Recipients: []domain.Recipient{
+		Recipients: []messages.Recipient{
 			{
 				EncryptedKey: base64.StdEncoding.EncodeToString(encryptedCek),
-				Header: domain.Header{
+				Header: messages.Header{
 					Kid:    base58.Encode(recPubKey),
 					Iv:     encodedCekIv,
 					Sender: base64.StdEncoding.EncodeToString(encryptedSendKey),
@@ -65,7 +66,7 @@ func (p *Packer) Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (d
 	// base64 encoding of the payload
 	encPayload, err := json.Marshal(payload)
 	if err != nil {
-		return domain.AuthCryptMsg{}, err
+		return messages.AuthCryptMsg{}, err
 	}
 	protectedVal := base64.StdEncoding.EncodeToString(encPayload)
 
@@ -73,11 +74,11 @@ func (p *Packer) Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (d
 	iv := []byte(strconv.Itoa(rand2.Int()))
 	cipher, mac, err := p.enc.EncryptDetached(string(input), string(encPayload), iv, cek)
 	if err != nil {
-		return domain.AuthCryptMsg{}, err
+		return messages.AuthCryptMsg{}, err
 	}
 
 	// constructing the final message
-	authCryptMsg := domain.AuthCryptMsg{
+	authCryptMsg := messages.AuthCryptMsg{
 		Protected:  protectedVal,
 		Iv:         base64.StdEncoding.EncodeToString(iv),
 		Ciphertext: base64.StdEncoding.EncodeToString(cipher),
@@ -89,7 +90,7 @@ func (p *Packer) Pack(input []byte, recPubKey, sendPubKey, sendPrvKey []byte) (d
 
 func (p *Packer) Unpack(data, recPubKey, recPrvKey []byte) (output []byte, err error) {
 	// unmarshal into authcrypt message
-	var msg domain.AuthCryptMsg
+	var msg messages.AuthCryptMsg
 	err = json.Unmarshal(data, &msg)
 	if err != nil {
 		p.log.Error(err)
@@ -97,7 +98,7 @@ func (p *Packer) Unpack(data, recPubKey, recPrvKey []byte) (output []byte, err e
 	}
 
 	// decode protected payload
-	var payload domain.Payload
+	var payload messages.Payload
 	decodedVal, err := base64.StdEncoding.DecodeString(msg.Protected)
 	if err != nil {
 		p.log.Error(err)
