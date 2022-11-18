@@ -18,6 +18,7 @@ type Publisher struct {
 	packer      domain.Packer
 	log         log.Logger
 	subChan     chan domain.Message
+	outChan     chan string
 	topicSubMap map[string]map[string][]byte // topic to subscriber to pub key map - use sync map, can extend to multiple keys per peer
 }
 
@@ -41,6 +42,7 @@ func NewPublisher(zmqCtx *zmq.Context, c *domain.Container) (*Publisher, error) 
 		packer:      c.Packer,
 		log:         c.Log,
 		subChan:     c.SubChan,
+		outChan:     c.OutChan,
 		topicSubMap: map[string]map[string][]byte{},
 	}
 
@@ -125,7 +127,7 @@ func (p *Publisher) Publish(topic, msg string) error {
 			return fmt.Errorf(`publishing message (%s) failed for %s - %v`, msg, sub, err)
 		}
 
-		fmt.Printf("-> Published '%s' to %s\n", msg, subTopic)
+		p.outChan <- `Published ` + msg + ` to ` + subTopic
 	}
 
 	return nil

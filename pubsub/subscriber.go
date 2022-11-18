@@ -20,6 +20,7 @@ type Subscriber struct {
 	ks            domain.KeyService
 	log           log.Logger
 	connDone      chan domain.Connection
+	outChan       chan string
 	topicBrokrMap map[string][]string // broker list for each topic
 	topicPeerMap  map[string][]string
 }
@@ -43,6 +44,7 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error
 		ks:            c.KS,
 		log:           c.Log,
 		connDone:      c.ConnDoneChan,
+		outChan:       c.OutChan,
 		topicBrokrMap: make(map[string][]string),
 		topicPeerMap:  make(map[string][]string),
 	}
@@ -171,7 +173,7 @@ func (s *Subscriber) initAddPubs() {
 				s.log.Error(fmt.Sprintf(`setting zmq subscription failed for topic %s - %v`, subTopic, err))
 				continue
 			}
-			fmt.Printf("-> Subscribed to %s\n", subTopic)
+			s.outChan <- `Subscribed to ` + subTopic
 		}
 	}
 }

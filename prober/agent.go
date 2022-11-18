@@ -15,7 +15,7 @@ type Prober struct {
 	exchEndpoint string
 	inChan       chan domain.Message
 	outChan      chan string
-	ks           domain.KeyService // single key-pair for now
+	ks           domain.KeyService
 	tr           domain.Transporter
 	packer       domain.Packer
 	ds           domain.DIDService
@@ -25,8 +25,7 @@ type Prober struct {
 	peers        map[string]domain.Peer
 	didDocs      map[string]messages.DIDDocument
 	dids         map[string]string
-
-	connDone chan domain.Connection
+	connDone     chan domain.Connection
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -181,7 +180,7 @@ func (p *Prober) processConnReq(data []byte) error {
 	}
 
 	p.peers[peerLabel] = domain.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
-	fmt.Printf("-> Connection established with %s\n", peerLabel)
+	p.outChan <- `Connection established with ` + peerLabel
 
 	return nil
 }
@@ -219,7 +218,7 @@ func (p *Prober) processConnRes(data []byte) error {
 				p.connDone <- domain.Connection{Peer: name, PubKey: peerPubKey}
 			}
 
-			fmt.Printf("-> Connection established with %s\n", name)
+			p.outChan <- `Connection established with ` + name
 			return nil
 		}
 	}
@@ -291,7 +290,8 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 		return err
 	}
 
-	fmt.Printf("-> Message sent\n")
+	p.outChan <- `Message sent`
+
 	return nil
 }
 
@@ -316,7 +316,7 @@ func (p *Prober) ReadMessage(data []byte) (msg string, err error) {
 	if err != nil {
 		return ``, fmt.Errorf(`unpacking message failed - %v`, err)
 	}
-	p.outChan <- string(textBytes)
+	p.outChan <- `Message received: ` + string(textBytes)
 
 	return string(textBytes), nil
 }

@@ -39,6 +39,8 @@ type Publisher interface {
 	Publish(topic, msg string) error
 }
 
+// todo advertise, unsubscribe, unadvertise functions
+
 type Subscriber interface {
 	AddBrokers(topic string, brokers []string)
 	Subscribe(topic string) error

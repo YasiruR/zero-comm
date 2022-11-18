@@ -149,6 +149,10 @@ func (r *runner) sendMsg() {
 }
 
 func (r *runner) addPublisher() {
+	if r.cfg.PubPort == 0 {
+		r.error(`unable to initialize a publisher as no specific port is provided`, nil)
+		return
+	}
 	topic := strings.TrimSpace(r.input(`Topic`))
 	if err := r.pub.Register(topic); err != nil {
 		r.error(`topic may be invalid, please try again`, err)
@@ -185,7 +189,8 @@ func (r *runner) listen() {
 			atomic.StoreUint64(&r.disCmds, 0)
 			fmt.Println()
 		}
-		r.output(fmt.Sprintf("Message received: %s", text)) // todo should not be for published msgs
+		//r.output(fmt.Sprintf("Message received: %s", text)) // todo should not be for published msgs
+		r.output(text)
 	}
 }
 
@@ -206,7 +211,9 @@ func (r *runner) output(text string) {
 
 func (r *runner) error(cmdOut string, err error) {
 	fmt.Printf("   ! Error: %s\n", cmdOut)
-	r.log.Error(err)
+	if err != nil {
+		r.log.Error(err)
+	}
 }
 
 func (r *runner) cancelCmd(input string) bool {
