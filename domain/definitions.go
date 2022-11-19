@@ -1,5 +1,6 @@
 package domain
 
+// may not be useful for zmq transport
 const (
 	//InvitationEndpoint = `/invitation/`
 	InvitationEndpoint = ``

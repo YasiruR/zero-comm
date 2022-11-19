@@ -76,7 +76,7 @@ func (p *Publisher) initAddSubs() {
 	for {
 		// add termination
 		msg := <-p.subChan
-		unpackedMsg, err := p.prb.ReadMessage(msg.Data)
+		unpackedMsg, err := p.prb.ReadMessage(domain.MsgTypSubscribe, msg.Data)
 		if err != nil {
 			p.log.Error(fmt.Sprintf(`reading subscribe msg failed - %v`, err))
 			continue
@@ -115,6 +115,7 @@ func (p *Publisher) Publish(topic, msg string) error {
 		return fmt.Errorf(`topic (%s) is not registered`, topic)
 	}
 
+	var published bool
 	for sub, subKey := range subs {
 		ownPubKey, err := p.ks.PublicKey(sub)
 		if err != nil {
@@ -143,10 +144,13 @@ func (p *Publisher) Publish(topic, msg string) error {
 			return fmt.Errorf(`publishing message (%s) failed for %s - %v`, msg, sub, err)
 		}
 
-		// todo add into debug and output only necessary
-		p.outChan <- `Published ` + msg + ` to ` + subTopic
+		published = true
+		p.log.Trace(fmt.Sprintf(`published %s to %s`, msg, subTopic))
 	}
 
+	if published {
+		p.outChan <- `Published '` + msg + `' to '` + topic + `'`
+	}
 	return nil
 }
 

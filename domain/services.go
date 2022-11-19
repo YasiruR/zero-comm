@@ -8,7 +8,7 @@ type DIDCommService interface {
 	Invite() (url string, err error)
 	Accept(encodedInv string) (sender string, err error)
 	SendMessage(typ, to, text string) error
-	ReadMessage(data []byte) (msg string, err error)
+	ReadMessage(typ string, data []byte) (msg string, err error)
 }
 
 type DIDService interface {

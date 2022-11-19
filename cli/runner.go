@@ -147,7 +147,7 @@ func (r *runner) connectWithInv() {
 
 func (r *runner) sendMsg() {
 	peer := strings.TrimSpace(r.input(`Recipient`))
-	msg := r.input(`Message`)
+	msg := strings.TrimSpace(r.input(`Message`))
 
 	if err := r.prober.SendMessage(domain.MsgTypData, peer, msg); err != nil {
 		r.error(`sending message failed`, err)

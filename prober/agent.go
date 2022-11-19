@@ -65,7 +65,7 @@ func (p *Prober) Listen() {
 				p.log.Error(err)
 			}
 		case domain.MsgTypData:
-			if _, err := p.ReadMessage(chanMsg.Data); err != nil {
+			if _, err := p.ReadMessage(domain.MsgTypData, chanMsg.Data); err != nil {
 				p.log.Error(err)
 			}
 		}
@@ -290,12 +290,16 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 		return err
 	}
 
-	p.outChan <- `Message sent`
+	if typ == domain.MsgTypData {
+		p.outChan <- `Message sent`
+	} else {
+		p.log.Trace(fmt.Sprintf(`'%s' message sent`, typ))
+	}
 
 	return nil
 }
 
-func (p *Prober) ReadMessage(data []byte) (msg string, err error) {
+func (p *Prober) ReadMessage(typ string, data []byte) (msg string, err error) {
 	peerName, err := p.peerByMsg(data)
 	if err != nil {
 		//p.log.Debug(fmt.Sprintf(`getting peer info failed - %v`, err))
@@ -316,7 +320,12 @@ func (p *Prober) ReadMessage(data []byte) (msg string, err error) {
 	if err != nil {
 		return ``, fmt.Errorf(`unpacking message failed - %v`, err)
 	}
-	p.outChan <- `Message received: ` + string(textBytes)
+
+	if typ == domain.MsgTypData {
+		p.outChan <- `Message received: '` + string(textBytes) + `'`
+	} else {
+		p.log.Trace(fmt.Sprintf(`message received for type '%s' - %s`, typ, string(textBytes)))
+	}
 
 	return string(textBytes), nil
 }

@@ -93,9 +93,11 @@ func (s *Subscriber) Unsubscribe(topic string) error {
 		if err = s.prb.SendMessage(domain.MsgTypSubscribe, peer, string(byts)); err != nil {
 			return fmt.Errorf(`sending unsubscribe message failed - %v`, err)
 		}
-		s.outChan <- `Unsubscribed to ` + subTopic
+
+		s.log.Trace(fmt.Sprintf(`unsubscribed to sub-topic %s`, subTopic))
 	}
 
+	s.outChan <- `Unsubscribed to ` + topic
 	return nil
 }
 
@@ -144,8 +146,8 @@ func (s *Subscriber) initReqConns() {
 				s.log.Error(fmt.Sprintf(`removing publisher failed - %v`, err))
 				continue
 			}
-			// todo add to debug
-			s.outChan <- `Removed publisher ` + pub.Label + ` for topic ` + pub.Topic
+
+			s.outChan <- `Removed publisher '` + pub.Label + `' from topic '` + pub.Topic + `'`
 			continue
 		}
 
@@ -228,7 +230,7 @@ func (s *Subscriber) initAddPubs() {
 				s.log.Error(fmt.Sprintf(`setting zmq subscription failed for topic %s - %v`, subTopic, err))
 				continue
 			}
-			s.outChan <- `Subscribed to ` + subTopic
+			s.log.Trace(fmt.Sprintf(`subscribed to sub-topic %s`, subTopic))
 		}
 	}
 }
@@ -261,7 +263,7 @@ func (s *Subscriber) listen() {
 			continue
 		}
 
-		_, err = s.prb.ReadMessage([]byte(frames[1]))
+		_, err = s.prb.ReadMessage(domain.MsgTypData, []byte(frames[1]))
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`reading subscribed message failed - %v`, err))
 			continue
