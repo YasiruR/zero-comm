@@ -57,7 +57,7 @@ func (p *Publisher) Register(topic string) error {
 		return fmt.Errorf(`generating invitation failed - %v`, err)
 	}
 
-	status := messages.PublisherStatus{Active: true, Inv: inv, Topic: topic}
+	status := messages.PublisherStatus{Label: p.label, Active: true, Inv: inv, Topic: topic}
 	byts, err := json.Marshal(status)
 	if err != nil {
 		return fmt.Errorf(`marshalling publisher status failed - %v`, err)
@@ -110,7 +110,12 @@ func (p *Publisher) removeSub(sm messages.SubscribeMsg) {
 }
 
 func (p *Publisher) Publish(topic, msg string) error {
-	for sub, subKey := range p.topicSubMap[topic] {
+	subs, ok := p.topicSubMap[topic]
+	if !ok {
+		return fmt.Errorf(`topic (%s) is not registered`, topic)
+	}
+
+	for sub, subKey := range subs {
 		ownPubKey, err := p.ks.PublicKey(sub)
 		if err != nil {
 			return fmt.Errorf(`getting public key for connection with %s failed - %v`, sub, err)
@@ -138,6 +143,7 @@ func (p *Publisher) Publish(topic, msg string) error {
 			return fmt.Errorf(`publishing message (%s) failed for %s - %v`, msg, sub, err)
 		}
 
+		// todo add into debug and output only necessary
 		p.outChan <- `Published ` + msg + ` to ` + subTopic
 	}
 
@@ -145,7 +151,7 @@ func (p *Publisher) Publish(topic, msg string) error {
 }
 
 func (p *Publisher) Unregister(topic string) error {
-	status := messages.PublisherStatus{Active: false, Topic: topic}
+	status := messages.PublisherStatus{Label: p.label, Active: false, Topic: topic}
 	byts, err := json.Marshal(status)
 	if err != nil {
 		return fmt.Errorf(`marshalling publisher inactive status failed - %v`, err)
@@ -155,6 +161,8 @@ func (p *Publisher) Unregister(topic string) error {
 		return fmt.Errorf(`publishing inactive status failed - %v`, err)
 	}
 
+	delete(p.topicSubMap, topic)
+	p.outChan <- `Unregistered ` + topic
 	return nil
 }
 

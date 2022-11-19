@@ -140,18 +140,25 @@ func (s *Subscriber) initReqConns() {
 		}
 
 		if !pub.Active {
-			// remove publisher
+			if err = s.removePub(pub.Topic, pub.Label); err != nil {
+				s.log.Error(fmt.Sprintf(`removing publisher failed - %v`, err))
+				continue
+			}
+			// todo add to debug
+			s.outChan <- `Removed publisher ` + pub.Label + ` for topic ` + pub.Topic
 			continue
 		}
 
 		inv, err := s.parseInvURL(pub.Inv)
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`parsing invitation url of publisher failed - %v`, err))
+			continue
 		}
 
 		inviter, err := s.prb.Accept(inv)
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`accepting did invitation failed - %v`, err))
+			continue
 		}
 
 		if s.topicPeerMap[pub.Topic] == nil {
@@ -159,6 +166,23 @@ func (s *Subscriber) initReqConns() {
 		}
 		s.topicPeerMap[pub.Topic] = append(s.topicPeerMap[pub.Topic], inviter)
 	}
+}
+
+func (s *Subscriber) removePub(topic, label string) error {
+	subTopic := topic + `_` + label + `_` + s.label
+	if err := s.sktMsgs.SetUnsubscribe(subTopic); err != nil {
+		return fmt.Errorf(`unsubscribing topic %s via zmq socket failed - %v`, subTopic, err)
+	}
+
+	var tmpPubs []string
+	for _, pub := range s.topicPeerMap[topic] {
+		if pub != label {
+			tmpPubs = append(tmpPubs, pub)
+		}
+	}
+	s.topicPeerMap[topic] = tmpPubs
+
+	return nil
 }
 
 func (s *Subscriber) initAddPubs() {

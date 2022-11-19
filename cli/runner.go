@@ -61,8 +61,9 @@ basicCmds:
 		"[4] Register a publisher\n\t" +
 		"[5] Set a subscriber\n\t" +
 		"[6] Publish a message\n\t" +
-		"[7] Unsubscribe\n\t" +
-		"[8] Exit\n   Command: ")
+		"[7] Unregister\n\t" +
+		"[8] Unsubscribe\n\t" +
+		"[9] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
 	cmd, err := r.reader.ReadString('\n')
@@ -85,8 +86,10 @@ basicCmds:
 	case "6":
 		r.publishMsg()
 	case "7":
-		r.unsubscribe()
+		r.unregister()
 	case "8":
+		r.unsubscribe()
+	case "9":
 		fmt.Println(`program exited`)
 		os.Exit(0)
 	default:
@@ -182,6 +185,13 @@ func (r *runner) publishMsg() {
 
 	if err := r.pub.Publish(topic, msg); err != nil {
 		r.error(`publishing message failed, please try again`, err)
+	}
+}
+
+func (r *runner) unregister() {
+	topic := strings.TrimSpace(r.input(`Topic`))
+	if err := r.pub.Unregister(topic); err != nil {
+		r.error(`failed to register, please try again`, err)
 	}
 }
 
