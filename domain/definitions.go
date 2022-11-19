@@ -4,7 +4,6 @@ const (
 	//InvitationEndpoint = `/invitation/`
 	InvitationEndpoint = ``
 	ExchangeEndpoint   = `/did-exchange/`
-	MessageEndpoint    = `/didcomm-message/` // todo use/remove this
 )
 
 const (
@@ -12,4 +11,8 @@ const (
 	MsgTypConnRes   = `conn-res`
 	MsgTypData      = `data`
 	MsgTypSubscribe = `subscribe`
+)
+
+const (
+	pubTopicSuffix = `_pubs`
 )

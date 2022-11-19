@@ -34,5 +34,5 @@ type Container struct {
 	Pub          Publisher
 	Sub          Subscriber
 	Prober       DIDCommService
-	OutChan      chan string // todo remove
+	OutChan      chan string
 }

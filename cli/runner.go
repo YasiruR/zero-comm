@@ -61,7 +61,8 @@ basicCmds:
 		"[4] Register a publisher\n\t" +
 		"[5] Set a subscriber\n\t" +
 		"[6] Publish a message\n\t" +
-		"[7] Exit\n   Command: ")
+		"[7] Unsubscribe\n\t" +
+		"[8] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
 	cmd, err := r.reader.ReadString('\n')
@@ -80,10 +81,12 @@ basicCmds:
 	case "4":
 		r.addPublisher()
 	case "5":
-		r.addSubscriber()
+		r.subscribe()
 	case "6":
 		r.publishMsg()
 	case "7":
+		r.unsubscribe()
+	case "8":
 		fmt.Println(`program exited`)
 		os.Exit(0)
 	default:
@@ -162,7 +165,7 @@ func (r *runner) addPublisher() {
 	r.output(fmt.Sprintf("Publisher registered with topic %s", topic))
 }
 
-func (r *runner) addSubscriber() {
+func (r *runner) subscribe() {
 	topic := strings.TrimSpace(r.input(`Topic`))
 	strBrokers := r.input(`Brokers (as a comma-separated list)`)
 	brokers := strings.Split(strings.TrimSpace(strBrokers), `,`)
@@ -182,6 +185,13 @@ func (r *runner) publishMsg() {
 	}
 }
 
+func (r *runner) unsubscribe() {
+	topic := strings.TrimSpace(r.input(`Topic`))
+	if err := r.sub.Unsubscribe(topic); err != nil {
+		r.error(`failed to unsubscribe, please try again`, err)
+	}
+}
+
 func (r *runner) listen() {
 	for {
 		text := <-r.outChan
@@ -189,7 +199,6 @@ func (r *runner) listen() {
 			atomic.StoreUint64(&r.disCmds, 0)
 			fmt.Println()
 		}
-		//r.output(fmt.Sprintf("Message received: %s", text)) // todo should not be for published msgs
 		r.output(text)
 	}
 }

@@ -41,7 +41,6 @@ func NewZmq(zmqCtx *zmq.Context, c *domain.Container) (*Zmq, error) {
 }
 
 func (z *Zmq) Socket(endpoint string) (skt *zmq.Socket, err error) {
-	// todo check if different sockets are required for different clients
 	skt, ok := z.peers[endpoint]
 	if ok {
 		return skt, nil

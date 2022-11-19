@@ -82,19 +82,30 @@ func (p *Publisher) initAddSubs() {
 			continue
 		}
 
-		var sub messages.SubscribeMsg
-		if err = json.Unmarshal([]byte(unpackedMsg), &sub); err != nil {
+		var sm messages.SubscribeMsg
+		if err = json.Unmarshal([]byte(unpackedMsg), &sm); err != nil {
 			p.log.Error(fmt.Sprintf(`unmarshalling subscribe message failed - %v`, err))
 			continue
 		}
 
-		subKey := base58.Decode(sub.PubKey)
-		for _, t := range sub.Topics {
+		if !sm.Subscribe {
+			p.removeSub(sm)
+			continue
+		}
+
+		subKey := base58.Decode(sm.PubKey)
+		for _, t := range sm.Topics {
 			if p.topicSubMap[t] == nil {
 				p.topicSubMap[t] = map[string][]byte{}
 			}
-			p.topicSubMap[t][sub.Peer] = subKey
+			p.topicSubMap[t][sm.Peer] = subKey
 		}
+	}
+}
+
+func (p *Publisher) removeSub(sm messages.SubscribeMsg) {
+	for _, t := range sm.Topics {
+		delete(p.topicSubMap[t], sm.Peer)
 	}
 }
 
@@ -128,6 +139,20 @@ func (p *Publisher) Publish(topic, msg string) error {
 		}
 
 		p.outChan <- `Published ` + msg + ` to ` + subTopic
+	}
+
+	return nil
+}
+
+func (p *Publisher) Unregister(topic string) error {
+	status := messages.PublisherStatus{Active: false, Topic: topic}
+	byts, err := json.Marshal(status)
+	if err != nil {
+		return fmt.Errorf(`marshalling publisher inactive status failed - %v`, err)
+	}
+
+	if _, err = p.skt.SendMessage(fmt.Sprintf(`%s_pubs %s`, topic, string(byts))); err != nil {
+		return fmt.Errorf(`publishing inactive status failed - %v`, err)
 	}
 
 	return nil

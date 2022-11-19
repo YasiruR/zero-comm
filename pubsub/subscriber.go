@@ -22,7 +22,7 @@ type Subscriber struct {
 	connDone      chan domain.Connection
 	outChan       chan string
 	topicBrokrMap map[string][]string // broker list for each topic
-	topicPeerMap  map[string][]string
+	topicPeerMap  map[string][]string // use sync map for both
 }
 
 func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error) {
@@ -63,6 +63,37 @@ func (s *Subscriber) AddBrokers(topic string, brokers []string) {
 func (s *Subscriber) Subscribe(topic string) error {
 	if err := s.subscribePubs(topic); err != nil {
 		return fmt.Errorf(`subscribing to %s_pubs topic failed - %v`, topic, err)
+	}
+
+	return nil
+}
+
+func (s *Subscriber) Unsubscribe(topic string) error {
+	peers, ok := s.topicPeerMap[topic]
+	if !ok {
+		return fmt.Errorf(`no subscription found`)
+	}
+
+	if err := s.sktPubs.SetUnsubscribe(topic + `_pubs`); err != nil {
+		return fmt.Errorf(`unsubscribing %s_pubs via zmq socket failed - %v`, topic, err)
+	}
+
+	for _, peer := range peers {
+		subTopic := topic + `_` + peer + `_` + s.label
+		if err := s.sktMsgs.SetUnsubscribe(subTopic); err != nil {
+			return fmt.Errorf(`unsubscribing to zmq socket failed - %v`, err)
+		}
+
+		sm := messages.SubscribeMsg{Subscribe: false, Peer: s.label, Topics: []string{topic}}
+		byts, err := json.Marshal(sm)
+		if err != nil {
+			return fmt.Errorf(`marshalling unsubscribe message failed - %v`, err)
+		}
+
+		if err = s.prb.SendMessage(domain.MsgTypSubscribe, peer, string(byts)); err != nil {
+			return fmt.Errorf(`sending unsubscribe message failed - %v`, err)
+		}
+		s.outChan <- `Unsubscribed to ` + subTopic
 	}
 
 	return nil
@@ -133,7 +164,7 @@ func (s *Subscriber) initReqConns() {
 func (s *Subscriber) initAddPubs() {
 	for {
 		// add termination
-		conn := <-s.connDone // todo check if this works with just req rep
+		conn := <-s.connDone
 		subPublicKey, err := s.ks.PublicKey(conn.Peer)
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`getting public key for the connection with %s failed - %v`, conn.Peer, err))
@@ -154,7 +185,7 @@ func (s *Subscriber) initAddPubs() {
 			continue
 		}
 
-		sm := messages.SubscribeMsg{Peer: s.label, PubKey: base58.Encode(subPublicKey), Topics: topics}
+		sm := messages.SubscribeMsg{Subscribe: true, Peer: s.label, PubKey: base58.Encode(subPublicKey), Topics: topics}
 		byts, err := json.Marshal(sm)
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`marshalling subscribe message failed - %v`, err))
