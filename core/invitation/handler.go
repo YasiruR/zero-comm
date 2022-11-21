@@ -1,4 +1,4 @@
-package did
+package invitation
 
 import (
 	"bytes"

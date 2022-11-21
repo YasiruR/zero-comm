@@ -43,7 +43,7 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error
 		sktPubs:       sktPubs,
 		sktMsgs:       sktMsgs,
 		prb:           c.Prober,
-		ks:            c.KS,
+		ks:            c.KeyManager,
 		log:           c.Log,
 		connDone:      c.ConnDoneChan,
 		outChan:       c.OutChan,

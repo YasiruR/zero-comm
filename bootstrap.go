@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/core/connection"
+	"github.com/YasiruR/didcomm-prober/core/did"
+	"github.com/YasiruR/didcomm-prober/core/invitation"
 	"github.com/YasiruR/didcomm-prober/crypto"
-	"github.com/YasiruR/didcomm-prober/did"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/log"
@@ -34,10 +36,11 @@ func initContainer(cfg *domain.Config) *domain.Container {
 
 	c := &domain.Container{
 		Cfg:          cfg,
-		KS:           km,
+		KeyManager:   km,
 		Packer:       packer,
-		DS:           &did.Handler{},
-		OOB:          did.NewOOBService(cfg),
+		DidAgent:     did.NewHandler(),
+		Connector:    connection.NewConnector(),
+		OOB:          invitation.NewOOBService(cfg),
 		Log:          logger,
 		InChan:       make(chan models.Message),
 		SubChan:      make(chan models.Message),
@@ -68,7 +71,7 @@ func initZmqReqRep(ctx *zmq.Context, c *domain.Container) {
 	if err != nil {
 		c.Log.Fatal(err)
 	}
-	c.Tr = z
+	c.Transporter = z
 }
 
 func initZmqPubSub(ctx *zmq.Context, c *domain.Container) {
@@ -88,5 +91,5 @@ func initZmqPubSub(ctx *zmq.Context, c *domain.Container) {
 }
 
 func shutdown(c *domain.Container) {
-	c.Tr.Stop()
+	c.Transporter.Stop()
 }

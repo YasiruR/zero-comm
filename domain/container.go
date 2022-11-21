@@ -24,17 +24,18 @@ type Config struct {
 
 type Container struct {
 	Cfg          *Config
-	KS           services.KeyManager
+	KeyManager   services.KeyManager
 	Packer       services.Packer
-	Tr           services.Transporter
-	DS           services.DID
-	OOB          services.OOB
-	Log          log.Logger
-	InChan       chan models.Message
-	SubChan      chan models.Message
-	ConnDoneChan chan models.Connection
+	Transporter  services.Transporter
+	DidAgent     services.DIDAgent
+	OOB          services.OutOfBand
+	Connector    services.Connector
 	Pub          services.Publisher
 	Sub          services.Subscriber
 	Prober       services.DIDComm
+	InChan       chan models.Message
+	SubChan      chan models.Message
+	ConnDoneChan chan models.Connection
 	OutChan      chan string
+	Log          log.Logger
 }

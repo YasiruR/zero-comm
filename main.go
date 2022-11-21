@@ -9,7 +9,7 @@ func main() {
 	cfg := setConfigs(args)
 	c := initContainer(cfg)
 
-	go c.Tr.Start()
+	go c.Transporter.Start()
 	defer shutdown(c)
 	cli.Init(c)
 }

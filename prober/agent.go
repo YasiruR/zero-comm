@@ -20,8 +20,9 @@ type Prober struct {
 	ks           services.KeyManager
 	tr           services.Transporter
 	packer       services.Packer
-	ds           services.DID
-	oob          services.OOB
+	ds           services.DIDAgent
+	conn         services.Connector
+	oob          services.OutOfBand
 	log          log.Logger
 	label        string
 	peers        map[string]models.Peer
@@ -34,11 +35,12 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 	p = &Prober{
 		invEndpoint:  c.Cfg.InvEndpoint,
 		exchEndpoint: c.Cfg.InvEndpoint,
-		ks:           c.KS,
-		tr:           c.Tr,
+		ks:           c.KeyManager,
+		tr:           c.Transporter,
 		packer:       c.Packer,
 		log:          c.Log,
-		ds:           c.DS,
+		ds:           c.DidAgent,
+		conn:         c.Connector,
 		oob:          c.OOB,
 		inChan:       c.InChan,
 		outChan:      c.OutChan,
@@ -117,7 +119,7 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 	}
 
 	// creates connection request
-	connReq, err := p.ds.CreateConnReq(p.label, inv.Id, p.dids[inv.Label], encDoc)
+	connReq, err := p.conn.CreateConnReq(p.label, inv.Id, p.dids[inv.Label], encDoc)
 	if err != nil {
 		return ``, fmt.Errorf(`creating connection request failed - %v`, err)
 	}
@@ -138,7 +140,7 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 
 // processConnReq parses the connection request, creates a connection response and sends it to did endpoint
 func (p *Prober) processConnReq(data []byte) error {
-	peerLabel, pthId, peerDid, peerEncDocBytes, err := p.ds.ParseConnReq(data)
+	peerLabel, pthId, peerDid, peerEncDocBytes, err := p.conn.ParseConnReq(data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
 	}
@@ -167,7 +169,7 @@ func (p *Prober) processConnReq(data []byte) error {
 		return fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
-	connRes, err := p.ds.CreateConnRes(pthId, p.dids[peerLabel], encDidDoc)
+	connRes, err := p.conn.CreateConnRes(pthId, p.dids[peerLabel], encDidDoc)
 	if err != nil {
 		return fmt.Errorf(`creating connection response failed - %v`, err)
 	}
@@ -188,7 +190,7 @@ func (p *Prober) processConnReq(data []byte) error {
 }
 
 func (p *Prober) processConnRes(data []byte) error {
-	pthId, peerEncDocBytes, err := p.ds.ParseConnRes(data)
+	pthId, peerEncDocBytes, err := p.conn.ParseConnRes(data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
 	}

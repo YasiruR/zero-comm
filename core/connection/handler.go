@@ -1,69 +1,20 @@
-package did
+package connection
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
-	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
 )
 
-type Handler struct{}
+type Connector struct{}
 
-func (h *Handler) CreateDIDDoc(endpoint, typ string, pubKey []byte) messages.DIDDocument {
-	encodedKey := make([]byte, 64)
-	base64.StdEncoding.Encode(encodedKey, pubKey)
-	// removes redundant elements from the allocated byte slice
-	encodedKey = bytes.Trim(encodedKey, "\x00")
-
-	s := messages.Service{
-		Id:              uuid.New().String(),
-		Type:            typ,
-		RecipientKeys:   []string{string(encodedKey)},
-		RoutingKeys:     nil,
-		ServiceEndpoint: endpoint,
-		Accept:          nil,
-	}
-
-	return messages.DIDDocument{Service: []messages.Service{s}}
+func NewConnector() *Connector {
+	return &Connector{}
 }
 
-func (h *Handler) CreatePeerDID(doc messages.DIDDocument) (did string, err error) {
-	// make a did-doc but omit DID value from doc = stored variant
-	byts, err := json.Marshal(doc)
-	if err != nil {
-		return ``, fmt.Errorf(`marshalling did doc failed - %v`, err)
-	}
-
-	// compute sha256 hash of stored variant = numeric basis
-	hash := sha256.New()
-	if _, err = hash.Write(byts); err != nil {
-		return ``, fmt.Errorf(`generating sha256 hash of did doc failed - %v`, err)
-	}
-
-	// base58 encode numeric basis
-	enc := base58.Encode(hash.Sum(nil))
-	// did:peer:1z<encoded-numeric-basis>
-	return `did:peer:1z` + enc, nil
-}
-
-func (h *Handler) ValidatePeerDID(did string) error {
-	if len(did) < 11 {
-		return fmt.Errorf(`invalid did in invitation: %s`, did)
-	}
-
-	// should ideally use a regex
-	if did[:11] != `did:peer:1z` {
-		return fmt.Errorf(`did type is not peer: %s`, did[:11])
-	}
-
-	return nil
-}
-
-func (h *Handler) CreateConnReq(label, pthid, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnReq, error) {
+func (c *Connector) CreateConnReq(label, pthid, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnReq, error) {
 	id := uuid.New().String()
 	req := messages.ConnReq{
 		Id:   id,
@@ -90,7 +41,7 @@ func (h *Handler) CreateConnReq(label, pthid, did string, encDidDoc messages.Aut
 	return req, nil
 }
 
-func (h *Handler) ParseConnReq(data []byte) (label, pthId, peerDid string, encDocBytes []byte, err error) {
+func (c *Connector) ParseConnReq(data []byte) (label, pthId, peerDid string, encDocBytes []byte, err error) {
 	var req messages.ConnReq
 	if err = json.Unmarshal(data, &req); err != nil {
 		return ``, ``, ``, nil, fmt.Errorf(`unmarshalling connection request failed - %v`, err)
@@ -104,7 +55,7 @@ func (h *Handler) ParseConnReq(data []byte) (label, pthId, peerDid string, encDo
 	return req.Label, req.Thread.PThId, req.DID, encDocBytes, nil
 }
 
-func (h *Handler) CreateConnRes(pthId, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnRes, error) {
+func (c *Connector) CreateConnRes(pthId, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnRes, error) {
 	res := messages.ConnRes{
 		Id:   uuid.New().String(),
 		Type: "https://didcomm.org/didexchange/1.0/response",
@@ -127,7 +78,7 @@ func (h *Handler) CreateConnRes(pthId, did string, encDidDoc messages.AuthCryptM
 	return res, nil
 }
 
-func (h *Handler) ParseConnRes(data []byte) (pthId string, encDocBytes []byte, err error) {
+func (c *Connector) ParseConnRes(data []byte) (pthId string, encDocBytes []byte, err error) {
 	var res messages.ConnRes
 	if err = json.Unmarshal(data, &res); err != nil {
 		return ``, nil, fmt.Errorf(`unmarshalling connection response failed - %v`, err)

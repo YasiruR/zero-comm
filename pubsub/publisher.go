@@ -40,7 +40,7 @@ func NewPublisher(zmqCtx *zmq.Context, c *domain.Container) (*Publisher, error) 
 		label:       c.Cfg.Args.Name,
 		skt:         skt,
 		prb:         c.Prober,
-		ks:          c.KS,
+		ks:          c.KeyManager,
 		packer:      c.Packer,
 		log:         c.Log,
 		subChan:     c.SubChan,

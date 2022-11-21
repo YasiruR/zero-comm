@@ -26,7 +26,7 @@ func NewHTTP(c *domain.Container) *HTTP {
 	return &HTTP{
 		port:   c.Cfg.Args.Port,
 		packer: c.Packer,
-		ks:     c.KS,
+		ks:     c.KeyManager,
 		log:    c.Log,
 		client: &http.Client{},
 		router: mux.NewRouter(),
