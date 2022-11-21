@@ -5,6 +5,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/crypto"
 	"github.com/YasiruR/didcomm-prober/did"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/log"
 	"github.com/YasiruR/didcomm-prober/prober"
 	"github.com/YasiruR/didcomm-prober/pubsub"
@@ -38,15 +39,11 @@ func initContainer(cfg *domain.Config) *domain.Container {
 		DS:           &did.Handler{},
 		OOB:          did.NewOOBService(cfg),
 		Log:          logger,
-		InChan:       make(chan domain.Message),
-		SubChan:      make(chan domain.Message),
-		ConnDoneChan: make(chan domain.Connection),
+		InChan:       make(chan models.Message),
+		SubChan:      make(chan models.Message),
+		ConnDoneChan: make(chan models.Connection),
 		OutChan:      make(chan string),
 	}
-
-	//if c.Cfg.PubPort != 0 {
-	//	c.ConnDoneChan = make(chan domain.Connection)
-	//}
 
 	ctx, err := zmq.NewContext()
 	if err != nil {

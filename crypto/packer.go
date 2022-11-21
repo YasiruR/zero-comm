@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
+	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/tryfix/log"
 	rand2 "math/rand"
@@ -14,7 +14,7 @@ import (
 )
 
 type Packer struct {
-	enc domain.Encryptor
+	enc services.Encryptor
 	log log.Logger
 }
 

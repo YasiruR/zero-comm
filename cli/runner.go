@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/tryfix/log"
 	"net/url"
 	"os"
@@ -15,9 +16,9 @@ import (
 type runner struct {
 	cfg     *domain.Config
 	reader  *bufio.Reader
-	prober  domain.DIDCommService
-	pub     domain.Publisher
-	sub     domain.Subscriber
+	prober  services.DIDComm
+	pub     services.Publisher
+	sub     services.Subscriber
 	log     log.Logger
 	outChan chan string
 	disCmds uint64 // flag to identify whether output cursor is on basic commands or not

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
+	"github.com/YasiruR/didcomm-prober/domain/models"
+	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/btcsuite/btcutil/base58"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
@@ -13,11 +15,11 @@ import (
 type Publisher struct {
 	label       string
 	skt         *zmq.Socket
-	prb         domain.DIDCommService
-	ks          domain.KeyService
-	packer      domain.Packer
+	prb         services.DIDComm
+	ks          services.KeyManager
+	packer      services.Packer
 	log         log.Logger
-	subChan     chan domain.Message
+	subChan     chan models.Message
 	outChan     chan string
 	topicSubMap map[string]map[string][]byte // topic to subscriber to pub key map - use sync map, can extend to multiple keys per peer
 }
@@ -63,7 +65,7 @@ func (p *Publisher) Register(topic string) error {
 		return fmt.Errorf(`marshalling publisher status failed - %v`, err)
 	}
 
-	if _, err = p.skt.SendMessage(fmt.Sprintf(`%s_pubs %s`, topic, string(byts))); err != nil {
+	if _, err = p.skt.SendMessage(fmt.Sprintf(`%s%s %s`, topic, domain.PubTopicSuffix, string(byts))); err != nil {
 		return fmt.Errorf(`publishing active status failed - %v`, err)
 	}
 
@@ -161,7 +163,7 @@ func (p *Publisher) Unregister(topic string) error {
 		return fmt.Errorf(`marshalling publisher inactive status failed - %v`, err)
 	}
 
-	if _, err = p.skt.SendMessage(fmt.Sprintf(`%s_pubs %s`, topic, string(byts))); err != nil {
+	if _, err = p.skt.SendMessage(fmt.Sprintf(`%s%s %s`, topic, domain.PubTopicSuffix, string(byts))); err != nil {
 		return fmt.Errorf(`publishing inactive status failed - %v`, err)
 	}
 

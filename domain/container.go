@@ -1,6 +1,8 @@
 package domain
 
 import (
+	"github.com/YasiruR/didcomm-prober/domain/models"
+	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/tryfix/log"
 )
 
@@ -22,17 +24,17 @@ type Config struct {
 
 type Container struct {
 	Cfg          *Config
-	KS           KeyService
-	Packer       Packer
-	Tr           Transporter
-	DS           DIDService
-	OOB          OOBService
+	KS           services.KeyManager
+	Packer       services.Packer
+	Tr           services.Transporter
+	DS           services.DID
+	OOB          services.OOB
 	Log          log.Logger
-	InChan       chan Message
-	SubChan      chan Message
-	ConnDoneChan chan Connection
-	Pub          Publisher
-	Sub          Subscriber
-	Prober       DIDCommService
+	InChan       chan models.Message
+	SubChan      chan models.Message
+	ConnDoneChan chan models.Connection
+	Pub          services.Publisher
+	Sub          services.Subscriber
+	Prober       services.DIDComm
 	OutChan      chan string
 }

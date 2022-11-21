@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
+	"github.com/YasiruR/didcomm-prober/domain/models"
+	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/btcsuite/btcutil/base58"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
@@ -16,10 +18,10 @@ type Subscriber struct {
 	label         string
 	sktPubs       *zmq.Socket
 	sktMsgs       *zmq.Socket
-	prb           domain.DIDCommService
-	ks            domain.KeyService
+	prb           services.DIDComm
+	ks            services.KeyManager
 	log           log.Logger
-	connDone      chan domain.Connection
+	connDone      chan models.Connection
 	outChan       chan string
 	topicBrokrMap map[string][]string // broker list for each topic
 	topicPeerMap  map[string][]string // use sync map for both
@@ -28,7 +30,7 @@ type Subscriber struct {
 func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error) {
 	sktPubs, err := zmqCtx.NewSocket(zmq.SUB)
 	if err != nil {
-		return nil, fmt.Errorf(`creating sub socket for _pubs topics failed - %v`, err)
+		return nil, fmt.Errorf(`creating sub socket for %s topics failed - %v`, domain.PubTopicSuffix, err)
 	}
 
 	sktMsgs, err := zmqCtx.NewSocket(zmq.SUB)
@@ -62,7 +64,7 @@ func (s *Subscriber) AddBrokers(topic string, brokers []string) {
 
 func (s *Subscriber) Subscribe(topic string) error {
 	if err := s.subscribePubs(topic); err != nil {
-		return fmt.Errorf(`subscribing to %s_pubs topic failed - %v`, topic, err)
+		return fmt.Errorf(`subscribing to %s%s topic failed - %v`, topic, domain.PubTopicSuffix, err)
 	}
 
 	return nil
@@ -74,8 +76,8 @@ func (s *Subscriber) Unsubscribe(topic string) error {
 		return fmt.Errorf(`no subscription found`)
 	}
 
-	if err := s.sktPubs.SetUnsubscribe(topic + `_pubs`); err != nil {
-		return fmt.Errorf(`unsubscribing %s_pubs via zmq socket failed - %v`, topic, err)
+	if err := s.sktPubs.SetUnsubscribe(topic + domain.PubTopicSuffix); err != nil {
+		return fmt.Errorf(`unsubscribing %s%s via zmq socket failed - %v`, topic, domain.PubTopicSuffix, err)
 	}
 
 	for _, peer := range peers {
@@ -112,7 +114,7 @@ func (s *Subscriber) subscribePubs(topic string) error {
 			return fmt.Errorf(`connecting to publisher for messages (%s) failed - %v`, pubEndpoint, err)
 		}
 
-		if err := s.sktPubs.SetSubscribe(topic + `_pubs`); err != nil {
+		if err := s.sktPubs.SetSubscribe(topic + domain.PubTopicSuffix); err != nil {
 			return fmt.Errorf(`setting zmq subscription failed - %v`, err)
 		}
 	}

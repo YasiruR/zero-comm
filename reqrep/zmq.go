@@ -3,6 +3,7 @@ package reqrep
 import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/models"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 )
@@ -15,8 +16,8 @@ type Zmq struct {
 	ctx     *zmq.Context
 	server  *zmq.Socket
 	log     log.Logger
-	inChan  chan domain.Message
-	subChan chan domain.Message
+	inChan  chan models.Message
+	subChan chan models.Message
 	peers   map[string]*zmq.Socket // use sync map if accessed concurrently
 }
 
@@ -74,7 +75,7 @@ func (z *Zmq) Start() {
 			continue
 		}
 
-		m := domain.Message{Type: msg[0], Data: []byte(msg[1])}
+		m := models.Message{Type: msg[0], Data: []byte(msg[1])}
 		switch msg[0] {
 		case domain.MsgTypConnReq:
 			z.inChan <- m

@@ -1,6 +1,6 @@
 package domain
 
-// may not be useful for zmq transport
+// not used for zmq transport
 const (
 	//InvitationEndpoint = `/invitation/`
 	InvitationEndpoint = ``
@@ -15,5 +15,5 @@ const (
 )
 
 const (
-	pubTopicSuffix = `_pubs`
+	PubTopicSuffix = `_pubs`
 )

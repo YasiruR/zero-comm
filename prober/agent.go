@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
+	"github.com/YasiruR/didcomm-prober/domain/models"
+	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/tryfix/log"
 )
@@ -13,19 +15,19 @@ import (
 type Prober struct {
 	invEndpoint  string
 	exchEndpoint string
-	inChan       chan domain.Message
+	inChan       chan models.Message
 	outChan      chan string
-	ks           domain.KeyService
-	tr           domain.Transporter
-	packer       domain.Packer
-	ds           domain.DIDService
-	oob          domain.OOBService
+	ks           services.KeyManager
+	tr           services.Transporter
+	packer       services.Packer
+	ds           services.DID
+	oob          services.OOB
 	log          log.Logger
 	label        string
-	peers        map[string]domain.Peer
+	peers        map[string]models.Peer
 	didDocs      map[string]messages.DIDDocument
 	dids         map[string]string
-	connDone     chan domain.Connection
+	connDone     chan models.Connection
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -41,7 +43,7 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		inChan:       c.InChan,
 		outChan:      c.OutChan,
 		label:        c.Cfg.Args.Name,
-		peers:        map[string]domain.Peer{}, // name as the key may not be ideal
+		peers:        map[string]models.Peer{}, // name as the key may not be ideal
 		didDocs:      map[string]messages.DIDDocument{},
 		dids:         map[string]string{},
 		connDone:     c.ConnDoneChan,
@@ -130,7 +132,7 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 		return ``, fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
-	p.peers[inv.Label] = domain.Peer{DID: inv.From, ExchangeThId: inv.Id}
+	p.peers[inv.Label] = models.Peer{DID: inv.From, ExchangeThId: inv.Id}
 	return inv.Label, nil
 }
 
@@ -179,7 +181,7 @@ func (p *Prober) processConnReq(data []byte) error {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
-	p.peers[peerLabel] = domain.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
+	p.peers[peerLabel] = models.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
 	p.outChan <- `Connection established with ` + peerLabel
 
 	return nil
@@ -211,11 +213,11 @@ func (p *Prober) processConnRes(data []byte) error {
 				return fmt.Errorf(`getting peer data failed - %v`, err)
 			}
 
-			p.peers[name] = domain.Peer{DID: peer.DID, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
+			p.peers[name] = models.Peer{DID: peer.DID, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
 
 			// should not be sent to non-pubsub relationships but the validation is done in pubsub module
 			if p.connDone != nil {
-				p.connDone <- domain.Connection{Peer: name, PubKey: peerPubKey}
+				p.connDone <- models.Connection{Peer: name, PubKey: peerPubKey}
 			}
 
 			p.outChan <- `Connection established with ` + name
