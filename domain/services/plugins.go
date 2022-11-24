@@ -9,8 +9,19 @@ type Transporter interface {
 	Start()
 	// Send transmits the message but marshalling should be independent of the
 	// transport layer to support multiple encoding mechanisms
-	Send(typ string, data []byte, endpoint string) error
+	Send(typ string, data []byte, endpoint string) (msg []string, err error)
 	Stop() error
+}
+
+type Server interface {
+	Start()
+	AddHandler()
+	Stop() error
+}
+
+type Client interface {
+	Init()
+	Send(typ string, data []byte, endpoint string) (msg []string, err error)
 }
 
 type Packer interface {

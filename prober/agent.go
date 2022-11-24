@@ -13,22 +13,22 @@ import (
 )
 
 type Prober struct {
+	label        string
 	invEndpoint  string
 	exchEndpoint string
-	inChan       chan models.Message
-	outChan      chan string
 	ks           services.KeyManager
 	tr           services.Transporter
 	packer       services.Packer
-	ds           services.DIDAgent
+	did          services.DIDAgent
 	conn         services.Connector
 	oob          services.OutOfBand
-	log          log.Logger
-	label        string
 	peers        map[string]models.Peer
 	didDocs      map[string]messages.DIDDocument
 	dids         map[string]string
+	inChan       chan models.Message
+	outChan      chan string
 	connDone     chan models.Connection
+	log          log.Logger
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -39,7 +39,7 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		tr:           c.Transporter,
 		packer:       c.Packer,
 		log:          c.Log,
-		ds:           c.DidAgent,
+		did:          c.DidAgent,
 		conn:         c.Connector,
 		oob:          c.OOB,
 		inChan:       c.InChan,
@@ -82,7 +82,7 @@ func (p *Prober) Invite() (url string, err error) {
 	}
 
 	// creates a did doc for connection request with a separate endpoint and public key
-	invDidDoc := p.ds.CreateDIDDoc(p.invEndpoint, `did-exchange`, p.ks.InvPublicKey())
+	invDidDoc := p.did.CreateDIDDoc(p.invEndpoint, `did-exchange`, p.ks.InvPublicKey())
 
 	// but uses did created from default did doc as it serves as the identifier in invitation
 	url, err = p.oob.CreateInv(p.label, ``, invDidDoc) // todo null did
@@ -130,7 +130,7 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 		return ``, fmt.Errorf(`marshalling connection request failed - %v`, err)
 	}
 
-	if err = p.tr.Send(domain.MsgTypConnReq, connReqBytes, invEndpoint); err != nil {
+	if _, err = p.tr.Send(domain.MsgTypConnReq, connReqBytes, invEndpoint); err != nil {
 		return ``, fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
@@ -179,7 +179,7 @@ func (p *Prober) processConnReq(data []byte) error {
 		return fmt.Errorf(`marshalling connection response failed - %v`, err)
 	}
 
-	if err = p.tr.Send(domain.MsgTypConnRes, connResBytes, peerEndpoint); err != nil {
+	if _, err = p.tr.Send(domain.MsgTypConnRes, connResBytes, peerEndpoint); err != nil {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
@@ -278,20 +278,16 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 
 	msg, err := p.packer.Pack([]byte(text), peer.PubKey, ownPubKey, ownPrvKey)
 	if err != nil {
-		p.log.Error(err)
-		return err
+		return fmt.Errorf(`packing message failed - %v`, err)
 	}
 
 	data, err := json.Marshal(msg)
 	if err != nil {
-		p.log.Error(err)
-		return err
+		return fmt.Errorf(`marshalling didcomm message failed - %v`, err)
 	}
 
-	err = p.tr.Send(typ, data, peer.Endpoint)
-	if err != nil {
-		p.log.Error(err)
-		return err
+	if _, err = p.tr.Send(typ, data, peer.Endpoint); err != nil {
+		return fmt.Errorf(`sending siscomm message failed - %v`, err)
 	}
 
 	if typ == domain.MsgTypData {
@@ -344,8 +340,8 @@ func (p *Prober) setConnPrereqs(peer string) (pubKey, prvKey []byte, err error) 
 	prvKey, _ = p.ks.PrivateKey(peer)
 
 	// creating own did and did doc
-	didDoc := p.ds.CreateDIDDoc(p.exchEndpoint, `message-service`, pubKey)
-	did, err := p.ds.CreatePeerDID(didDoc)
+	didDoc := p.did.CreateDIDDoc(p.exchEndpoint, `message-service`, pubKey)
+	did, err := p.did.CreatePeerDID(didDoc)
 	if err != nil {
 		return nil, nil, fmt.Errorf(`creating peer did failed - %v`, err)
 	}

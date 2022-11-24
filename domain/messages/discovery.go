@@ -1,13 +1,13 @@
 package messages
 
-type FeatQuery struct {
+type QueryFeature struct {
 	Type    string `json:"@type"`
 	Id      string `json:"@id"`
 	Query   string `json:"query"`
 	Comment string `json:"comment"`
 }
 
-type FeatDisclose struct {
+type DiscloseFeature struct {
 	Type   string `json:"@type"`
 	Thread struct {
 		ThId string `json:"@thid"`

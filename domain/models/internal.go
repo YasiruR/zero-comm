@@ -17,3 +17,8 @@ type Peer struct {
 	PubKey       []byte
 	ExchangeThId string // thread id used in did-exchange (to correlate any message to the peer)
 }
+
+type Feature struct {
+	Id    string
+	Roles []string
+}

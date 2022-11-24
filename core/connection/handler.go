@@ -18,7 +18,7 @@ func (c *Connector) CreateConnReq(label, pthid, did string, encDidDoc messages.A
 	id := uuid.New().String()
 	req := messages.ConnReq{
 		Id:   id,
-		Type: "https://didcomm.org/didexchange/1.0/request",
+		Type: messages.DIDExchangeReqV1,
 		Thread: struct {
 			ThId  string `json:"thid"`
 			PThId string `json:"pthid"`
@@ -58,7 +58,7 @@ func (c *Connector) ParseConnReq(data []byte) (label, pthId, peerDid string, enc
 func (c *Connector) CreateConnRes(pthId, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnRes, error) {
 	res := messages.ConnRes{
 		Id:   uuid.New().String(),
-		Type: "https://didcomm.org/didexchange/1.0/response",
+		Type: messages.DIDExchangeResV1,
 		Thread: struct {
 			ThId string `json:"thid"`
 		}{ThId: pthId},

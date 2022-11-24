@@ -35,6 +35,7 @@ type Container struct {
 	Prober       services.DIDComm
 	InChan       chan models.Message
 	SubChan      chan models.Message
+	QueryChan    chan models.Message
 	ConnDoneChan chan models.Connection
 	OutChan      chan string
 	Log          log.Logger

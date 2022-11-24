@@ -8,6 +8,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/btcsuite/btcutil/base58"
+	"github.com/google/uuid"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 	"net/url"
@@ -18,7 +19,7 @@ type Subscriber struct {
 	label         string
 	sktPubs       *zmq.Socket
 	sktMsgs       *zmq.Socket
-	prb           services.DIDComm
+	probr         services.DIDComm
 	ks            services.KeyManager
 	log           log.Logger
 	connDone      chan models.Connection
@@ -42,7 +43,7 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error
 		label:         c.Cfg.Args.Name,
 		sktPubs:       sktPubs,
 		sktMsgs:       sktMsgs,
-		prb:           c.Prober,
+		probr:         c.Prober,
 		ks:            c.KeyManager,
 		log:           c.Log,
 		connDone:      c.ConnDoneChan,
@@ -86,13 +87,19 @@ func (s *Subscriber) Unsubscribe(topic string) error {
 			return fmt.Errorf(`unsubscribing to zmq socket failed - %v`, err)
 		}
 
-		sm := messages.SubscribeMsg{Subscribe: false, Peer: s.label, Topics: []string{topic}}
+		sm := messages.SubscribeMsg{
+			Id:        uuid.New().String(),
+			Type:      messages.SubscribeV1,
+			Subscribe: false,
+			Peer:      s.label,
+			Topics:    []string{topic},
+		}
 		byts, err := json.Marshal(sm)
 		if err != nil {
 			return fmt.Errorf(`marshalling unsubscribe message failed - %v`, err)
 		}
 
-		if err = s.prb.SendMessage(domain.MsgTypSubscribe, peer, string(byts)); err != nil {
+		if err = s.probr.SendMessage(domain.MsgTypSubscribe, peer, string(byts)); err != nil {
 			return fmt.Errorf(`sending unsubscribe message failed - %v`, err)
 		}
 
@@ -159,7 +166,7 @@ func (s *Subscriber) initReqConns() {
 			continue
 		}
 
-		inviter, err := s.prb.Accept(inv)
+		inviter, err := s.probr.Accept(inv)
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`accepting did invitation failed - %v`, err))
 			continue
@@ -213,14 +220,21 @@ func (s *Subscriber) initAddPubs() {
 			continue
 		}
 
-		sm := messages.SubscribeMsg{Subscribe: true, Peer: s.label, PubKey: base58.Encode(subPublicKey), Topics: topics}
+		sm := messages.SubscribeMsg{
+			Id:        uuid.New().String(),
+			Type:      messages.SubscribeV1,
+			Subscribe: true,
+			Peer:      s.label,
+			PubKey:    base58.Encode(subPublicKey),
+			Topics:    topics,
+		}
 		byts, err := json.Marshal(sm)
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`marshalling subscribe message failed - %v`, err))
 			continue
 		}
 
-		if err = s.prb.SendMessage(domain.MsgTypSubscribe, conn.Peer, string(byts)); err != nil {
+		if err = s.probr.SendMessage(domain.MsgTypSubscribe, conn.Peer, string(byts)); err != nil {
 			s.log.Error(fmt.Sprintf(`sending subscribe message failed - %v`, err))
 			continue
 		}
@@ -265,7 +279,7 @@ func (s *Subscriber) listen() {
 			continue
 		}
 
-		_, err = s.prb.ReadMessage(domain.MsgTypData, []byte(frames[1]))
+		_, err = s.probr.ReadMessage(domain.MsgTypData, []byte(frames[1]))
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`reading subscribed message failed - %v`, err))
 			continue
