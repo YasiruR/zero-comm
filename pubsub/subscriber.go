@@ -279,7 +279,7 @@ func (s *Subscriber) listen() {
 			continue
 		}
 
-		_, err = s.probr.ReadMessage(domain.MsgTypData, []byte(frames[1]))
+		_, err = s.probr.ReadMessage(models.Message{Type: domain.MsgTypData, Data: []byte(frames[1])})
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`reading subscribed message failed - %v`, err))
 			continue

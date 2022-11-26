@@ -16,7 +16,7 @@ func NewLogger(logEnabled bool) *Logger {
 			log.WithColors(true),
 			log.WithLevel("TRACE"),
 			log.WithFilePath(true),
-			log.WithSkipFrameCount(4),
+			log.WithSkipFrameCount(5),
 		),
 	}
 }

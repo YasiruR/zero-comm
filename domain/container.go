@@ -26,15 +26,15 @@ type Container struct {
 	Cfg          *Config
 	KeyManager   services.KeyManager
 	Packer       services.Packer
-	Transporter  services.Transporter
 	DidAgent     services.DIDAgent
 	OOB          services.OutOfBand
 	Connector    services.Connector
 	Pub          services.Publisher
 	Sub          services.Subscriber
 	Prober       services.DIDComm
-	InChan       chan models.Message
-	SubChan      chan models.Message
+	Client       services.Client
+	Server       services.Server
+	SubChan      chan models.Message // todo remove all chans from container
 	QueryChan    chan models.Message
 	ConnDoneChan chan models.Connection
 	OutChan      chan string

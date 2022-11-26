@@ -10,7 +10,7 @@ import (
 
 type Server struct {
 	skt      *zmq.Socket
-	handlers map[string]models.HandlerFunc
+	handlers map[string]chan models.Message
 	log      log.Logger
 }
 
@@ -26,13 +26,13 @@ func NewServer(zmqCtx *zmq.Context, c *domain.Container) (*Server, error) {
 
 	return &Server{
 		skt:      skt,
-		handlers: make(map[string]models.HandlerFunc),
+		handlers: make(map[string]chan models.Message),
 		log:      c.Log,
 	}, nil
 }
 
-func (s *Server) AddHandler(name, _ string, handler models.HandlerFunc) {
-	s.handlers[name] = handler
+func (s *Server) AddHandler(name, _ string, notifier chan models.Message) {
+	s.handlers[name] = notifier
 }
 
 func (s *Server) Start() error {
@@ -53,19 +53,14 @@ func (s *Server) Start() error {
 		}
 
 		m := models.Message{Type: msg[0], Data: []byte(msg[1])}
-		fnc, ok := s.handlers[m.Type]
+		notifier, ok := s.handlers[m.Type]
 		if !ok {
 			s.log.Error(fmt.Sprintf(`no handler defined for the received message type (%s)`, m.Type))
 			s.sendAck(false)
 			continue
 		}
 
-		if err = fnc(m); err != nil {
-			s.log.Error(fmt.Sprintf(`handler error - %v`, err))
-			s.sendAck(false)
-			continue
-		}
-
+		notifier <- m
 		s.sendAck(true)
 	}
 }

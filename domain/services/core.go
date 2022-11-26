@@ -1,6 +1,9 @@
 package services
 
-import "github.com/YasiruR/didcomm-prober/domain/messages"
+import (
+	"github.com/YasiruR/didcomm-prober/domain/messages"
+	"github.com/YasiruR/didcomm-prober/domain/models"
+)
 
 /* core services */
 
@@ -8,7 +11,7 @@ type DIDComm interface {
 	Invite() (url string, err error)
 	Accept(encodedInv string) (sender string, err error)
 	SendMessage(typ, to, text string) error
-	ReadMessage(typ string, data []byte) (msg string, err error) // todo remove redundant field typ
+	ReadMessage(msg models.Message) (text string, err error) // todo remove redundant field typ
 }
 
 type DIDAgent interface {

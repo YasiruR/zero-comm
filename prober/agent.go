@@ -12,12 +12,17 @@ import (
 	"github.com/tryfix/log"
 )
 
+type streams struct {
+	connReq chan models.Message
+	connRes chan models.Message
+	data    chan models.Message
+}
+
 type Prober struct {
 	label        string
 	invEndpoint  string
 	exchEndpoint string
 	ks           services.KeyManager
-	tr           services.Transporter
 	packer       services.Packer
 	did          services.DIDAgent
 	conn         services.Connector
@@ -25,10 +30,13 @@ type Prober struct {
 	peers        map[string]models.Peer
 	didDocs      map[string]messages.DIDDocument
 	dids         map[string]string
-	inChan       chan models.Message
 	outChan      chan string
 	connDone     chan models.Connection
 	log          log.Logger
+
+	*streams
+	client services.Client
+	server services.Server
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -36,40 +44,53 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		invEndpoint:  c.Cfg.InvEndpoint,
 		exchEndpoint: c.Cfg.InvEndpoint,
 		ks:           c.KeyManager,
-		tr:           c.Transporter,
 		packer:       c.Packer,
 		log:          c.Log,
 		did:          c.DidAgent,
 		conn:         c.Connector,
 		oob:          c.OOB,
-		inChan:       c.InChan,
 		outChan:      c.OutChan,
 		label:        c.Cfg.Args.Name,
 		peers:        map[string]models.Peer{}, // name as the key may not be ideal
 		didDocs:      map[string]messages.DIDDocument{},
 		dids:         map[string]string{},
 		connDone:     c.ConnDoneChan,
+
+		client: c.Client,
+		server: c.Server,
 	}
 
-	go p.Listen()
+	p.initHandlers()
+	go p.listen()
 	return p, nil
 }
 
-func (p *Prober) Listen() {
-	// can introduce concurrency
+func (p *Prober) initHandlers() {
+	// initializing message incoming streams for prober
+	p.streams = &streams{
+		connReq: make(chan models.Message),
+		connRes: make(chan models.Message),
+		data:    make(chan models.Message),
+	}
+
+	p.server.AddHandler(domain.MsgTypConnReq, ``, p.connReq)
+	p.server.AddHandler(domain.MsgTypConnRes, ``, p.connRes)
+	p.server.AddHandler(domain.MsgTypData, ``, p.data)
+}
+
+func (p *Prober) listen() {
 	for {
-		chanMsg := <-p.inChan
-		switch chanMsg.Type {
-		case domain.MsgTypConnReq:
-			if err := p.processConnReq(chanMsg.Data); err != nil {
+		select {
+		case m := <-p.connReq:
+			if err := p.processConnReq(m); err != nil {
 				p.log.Error(err)
 			}
-		case domain.MsgTypConnRes:
-			if err := p.processConnRes(chanMsg.Data); err != nil {
+		case m := <-p.connRes:
+			if err := p.processConnRes(m); err != nil {
 				p.log.Error(err)
 			}
-		case domain.MsgTypData:
-			if _, err := p.ReadMessage(domain.MsgTypData, chanMsg.Data); err != nil {
+		case m := <-p.data:
+			if _, err := p.ReadMessage(m); err != nil {
 				p.log.Error(err)
 			}
 		}
@@ -130,7 +151,7 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 		return ``, fmt.Errorf(`marshalling connection request failed - %v`, err)
 	}
 
-	if _, err = p.tr.Send(domain.MsgTypConnReq, connReqBytes, invEndpoint); err != nil {
+	if _, err = p.client.Send(domain.MsgTypConnReq, connReqBytes, invEndpoint); err != nil {
 		return ``, fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
@@ -139,8 +160,8 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 }
 
 // processConnReq parses the connection request, creates a connection response and sends it to did endpoint
-func (p *Prober) processConnReq(data []byte) error {
-	peerLabel, pthId, peerDid, peerEncDocBytes, err := p.conn.ParseConnReq(data)
+func (p *Prober) processConnReq(msg models.Message) error {
+	peerLabel, pthId, peerDid, peerEncDocBytes, err := p.conn.ParseConnReq(msg.Data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
 	}
@@ -179,7 +200,7 @@ func (p *Prober) processConnReq(data []byte) error {
 		return fmt.Errorf(`marshalling connection response failed - %v`, err)
 	}
 
-	if _, err = p.tr.Send(domain.MsgTypConnRes, connResBytes, peerEndpoint); err != nil {
+	if _, err = p.client.Send(domain.MsgTypConnRes, connResBytes, peerEndpoint); err != nil {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
@@ -189,8 +210,8 @@ func (p *Prober) processConnReq(data []byte) error {
 	return nil
 }
 
-func (p *Prober) processConnRes(data []byte) error {
-	pthId, peerEncDocBytes, err := p.conn.ParseConnRes(data)
+func (p *Prober) processConnRes(msg models.Message) error {
+	pthId, peerEncDocBytes, err := p.conn.ParseConnRes(msg.Data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
 	}
@@ -286,7 +307,7 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 		return fmt.Errorf(`marshalling didcomm message failed - %v`, err)
 	}
 
-	if _, err = p.tr.Send(typ, data, peer.Endpoint); err != nil {
+	if _, err = p.client.Send(typ, data, peer.Endpoint); err != nil {
 		return fmt.Errorf(`sending siscomm message failed - %v`, err)
 	}
 
@@ -299,8 +320,8 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 	return nil
 }
 
-func (p *Prober) ReadMessage(typ string, data []byte) (msg string, err error) {
-	peerName, err := p.peerByMsg(data)
+func (p *Prober) ReadMessage(msg models.Message) (text string, err error) {
+	peerName, err := p.peerByMsg(msg.Data)
 	if err != nil {
 		//p.log.Debug(fmt.Sprintf(`getting peer info failed - %v`, err))
 		return ``, fmt.Errorf(`getting peer info failed - %v`, err)
@@ -316,15 +337,15 @@ func (p *Prober) ReadMessage(typ string, data []byte) (msg string, err error) {
 		return ``, fmt.Errorf(`getting private key for connection with %s failed - %v`, peerName, err)
 	}
 
-	textBytes, err := p.packer.Unpack(data, ownPubKey, ownPrvKey)
+	textBytes, err := p.packer.Unpack(msg.Data, ownPubKey, ownPrvKey)
 	if err != nil {
 		return ``, fmt.Errorf(`unpacking message failed - %v`, err)
 	}
 
-	if typ == domain.MsgTypData {
+	if msg.Type == domain.MsgTypData {
 		p.outChan <- `Message received: '` + string(textBytes) + `'`
 	} else {
-		p.log.Trace(fmt.Sprintf(`message received for type '%s' - %s`, typ, string(textBytes)))
+		p.log.Trace(fmt.Sprintf(`message received for type '%s' - %s`, msg.Type, string(textBytes)))
 	}
 
 	return string(textBytes), nil
@@ -370,7 +391,7 @@ func (p *Prober) peerByMsg(data []byte) (name string, err error) {
 
 	err = json.Unmarshal(decodedVal, &payload)
 	if err != nil {
-		return ``, fmt.Errorf(`unmarshalling protexted payload failed - %v`, err)
+		return ``, fmt.Errorf(`unmarshalling protected payload failed - %v`, err)
 	}
 
 	decodedPubKey := base58.Decode(payload.Recipients[0].Header.Kid)

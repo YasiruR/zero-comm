@@ -12,7 +12,7 @@ import (
 )
 
 type Discoverer struct {
-	tr        services.Transporter
+	client    services.Client
 	queryChan chan models.Message
 	// feature values of key '*' are applied for all peers while further
 	// restrictions are listed in the same map under corresponding label
@@ -40,7 +40,7 @@ func (d *Discoverer) Query(endpoint, query, comment string) error {
 		return fmt.Errorf(`marshalling query feature message failed - %v`, err)
 	}
 
-	msg, err := d.tr.Send(domain.MsgTypQuery, byts, endpoint)
+	_, err = d.client.Send(domain.MsgTypQuery, byts, endpoint)
 	if err != nil {
 		return fmt.Errorf(`sending query message failed - %v`, err)
 	}
@@ -48,6 +48,8 @@ func (d *Discoverer) Query(endpoint, query, comment string) error {
 	// wait for response
 
 	// return supported features
+
+	return nil
 }
 
 func (d *Discoverer) Disclose(id, query string) messages.DiscloseFeature {
@@ -105,7 +107,7 @@ func (d *Discoverer) processQuery(query string) []models.Feature {
 
 func (d *Discoverer) listen() {
 	for {
-		req := <-d.queryChan
+		_ = <-d.queryChan
 
 	}
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/log"
 	"github.com/YasiruR/didcomm-prober/prober"
 	"github.com/YasiruR/didcomm-prober/pubsub"
-	"github.com/YasiruR/didcomm-prober/reqrep"
+	reqRepZmq "github.com/YasiruR/didcomm-prober/reqrep/zmq"
 	zmq "github.com/pebbe/zmq4"
 	"strconv"
 )
@@ -33,6 +33,10 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	logger := log.NewLogger(cfg.Args.Verbose)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
+	ctx, err := zmq.NewContext()
+	if err != nil {
+		logger.Fatal(fmt.Sprintf(`zmq context initialization failed - %v`, err))
+	}
 
 	c := &domain.Container{
 		Cfg:          cfg,
@@ -41,22 +45,22 @@ func initContainer(cfg *domain.Config) *domain.Container {
 		DidAgent:     did.NewHandler(),
 		Connector:    connection.NewConnector(),
 		OOB:          invitation.NewOOBService(cfg),
+		Client:       reqRepZmq.NewClient(ctx),
 		Log:          logger,
-		InChan:       make(chan models.Message),
 		SubChan:      make(chan models.Message),
 		ConnDoneChan: make(chan models.Connection),
 		OutChan:      make(chan string),
 	}
 
-	ctx, err := zmq.NewContext()
+	s, err := reqRepZmq.NewServer(ctx, c)
 	if err != nil {
-		c.Log.Fatal(fmt.Sprintf(`zmq context initialization failed - %v`, err))
+		logger.Fatal(`initializing zmq server failed`, err)
 	}
-	initZmqReqRep(ctx, c)
+	c.Server = s
 
 	prb, err := prober.NewProber(c)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatal(`initializing prober failed`, err)
 	}
 	c.Prober = prb
 
@@ -64,14 +68,6 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	initZmqPubSub(ctx, c)
 
 	return c
-}
-
-func initZmqReqRep(ctx *zmq.Context, c *domain.Container) {
-	z, err := reqrep.NewZmq(ctx, c)
-	if err != nil {
-		c.Log.Fatal(err)
-	}
-	c.Transporter = z
 }
 
 func initZmqPubSub(ctx *zmq.Context, c *domain.Container) {
@@ -91,5 +87,5 @@ func initZmqPubSub(ctx *zmq.Context, c *domain.Container) {
 }
 
 func shutdown(c *domain.Container) {
-	c.Transporter.Stop()
+	c.Server.Stop()
 }

@@ -78,7 +78,7 @@ func (p *Publisher) initAddSubs() {
 	for {
 		// add termination
 		msg := <-p.subChan
-		unpackedMsg, err := p.prb.ReadMessage(domain.MsgTypSubscribe, msg.Data)
+		unpackedMsg, err := p.prb.ReadMessage(msg)
 		if err != nil {
 			p.log.Error(fmt.Sprintf(`reading subscribe msg failed - %v`, err))
 			continue
