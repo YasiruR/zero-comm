@@ -22,3 +22,5 @@ type Feature struct {
 	Id    string
 	Roles []string
 }
+
+type HandlerFunc func(msg Message) error
