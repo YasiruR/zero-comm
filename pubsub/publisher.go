@@ -19,7 +19,6 @@ type Publisher struct {
 	ks          services.KeyManager
 	packer      services.Packer
 	log         log.Logger
-	subChan     chan models.Message
 	outChan     chan string
 	topicSubMap map[string]map[string][]byte // topic to subscriber to pub key map - use sync map, can extend to multiple keys per peer
 }
@@ -43,13 +42,18 @@ func NewPublisher(zmqCtx *zmq.Context, c *domain.Container) (*Publisher, error) 
 		ks:          c.KeyManager,
 		packer:      c.Packer,
 		log:         c.Log,
-		subChan:     c.SubChan,
 		outChan:     c.OutChan,
 		topicSubMap: map[string]map[string][]byte{},
 	}
 
-	go p.initAddSubs()
+	p.initHandlers(c.Server)
 	return p, err
+}
+
+func (p *Publisher) initHandlers(s services.Server) {
+	subChan := make(chan models.Message)
+	s.AddHandler(domain.MsgTypSubscribe, ``, subChan)
+	go p.listen(subChan)
 }
 
 func (p *Publisher) Register(topic string) error {
@@ -72,12 +76,12 @@ func (p *Publisher) Register(topic string) error {
 	return nil
 }
 
-// initAddSubs follows subscription of a topic which is done through a separate
+// listen follows subscription of a topic which is done through a separate
 // DIDComm message. Alternatively, it can be included in connection request.
-func (p *Publisher) initAddSubs() {
+func (p *Publisher) listen(subChan chan models.Message) {
 	for {
 		// add termination
-		msg := <-p.subChan
+		msg := <-subChan
 		unpackedMsg, err := p.prb.ReadMessage(msg)
 		if err != nil {
 			p.log.Error(fmt.Sprintf(`reading subscribe msg failed - %v`, err))

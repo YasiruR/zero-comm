@@ -13,9 +13,7 @@ import (
 )
 
 type streams struct {
-	connReq chan models.Message
-	connRes chan models.Message
-	data    chan models.Message
+	connReq, connRes, data chan models.Message
 }
 
 type Prober struct {
@@ -34,9 +32,7 @@ type Prober struct {
 	connDone     chan models.Connection
 	log          log.Logger
 
-	*streams
 	client services.Client
-	server services.Server
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -57,39 +53,38 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		connDone:     c.ConnDoneChan,
 
 		client: c.Client,
-		server: c.Server,
 	}
 
-	p.initHandlers()
-	go p.listen()
+	p.initHandlers(c.Server)
 	return p, nil
 }
 
-func (p *Prober) initHandlers() {
+func (p *Prober) initHandlers(serv services.Server) {
 	// initializing message incoming streams for prober
-	p.streams = &streams{
+	s := &streams{
 		connReq: make(chan models.Message),
 		connRes: make(chan models.Message),
 		data:    make(chan models.Message),
 	}
 
-	p.server.AddHandler(domain.MsgTypConnReq, ``, p.connReq)
-	p.server.AddHandler(domain.MsgTypConnRes, ``, p.connRes)
-	p.server.AddHandler(domain.MsgTypData, ``, p.data)
+	serv.AddHandler(domain.MsgTypConnReq, ``, s.connReq)
+	serv.AddHandler(domain.MsgTypConnRes, ``, s.connRes)
+	serv.AddHandler(domain.MsgTypData, ``, s.data)
+	go p.listen(s)
 }
 
-func (p *Prober) listen() {
+func (p *Prober) listen(s *streams) {
 	for {
 		select {
-		case m := <-p.connReq:
+		case m := <-s.connReq:
 			if err := p.processConnReq(m); err != nil {
 				p.log.Error(err)
 			}
-		case m := <-p.connRes:
+		case m := <-s.connRes:
 			if err := p.processConnRes(m); err != nil {
 				p.log.Error(err)
 			}
-		case m := <-p.data:
+		case m := <-s.data:
 			if _, err := p.ReadMessage(m); err != nil {
 				p.log.Error(err)
 			}
