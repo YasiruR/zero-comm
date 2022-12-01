@@ -11,7 +11,7 @@ type DIDComm interface {
 	Invite() (url string, err error)
 	Accept(encodedInv string) (sender string, err error)
 	SendMessage(typ, to, text string) error
-	ReadMessage(msg models.Message) (text string, err error) // todo remove redundant field typ
+	ReadMessage(msg models.Message) (text string, err error)
 }
 
 type DIDAgent interface {

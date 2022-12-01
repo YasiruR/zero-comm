@@ -8,9 +8,14 @@ import (
 	"github.com/tryfix/log"
 )
 
+type handler struct {
+	async    bool
+	notifier chan models.Message
+}
+
 type Server struct {
 	skt      *zmq.Socket
-	handlers map[string]chan models.Message
+	handlers map[string]*handler
 	log      log.Logger
 }
 
@@ -26,13 +31,17 @@ func NewServer(zmqCtx *zmq.Context, c *domain.Container) (*Server, error) {
 
 	return &Server{
 		skt:      skt,
-		handlers: make(map[string]chan models.Message),
+		handlers: make(map[string]*handler),
 		log:      c.Log,
 	}, nil
 }
 
-func (s *Server) AddHandler(name, _ string, notifier chan models.Message) {
-	s.handlers[name] = notifier
+func (s *Server) AddHandler(msgType string, notifier chan models.Message, async bool) {
+	s.handlers[msgType] = &handler{async: async, notifier: notifier}
+}
+
+func (s *Server) RemoveHandler(msgType string) {
+	delete(s.handlers, msgType)
 }
 
 func (s *Server) Start() error {
@@ -53,15 +62,23 @@ func (s *Server) Start() error {
 		}
 
 		m := models.Message{Type: msg[0], Data: []byte(msg[1])}
-		notifier, ok := s.handlers[m.Type]
+		h, ok := s.handlers[m.Type]
 		if !ok {
 			s.log.Error(fmt.Sprintf(`no handler defined for the received message type (%s)`, m.Type))
 			s.sendAck(false)
 			continue
 		}
 
-		notifier <- m
-		s.sendAck(true)
+		if h.async {
+			h.notifier <- m
+			s.sendAck(true)
+			continue
+		}
+
+		m.Reply = make(chan []byte)
+		h.notifier <- m
+		rep := <-m.Reply
+		s.sendRes(rep) // todo remove rep and check
 	}
 }
 
@@ -72,7 +89,13 @@ func (s *Server) sendAck(success bool) {
 	}
 
 	if _, err := s.skt.Send(msg, 0); err != nil {
-		s.log.Error(fmt.Sprintf(`sending zmq message by receiver failed - %v`, err))
+		s.log.Error(fmt.Sprintf(`sending zmq ack message by receiver failed - %v`, err))
+	}
+}
+
+func (s *Server) sendRes(data []byte) {
+	if _, err := s.skt.Send(string(data), 0); err != nil {
+		s.log.Error(fmt.Sprintf(`sending zmq response message by receiver failed - %v`, err))
 	}
 }
 

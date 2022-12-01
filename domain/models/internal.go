@@ -1,8 +1,9 @@
 package models
 
 type Message struct {
-	Type string
-	Data []byte
+	Type  string
+	Data  []byte
+	Reply chan []byte
 }
 
 type Connection struct {
@@ -19,8 +20,8 @@ type Peer struct {
 }
 
 type Feature struct {
-	Id    string
-	Roles []string
+	Id    string   `json:"id"`
+	Roles []string `json:"roles"`
 }
 
 type HandlerFunc func(msg Message) error

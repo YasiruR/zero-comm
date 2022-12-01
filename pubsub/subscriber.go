@@ -112,6 +112,7 @@ func (s *Subscriber) Unsubscribe(topic string) error {
 
 func (s *Subscriber) subscribePubs(topic string) error {
 	// todo should be continuous for dynamic subscriptions and publishers
+	// todo may need not to do for already connected pubs
 	for _, pubEndpoint := range s.topicBrokrMap[topic] {
 		if err := s.sktPubs.Connect(pubEndpoint); err != nil {
 			return fmt.Errorf(`connecting to publisher for status (%s) failed - %v`, pubEndpoint, err)

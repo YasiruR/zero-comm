@@ -1,5 +1,7 @@
 package messages
 
+import "github.com/YasiruR/didcomm-prober/domain/models"
+
 type QueryFeature struct {
 	Type    string `json:"@type"`
 	Id      string `json:"@id"`
@@ -12,10 +14,5 @@ type DiscloseFeature struct {
 	Thread struct {
 		ThId string `json:"@thid"`
 	} `json:"~thread"`
-	Protocols []Protocol `json:"protocols"`
-}
-
-type Protocol struct {
-	PId   string   `json:"pid"`
-	Roles []string `json:"roles"`
+	Features []models.Feature `json:"features"`
 }

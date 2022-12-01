@@ -17,27 +17,34 @@ func NewClient(zmqCtx *zmq.Context) *Client {
 	}
 }
 
-// Send connects to the endpoint per each message since it is more appropriate
+// Send connects to the endpoint per each message since it is more appropriate8
 // with DIDComm as by nature it manifests an asynchronous simplex communication.
-func (c *Client) Send(typ string, data []byte, endpoint string) (msg []string, err error) {
+func (c *Client) Send(typ string, data []byte, endpoint string) (res string, err error) {
 	skt, err := c.socket(endpoint)
 	if err != nil {
-		return nil, fmt.Errorf(`fetching zmq socket failed - %v`, err)
+		return ``, fmt.Errorf(`fetching zmq socket failed - %v`, err)
 	}
 
+	// todo send type in a json body for future compatibility of other properties
+
 	if _, err = skt.SendMessage(typ, string(data)); err != nil {
-		return nil, fmt.Errorf(`sending zmq message by sender failed - %v`, err)
+		return ``, fmt.Errorf(`sending zmq message by sender failed - %v`, err)
 	}
 
 receive:
-	if msg, err = skt.RecvMessage(0); err != nil {
+	msgs, err := skt.RecvMessage(0)
+	if err != nil {
 		if err.Error() == errTempUnavail {
 			goto receive
 		}
-		return nil, fmt.Errorf(`receiving zmq message by sender failed - %v`, err)
+		return ``, fmt.Errorf(`receiving zmq message by sender failed - %v`, err)
 	}
 
-	return msg, nil
+	if len(msgs) == 0 {
+		return ``, fmt.Errorf(`received an empty message`)
+	}
+
+	return msgs[0], nil
 }
 
 func (c *Client) socket(endpoint string) (skt *zmq.Socket, err error) {

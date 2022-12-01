@@ -52,7 +52,7 @@ func NewPublisher(zmqCtx *zmq.Context, c *domain.Container) (*Publisher, error) 
 
 func (p *Publisher) initHandlers(s services.Server) {
 	subChan := make(chan models.Message)
-	s.AddHandler(domain.MsgTypSubscribe, ``, subChan)
+	s.AddHandler(domain.MsgTypSubscribe, subChan, true)
 	go p.listen(subChan)
 }
 

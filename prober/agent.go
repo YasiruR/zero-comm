@@ -31,8 +31,7 @@ type Prober struct {
 	outChan      chan string
 	connDone     chan models.Connection
 	log          log.Logger
-
-	client services.Client
+	client       services.Client
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -51,8 +50,7 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		didDocs:      map[string]messages.DIDDocument{},
 		dids:         map[string]string{},
 		connDone:     c.ConnDoneChan,
-
-		client: c.Client,
+		client:       c.Client,
 	}
 
 	p.initHandlers(c.Server)
@@ -67,9 +65,9 @@ func (p *Prober) initHandlers(serv services.Server) {
 		data:    make(chan models.Message),
 	}
 
-	serv.AddHandler(domain.MsgTypConnReq, ``, s.connReq)
-	serv.AddHandler(domain.MsgTypConnRes, ``, s.connRes)
-	serv.AddHandler(domain.MsgTypData, ``, s.data)
+	serv.AddHandler(domain.MsgTypConnReq, s.connReq, true)
+	serv.AddHandler(domain.MsgTypConnRes, s.connRes, true)
+	serv.AddHandler(domain.MsgTypData, s.data, true)
 	go p.listen(s)
 }
 
@@ -134,6 +132,7 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 		return ``, fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
+	// todo check how concurrent conn requests go along (since same invitation and hence pthid)
 	// creates connection request
 	connReq, err := p.conn.CreateConnReq(p.label, inv.Id, p.dids[inv.Label], encDoc)
 	if err != nil {
