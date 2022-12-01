@@ -237,12 +237,12 @@ func (r *runner) discover() {
 
 	var out string
 	for i, f := range features {
-		out += f.Id
+		out += fmt.Sprintf(`%s %v`, f.Id, f.Roles)
 		if i != len(features)-1 {
-			out += `, `
+			out += `; `
 		}
 	}
-	r.output(out)
+	r.output(`Supported features: ` + out)
 }
 
 /* command-line specific functions */

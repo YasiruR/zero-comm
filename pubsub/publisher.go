@@ -177,7 +177,7 @@ func (p *Publisher) Unregister(topic string) error {
 }
 
 func (p *Publisher) Close() error {
-	// publish inactive to all _pubs
+	// todo publish inactive to all _pubs
 	// close sockets
 	// close context
 

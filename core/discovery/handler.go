@@ -12,6 +12,9 @@ import (
 	"strings"
 )
 
+// todo add feature, remove feature
+// call these from cli
+
 type Discoverer struct {
 	queryChan chan models.Message
 	client    services.Client
@@ -28,9 +31,9 @@ func NewDiscoverer(c *domain.Container) *Discoverer {
 		client:    c.Client,
 		server:    c.Server,
 		features: []models.Feature{
-			{Id: `1`, Roles: []string{`tester`}},
-			{Id: `22`, Roles: []string{`huuuuu`}},
-			{Id: `245`, Roles: []string{`another`}},
+			{Id: `https://didcomm.org/out-of-band/1.0`, Roles: []string{`sender`, `receiver`}},
+			{Id: `https://didcomm.org/didexchange`, Roles: []string{`inviter`, `invitee`}},
+			{Id: `https://didcomm.org/pub-sub/1.0`, Roles: []string{`publisher`, `subscriber`}},
 		},
 		log: c.Log,
 	}
@@ -139,4 +142,12 @@ func (d *Discoverer) processQuery(query string) []models.Feature {
 	}
 
 	return nil
+}
+
+func (d *Discoverer) AddFeature(name string, roles []string) {
+
+}
+
+func (d *Discoverer) RemoveFeature() {
+
 }
