@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/core/discovery"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/tryfix/log"
@@ -19,6 +20,7 @@ type runner struct {
 	prober  services.DIDComm
 	pub     services.Publisher
 	sub     services.Subscriber
+	disc    services.Discoverer
 	log     log.Logger
 	outChan chan string
 	disCmds uint64 // flag to identify whether output cursor is on basic commands or not
@@ -44,6 +46,7 @@ func Init(c *domain.Container) {
 		prober:  c.Prober,
 		pub:     c.Pub,
 		sub:     c.Sub,
+		disc:    discovery.NewDiscoverer(c),
 		outChan: c.OutChan,
 		log:     c.Log,
 	}
@@ -52,6 +55,8 @@ func Init(c *domain.Container) {
 	//r.basicCommands()
 	r.enableCommands()
 }
+
+/* basic functions */
 
 func (r *runner) basicCommands() {
 basicCmds:
@@ -64,7 +69,8 @@ basicCmds:
 		"[6] Publish a message\n\t" +
 		"[7] Unregister\n\t" +
 		"[8] Unsubscribe\n\t" +
-		"[9] Exit\n   Command: ")
+		"[9] Discover Features\n\t" +
+		"[0] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
 	cmd, err := r.reader.ReadString('\n')
@@ -91,6 +97,8 @@ basicCmds:
 	case "8":
 		r.unsubscribe()
 	case "9":
+		r.discover()
+	case "0":
 		fmt.Println(`program exited`)
 		os.Exit(0)
 	default:
@@ -117,6 +125,19 @@ func (r *runner) enableCommands() {
 		r.enableCommands()
 	}
 }
+
+func (r *runner) listen() {
+	for {
+		text := <-r.outChan
+		if r.disCmds == 1 {
+			atomic.StoreUint64(&r.disCmds, 0)
+			fmt.Println()
+		}
+		r.output(text)
+	}
+}
+
+/* command specific functions */
 
 func (r *runner) generateInvitation() {
 	inv, err := r.prober.Invite()
@@ -204,16 +225,27 @@ func (r *runner) unsubscribe() {
 	}
 }
 
-func (r *runner) listen() {
-	for {
-		text := <-r.outChan
-		if r.disCmds == 1 {
-			atomic.StoreUint64(&r.disCmds, 0)
-			fmt.Println()
-		}
-		r.output(text)
+func (r *runner) discover() {
+	endpoint := strings.TrimSpace(r.input(`Endpoint`))
+	query := strings.TrimSpace(r.input(`Query`))
+	comment := strings.TrimSpace(r.input(`Comment`))
+	features, err := r.disc.Query(endpoint, query, comment)
+	if err != nil {
+		r.error(`discovering features failed, please try again`, err)
+		return
 	}
+
+	var out string
+	for i, f := range features {
+		out += f.Id
+		if i != len(features)-1 {
+			out += `, `
+		}
+	}
+	r.output(out)
 }
+
+/* command-line specific functions */
 
 func (r *runner) input(label string) (input string) {
 readInput:

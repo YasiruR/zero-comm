@@ -41,6 +41,6 @@ type OutOfBand interface {
 // Agent may use best practices to avoid fingerprinting.
 // see: https://github.com/hyperledger/aries-rfcs/tree/main/features/0031-discover-features#privacy-considerations
 type Discoverer interface {
-	Query(expr string)
-	Disclose()
+	Query(endpoint, query, comment string) (fs []models.Feature, err error)
+	Disclose(id, query string) messages.DiscloseFeature
 }

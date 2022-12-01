@@ -29,10 +29,13 @@ func NewDiscoverer(c *domain.Container) *Discoverer {
 		server:    c.Server,
 		features: []models.Feature{
 			{Id: `1`, Roles: []string{`tester`}},
+			{Id: `22`, Roles: []string{`huuuuu`}},
+			{Id: `245`, Roles: []string{`another`}},
 		},
 		log: c.Log,
 	}
 
+	d.server.AddHandler(domain.MsgTypQuery, d.queryChan, false)
 	go d.listen()
 	return d
 }
