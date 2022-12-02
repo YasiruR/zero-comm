@@ -47,7 +47,6 @@ func initContainer(cfg *domain.Config) *domain.Container {
 		OOB:          invitation.NewOOBService(cfg),
 		Client:       reqRepZmq.NewClient(ctx),
 		Log:          logger,
-		SubChan:      make(chan models.Message),
 		ConnDoneChan: make(chan models.Connection),
 		OutChan:      make(chan string),
 	}

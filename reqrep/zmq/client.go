@@ -1,6 +1,7 @@
 package zmq
 
 import (
+	"encoding/json"
 	"fmt"
 	zmq "github.com/pebbe/zmq4"
 )
@@ -25,9 +26,12 @@ func (c *Client) Send(typ string, data []byte, endpoint string) (res string, err
 		return ``, fmt.Errorf(`fetching zmq socket failed - %v`, err)
 	}
 
-	// todo send type in a json body for future compatibility of other properties
+	metaByts, err := json.Marshal(metadata{Type: typ})
+	if err != nil {
+		return ``, fmt.Errorf(`marshalling metadata failed - %v`, err)
+	}
 
-	if _, err = skt.SendMessage(typ, string(data)); err != nil {
+	if _, err = skt.SendMessage([][]byte{metaByts, data}); err != nil {
 		return ``, fmt.Errorf(`sending zmq message by sender failed - %v`, err)
 	}
 
@@ -42,6 +46,10 @@ receive:
 
 	if len(msgs) == 0 {
 		return ``, fmt.Errorf(`received an empty message`)
+	}
+	
+	if msgs[0] == failedRes {
+		return ``, fmt.Errorf(`received an error message`)
 	}
 
 	return msgs[0], nil

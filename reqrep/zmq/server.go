@@ -1,6 +1,7 @@
 package zmq
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/models"
@@ -49,46 +50,50 @@ func (s *Server) Start() error {
 		msg, err := s.skt.RecvMessage(0)
 		if err != nil {
 			if err.Error() != errTempUnavail {
-				s.log.Error(fmt.Sprintf(`receiving zmq message by receiver failed - %v`, err))
+				// check if needed
 			}
-			s.sendAck(false)
+			s.sendAck(fmt.Errorf(`receiving zmq message by receiver failed - %v`, err))
 			continue
 		}
 
 		if len(msg) != 2 {
-			s.log.Error(`received an empty/invalid message`, msg)
-			s.sendAck(false)
+			s.sendAck(fmt.Errorf(`received an empty/invalid message (%s)`, msg))
 			continue
 		}
 
-		m := models.Message{Type: msg[0], Data: []byte(msg[1])}
+		var md metadata
+		if err = json.Unmarshal([]byte(msg[0]), &md); err != nil {
+			s.sendAck(fmt.Errorf(`unmarshalling metadata failed - %v`, err))
+			continue
+		}
+
+		m := models.Message{Type: md.Type, Data: []byte(msg[1])}
 		h, ok := s.handlers[m.Type]
 		if !ok {
-			s.log.Error(fmt.Sprintf(`no handler defined for the received message type (%s)`, m.Type))
-			s.sendAck(false)
+			s.sendAck(fmt.Errorf(`no handler defined for the received message type (%s)`, m.Type))
 			continue
 		}
 
 		if h.async {
 			h.notifier <- m
-			s.sendAck(true)
+			s.sendAck(nil)
 			continue
 		}
 
 		m.Reply = make(chan []byte)
 		h.notifier <- m
-		rep := <-m.Reply
-		s.sendRes(rep) // todo remove rep and check
+		s.sendRes(<-m.Reply)
 	}
 }
 
-func (s *Server) sendAck(success bool) {
-	msg := `ok`
-	if !success {
-		msg = `failed`
+func (s *Server) sendAck(err error) {
+	msg := successRes
+	if err != nil {
+		s.log.Error(err)
+		msg = failedRes
 	}
 
-	if _, err := s.skt.Send(msg, 0); err != nil {
+	if _, sendErr := s.skt.Send(msg, 0); sendErr != nil {
 		s.log.Error(fmt.Sprintf(`sending zmq ack message by receiver failed - %v`, err))
 	}
 }

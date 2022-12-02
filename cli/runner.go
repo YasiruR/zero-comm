@@ -235,14 +235,11 @@ func (r *runner) discover() {
 		return
 	}
 
-	var out string
-	for i, f := range features {
-		out += fmt.Sprintf(`%s %v`, f.Id, f.Roles)
-		if i != len(features)-1 {
-			out += `; `
-		}
+	var list []string
+	for _, f := range features {
+		list = append(list, fmt.Sprintf(`feature: "%s", roles: %v`, f.Id, f.Roles))
 	}
-	r.output(`Supported features: ` + out)
+	r.outputList(`Supported features`, list)
 }
 
 /* command-line specific functions */
@@ -260,6 +257,14 @@ readInput:
 
 func (r *runner) output(text string) {
 	fmt.Printf("-> %s\n", text)
+}
+
+func (r *runner) outputList(title string, list []string) {
+	var out string
+	for i, line := range list {
+		out += fmt.Sprintf("    %d. %s\n", i+1, line)
+	}
+	fmt.Printf(fmt.Sprintf("-> %s:\n%s\n", title, out))
 }
 
 func (r *runner) error(cmdOut string, err error) {

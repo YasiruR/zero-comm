@@ -34,8 +34,6 @@ type Container struct {
 	Prober       services.DIDComm
 	Client       services.Client
 	Server       services.Server
-	SubChan      chan models.Message // todo remove all chans from container
-	QueryChan    chan models.Message
 	ConnDoneChan chan models.Connection
 	OutChan      chan string
 	Log          log.Logger
