@@ -53,11 +53,138 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error
 		topcPubMap:   &sync.Map{},
 	}
 
-	go s.initReqConns()
-	go s.initAddPubs()
-	go s.listen()
+	go s.initPubListnr()
+	go s.initConnListnr()
+	go s.initMsgListnr()
 
 	return s, nil
+}
+
+// initPubListnr listens to the publisher status socket for any updates
+// (active/inactive) and handles accordingly in the subscriber
+func (s *Subscriber) initPubListnr() {
+	for {
+		// add termination
+		msg, err := s.sktPubs.Recv(0)
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`receiving zmq message for publisher status failed - %v`, err))
+			continue
+		}
+
+		pub, err := s.parsePubStatus(msg)
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`parsing publisher status message failed - %v`, err))
+			continue
+		}
+
+		if !pub.Active {
+			if err = s.unsubscribePub(pub.Topic, pub.Label); err != nil {
+				s.log.Error(fmt.Sprintf(`unsubscribing publisher failed - %v`, err))
+				continue
+			}
+
+			if err = s.deletePub(pub.Topic, pub.Label); err != nil {
+				s.log.Error(fmt.Sprintf(`removing publisher failed - %v`, err))
+				continue
+			}
+
+			s.outChan <- `Removed publisher '` + pub.Label + `' from topic '` + pub.Topic + `'`
+			continue
+		}
+
+		inv, err := s.parseInvURL(pub.Inv)
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`parsing invitation url of publisher failed - %v`, err))
+			continue
+		}
+
+		inviter, err := s.probr.Accept(inv)
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`accepting did invitation failed - %v`, err))
+			continue
+		}
+
+		if err = s.addPub(pub.Topic, inviter); err != nil {
+			s.log.Error(fmt.Sprintf(`adding peer to topic %s failed - %v`, pub.Topic, err))
+		}
+	}
+}
+
+// initConnListnr listens to any connections established by the agent and performs
+// setting up pub-sub relationship if the connected peer is a publisher
+func (s *Subscriber) initConnListnr() {
+	for {
+		// add termination
+		conn := <-s.connDone
+		subPublicKey, err := s.ks.PublicKey(conn.Peer)
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`getting public key for the connection with %s failed - %v`, conn.Peer, err))
+			continue
+		}
+
+		// fetching topics of the publisher connected
+		topics, err := s.topicsByPub(conn.Peer)
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`fetching topics for publisher %s failed - %v`, conn.Peer, err))
+			continue
+		}
+
+		if len(topics) == 0 {
+			continue
+		}
+
+		sm := messages.SubscribeMsg{
+			Id:        uuid.New().String(),
+			Type:      messages.SubscribeV1,
+			Subscribe: true,
+			Peer:      s.label,
+			PubKey:    base58.Encode(subPublicKey),
+			Topics:    topics,
+		}
+
+		byts, err := json.Marshal(sm)
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`marshalling subscribe message failed - %v`, err))
+			continue
+		}
+
+		if err = s.probr.SendMessage(domain.MsgTypSubscribe, conn.Peer, string(byts)); err != nil {
+			s.log.Error(fmt.Sprintf(`sending subscribe message failed - %v`, err))
+			continue
+		}
+
+		// subscribing to all topics of the publisher (topic syntax: topic_pub_sub)
+		for _, t := range topics {
+			subTopic := t + `_` + conn.Peer + `_` + s.label
+			if err = s.sktMsgs.SetSubscribe(subTopic); err != nil {
+				s.log.Error(fmt.Sprintf(`setting zmq subscription failed for topic %s - %v`, subTopic, err))
+				continue
+			}
+			s.log.Trace(fmt.Sprintf(`subscribed to sub-topic %s`, subTopic))
+		}
+	}
+}
+
+func (s *Subscriber) initMsgListnr() {
+	for {
+		msg, err := s.sktMsgs.Recv(0)
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`receiving subscribed message failed - %v`, err))
+			continue
+		}
+
+		frames := strings.Split(msg, ` `)
+		if len(frames) != 2 {
+			s.log.Error(fmt.Sprintf(`received an invalid subscribed message (%v) - %v`, frames, err))
+			continue
+		}
+
+		_, err = s.probr.ReadMessage(models.Message{Type: domain.MsgTypData, Data: []byte(frames[1])})
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`reading subscribed message failed - %v`, err))
+			continue
+		}
+	}
 }
 
 func (s *Subscriber) AddBrokers(topic string, brokers []string) {
@@ -145,110 +272,18 @@ func (s *Subscriber) subscribePubs(topic string) error {
 	return nil
 }
 
-func (s *Subscriber) initReqConns() {
-	for {
-		// add termination
-		msg, err := s.sktPubs.Recv(0)
-		if err != nil {
-			s.log.Error(fmt.Sprintf(`receiving zmq message for publisher status failed - %v`, err))
-			continue
-		}
-
-		frames := strings.Split(msg, " ")
-		if len(frames) != 2 {
-			s.log.Error(fmt.Sprintf(`received a message (%v) with an invalid format - frame count should be 2`, msg))
-			continue
-		}
-
-		var pub messages.PublisherStatus
-		if err = json.Unmarshal([]byte(frames[1]), &pub); err != nil {
-			s.log.Error(fmt.Sprintf(`unmarshalling publisher status failed (msg: %s) - %v`, frames[1], err))
-			continue
-		}
-
-		if !pub.Active {
-			if err = s.unsubscribePub(pub.Topic, pub.Label); err != nil {
-				s.log.Error(fmt.Sprintf(`unsubscribing publisher failed - %v`, err))
-				continue
-			}
-
-			if err = s.deletePub(pub.Topic, pub.Label); err != nil {
-				s.log.Error(fmt.Sprintf(`removing publisher failed - %v`, err))
-				continue
-			}
-
-			s.outChan <- `Removed publisher '` + pub.Label + `' from topic '` + pub.Topic + `'`
-			continue
-		}
-
-		inv, err := s.parseInvURL(pub.Inv)
-		if err != nil {
-			s.log.Error(fmt.Sprintf(`parsing invitation url of publisher failed - %v`, err))
-			continue
-		}
-
-		inviter, err := s.probr.Accept(inv)
-		if err != nil {
-			s.log.Error(fmt.Sprintf(`accepting did invitation failed - %v`, err))
-			continue
-		}
-
-		if err = s.addPub(pub.Topic, inviter); err != nil {
-			s.log.Error(fmt.Sprintf(`adding peer to topic %s failed - %v`, pub.Topic, err))
-		}
+func (s *Subscriber) parsePubStatus(msg string) (*messages.PublisherStatus, error) {
+	frames := strings.Split(msg, " ")
+	if len(frames) != 2 {
+		return nil, fmt.Errorf(`received a message (%v) with an invalid format - frame count should be 2`, msg)
 	}
-}
 
-func (s *Subscriber) initAddPubs() {
-	for {
-		// add termination
-		conn := <-s.connDone
-		subPublicKey, err := s.ks.PublicKey(conn.Peer)
-		if err != nil {
-			s.log.Error(fmt.Sprintf(`getting public key for the connection with %s failed - %v`, conn.Peer, err))
-			continue
-		}
-
-		// fetching topics of the publisher connected
-		topics, err := s.topicsByPub(conn.Peer)
-		if err != nil {
-			s.log.Error(fmt.Sprintf(`fetching topics for publisher %s failed - %v`, conn.Peer, err))
-			continue
-		}
-
-		if len(topics) == 0 {
-			continue
-		}
-
-		sm := messages.SubscribeMsg{
-			Id:        uuid.New().String(),
-			Type:      messages.SubscribeV1,
-			Subscribe: true,
-			Peer:      s.label,
-			PubKey:    base58.Encode(subPublicKey),
-			Topics:    topics,
-		}
-		byts, err := json.Marshal(sm)
-		if err != nil {
-			s.log.Error(fmt.Sprintf(`marshalling subscribe message failed - %v`, err))
-			continue
-		}
-
-		if err = s.probr.SendMessage(domain.MsgTypSubscribe, conn.Peer, string(byts)); err != nil {
-			s.log.Error(fmt.Sprintf(`sending subscribe message failed - %v`, err))
-			continue
-		}
-
-		// subscribing to all topics of the publisher (topic syntax: topic_pub_sub)
-		for _, t := range topics {
-			subTopic := t + `_` + conn.Peer + `_` + s.label
-			if err = s.sktMsgs.SetSubscribe(subTopic); err != nil {
-				s.log.Error(fmt.Sprintf(`setting zmq subscription failed for topic %s - %v`, subTopic, err))
-				continue
-			}
-			s.log.Trace(fmt.Sprintf(`subscribed to sub-topic %s`, subTopic))
-		}
+	var pub messages.PublisherStatus
+	if err := json.Unmarshal([]byte(frames[1]), &pub); err != nil {
+		return nil, fmt.Errorf(`unmarshalling publisher status failed (msg: %s) - %v`, frames[1], err)
 	}
+
+	return &pub, nil
 }
 
 func (s *Subscriber) parseInvURL(rawUrl string) (inv string, err error) {
@@ -346,28 +381,6 @@ func (s *Subscriber) unsubscribePub(topic, label string) error {
 		return fmt.Errorf(`unsubscribing topic %s via zmq socket failed - %v`, subTopic, err)
 	}
 	return nil
-}
-
-func (s *Subscriber) listen() {
-	for {
-		msg, err := s.sktMsgs.Recv(0)
-		if err != nil {
-			s.log.Error(fmt.Sprintf(`receiving subscribed message failed - %v`, err))
-			continue
-		}
-
-		frames := strings.Split(msg, ` `)
-		if len(frames) != 2 {
-			s.log.Error(fmt.Sprintf(`received an invalid subscribed message (%v) - %v`, frames, err))
-			continue
-		}
-
-		_, err = s.probr.ReadMessage(models.Message{Type: domain.MsgTypData, Data: []byte(frames[1])})
-		if err != nil {
-			s.log.Error(fmt.Sprintf(`reading subscribed message failed - %v`, err))
-			continue
-		}
-	}
 }
 
 func (s *Subscriber) Close() error {

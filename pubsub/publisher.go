@@ -10,17 +10,27 @@ import (
 	"github.com/btcsuite/btcutil/base58"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
+	"sync"
 )
 
+type subKey map[string][]byte // subscriber to public key map
+
+// performance may be improved by using granular locks and
+// trading off with complexity and memory utilization
+type topicStore struct {
+	*sync.RWMutex
+	subs map[string]subKey // can extend to multiple keys per peer
+}
+
 type Publisher struct {
-	label       string
-	skt         *zmq.Socket
-	prb         services.DIDComm
-	ks          services.KeyManager
-	packer      services.Packer
-	log         log.Logger
-	outChan     chan string
-	topicSubMap map[string]map[string][]byte // topic to subscriber to pub key map - use sync map, can extend to multiple keys per peer
+	label   string
+	skt     *zmq.Socket
+	prb     services.DIDComm
+	ks      services.KeyManager
+	packer  services.Packer
+	log     log.Logger
+	outChan chan string
+	ts      *topicStore
 }
 
 // todo add publisher as a service endpoint in did doc / invitation
@@ -36,14 +46,14 @@ func NewPublisher(zmqCtx *zmq.Context, c *domain.Container) (*Publisher, error) 
 	}
 
 	p := &Publisher{
-		label:       c.Cfg.Args.Name,
-		skt:         skt,
-		prb:         c.Prober,
-		ks:          c.KeyManager,
-		packer:      c.Packer,
-		log:         c.Log,
-		outChan:     c.OutChan,
-		topicSubMap: map[string]map[string][]byte{},
+		label:   c.Cfg.Args.Name,
+		skt:     skt,
+		prb:     c.Prober,
+		ks:      c.KeyManager,
+		packer:  c.Packer,
+		log:     c.Log,
+		outChan: c.OutChan,
+		ts:      &topicStore{RWMutex: &sync.RWMutex{}, subs: map[string]subKey{}},
 	}
 
 	p.initHandlers(c.Server)
@@ -95,34 +105,25 @@ func (p *Publisher) listen(subChan chan models.Message) {
 		}
 
 		if !sm.Subscribe {
-			p.removeSub(sm)
+			p.deleteSub(sm)
 			continue
 		}
 
-		subKey := base58.Decode(sm.PubKey)
+		sk := base58.Decode(sm.PubKey)
 		for _, t := range sm.Topics {
-			if p.topicSubMap[t] == nil {
-				p.topicSubMap[t] = map[string][]byte{}
-			}
-			p.topicSubMap[t][sm.Peer] = subKey
+			p.addSub(t, sm.Peer, sk)
 		}
-	}
-}
-
-func (p *Publisher) removeSub(sm messages.SubscribeMsg) {
-	for _, t := range sm.Topics {
-		delete(p.topicSubMap[t], sm.Peer)
 	}
 }
 
 func (p *Publisher) Publish(topic, msg string) error {
-	subs, ok := p.topicSubMap[topic]
-	if !ok {
-		return fmt.Errorf(`topic (%s) is not registered`, topic)
+	subs, err := p.subsByTopic(topic)
+	if err != nil {
+		return fmt.Errorf(`fetching subscribers for topic %s failed - %v`, topic, err)
 	}
 
 	var published bool
-	for sub, subKey := range subs {
+	for sub, key := range subs {
 		ownPubKey, err := p.ks.PublicKey(sub)
 		if err != nil {
 			return fmt.Errorf(`getting public key for connection with %s failed - %v`, sub, err)
@@ -133,7 +134,7 @@ func (p *Publisher) Publish(topic, msg string) error {
 			return fmt.Errorf(`getting private key for connection with %s failed - %v`, sub, err)
 		}
 
-		encryptdMsg, err := p.packer.Pack([]byte(msg), subKey, ownPubKey, ownPrvKey)
+		encryptdMsg, err := p.packer.Pack([]byte(msg), key, ownPubKey, ownPrvKey)
 		if err != nil {
 			p.log.Error(err)
 			return err
@@ -171,9 +172,44 @@ func (p *Publisher) Unregister(topic string) error {
 		return fmt.Errorf(`publishing inactive status failed - %v`, err)
 	}
 
-	delete(p.topicSubMap, topic)
+	p.deleteTopic(topic)
 	p.outChan <- `Unregistered ` + topic
 	return nil
+}
+
+func (p *Publisher) subsByTopic(topic string) (subKey, error) {
+	p.ts.RLock()
+	defer p.ts.RUnlock()
+	subs, ok := p.ts.subs[topic]
+	if !ok {
+		return nil, fmt.Errorf(`topic (%s) is not registered`, topic)
+	}
+
+	return subs, nil
+}
+
+// addSub replaces the key if already exists for the subscriber
+func (p *Publisher) addSub(topic, sub string, key []byte) {
+	p.ts.Lock()
+	defer p.ts.Unlock()
+	if p.ts.subs[topic] == nil {
+		p.ts.subs[topic] = subKey{}
+	}
+	p.ts.subs[topic][sub] = key
+}
+
+func (p *Publisher) deleteSub(sm messages.SubscribeMsg) {
+	p.ts.Lock()
+	defer p.ts.Unlock()
+	for _, t := range sm.Topics {
+		delete(p.ts.subs[t], sm.Peer)
+	}
+}
+
+func (p *Publisher) deleteTopic(topic string) {
+	p.ts.Lock()
+	defer p.ts.Unlock()
+	delete(p.ts.subs, topic)
 }
 
 func (p *Publisher) Close() error {
