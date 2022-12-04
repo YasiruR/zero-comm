@@ -13,19 +13,20 @@ import (
 	"github.com/tryfix/log"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 type Subscriber struct {
-	label         string
-	sktPubs       *zmq.Socket
-	sktMsgs       *zmq.Socket
-	probr         services.DIDComm
-	ks            services.KeyManager
-	log           log.Logger
-	connDone      chan models.Connection
-	outChan       chan string
-	topicBrokrMap map[string][]string // broker list for each topic
-	topicPeerMap  map[string][]string // use sync map for both
+	label        string
+	sktPubs      *zmq.Socket
+	sktMsgs      *zmq.Socket
+	probr        services.DIDComm
+	ks           services.KeyManager
+	topcBrokrMap *sync.Map // broker list for each topic
+	topcPubMap   *sync.Map
+	connDone     chan models.Connection
+	outChan      chan string
+	log          log.Logger
 }
 
 func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error) {
@@ -40,16 +41,16 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error
 	}
 
 	s := &Subscriber{
-		label:         c.Cfg.Args.Name,
-		sktPubs:       sktPubs,
-		sktMsgs:       sktMsgs,
-		probr:         c.Prober,
-		ks:            c.KeyManager,
-		log:           c.Log,
-		connDone:      c.ConnDoneChan,
-		outChan:       c.OutChan,
-		topicBrokrMap: make(map[string][]string),
-		topicPeerMap:  make(map[string][]string),
+		label:        c.Cfg.Args.Name,
+		sktPubs:      sktPubs,
+		sktMsgs:      sktMsgs,
+		probr:        c.Prober,
+		ks:           c.KeyManager,
+		log:          c.Log,
+		connDone:     c.ConnDoneChan,
+		outChan:      c.OutChan,
+		topcBrokrMap: &sync.Map{},
+		topcPubMap:   &sync.Map{},
 	}
 
 	go s.initReqConns()
@@ -60,7 +61,7 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error
 }
 
 func (s *Subscriber) AddBrokers(topic string, brokers []string) {
-	s.topicBrokrMap[topic] = brokers
+	s.topcBrokrMap.Store(topic, brokers)
 }
 
 func (s *Subscriber) Subscribe(topic string) error {
@@ -72,18 +73,22 @@ func (s *Subscriber) Subscribe(topic string) error {
 }
 
 func (s *Subscriber) Unsubscribe(topic string) error {
-	peers, ok := s.topicPeerMap[topic]
-	if !ok {
-		return fmt.Errorf(`no subscription found`)
+	peers, err := s.pubsByTopic(topic)
+	if err != nil {
+		return fmt.Errorf(`fetching peers for topic %s failed - %v`, topic, err)
 	}
 
-	if err := s.sktPubs.SetUnsubscribe(topic + domain.PubTopicSuffix); err != nil {
+	if len(peers) == 0 {
+		return fmt.Errorf(`no subscription found for topic %s`, topic)
+	}
+
+	if err = s.sktPubs.SetUnsubscribe(topic + domain.PubTopicSuffix); err != nil {
 		return fmt.Errorf(`unsubscribing %s%s via zmq socket failed - %v`, topic, domain.PubTopicSuffix, err)
 	}
 
 	for _, peer := range peers {
 		subTopic := topic + `_` + peer + `_` + s.label
-		if err := s.sktMsgs.SetUnsubscribe(subTopic); err != nil {
+		if err = s.sktMsgs.SetUnsubscribe(subTopic); err != nil {
 			return fmt.Errorf(`unsubscribing to zmq socket failed - %v`, err)
 		}
 
@@ -113,7 +118,17 @@ func (s *Subscriber) Unsubscribe(topic string) error {
 func (s *Subscriber) subscribePubs(topic string) error {
 	// todo should be continuous for dynamic subscriptions and publishers
 	// todo may need not to do for already connected pubs
-	for _, pubEndpoint := range s.topicBrokrMap[topic] {
+	val, ok := s.topcBrokrMap.Load(topic)
+	if !ok {
+		return fmt.Errorf(`no brokers found for topic %v`, topic)
+	}
+
+	brokrs, ok := val.([]string)
+	if !ok {
+		return fmt.Errorf(`incompatible value found for brokers (%v) - should be []string`, val)
+	}
+
+	for _, pubEndpoint := range brokrs {
 		if err := s.sktPubs.Connect(pubEndpoint); err != nil {
 			return fmt.Errorf(`connecting to publisher for status (%s) failed - %v`, pubEndpoint, err)
 		}
@@ -152,7 +167,12 @@ func (s *Subscriber) initReqConns() {
 		}
 
 		if !pub.Active {
-			if err = s.removePub(pub.Topic, pub.Label); err != nil {
+			if err = s.unsubscribePub(pub.Topic, pub.Label); err != nil {
+				s.log.Error(fmt.Sprintf(`unsubscribing publisher failed - %v`, err))
+				continue
+			}
+
+			if err = s.deletePub(pub.Topic, pub.Label); err != nil {
 				s.log.Error(fmt.Sprintf(`removing publisher failed - %v`, err))
 				continue
 			}
@@ -173,28 +193,10 @@ func (s *Subscriber) initReqConns() {
 			continue
 		}
 
-		if s.topicPeerMap[pub.Topic] == nil {
-			s.topicPeerMap[pub.Topic] = []string{}
-		}
-		s.topicPeerMap[pub.Topic] = append(s.topicPeerMap[pub.Topic], inviter)
-	}
-}
-
-func (s *Subscriber) removePub(topic, label string) error {
-	subTopic := topic + `_` + label + `_` + s.label
-	if err := s.sktMsgs.SetUnsubscribe(subTopic); err != nil {
-		return fmt.Errorf(`unsubscribing topic %s via zmq socket failed - %v`, subTopic, err)
-	}
-
-	var tmpPubs []string
-	for _, pub := range s.topicPeerMap[topic] {
-		if pub != label {
-			tmpPubs = append(tmpPubs, pub)
+		if err = s.addPub(pub.Topic, inviter); err != nil {
+			s.log.Error(fmt.Sprintf(`adding peer to topic %s failed - %v`, pub.Topic, err))
 		}
 	}
-	s.topicPeerMap[topic] = tmpPubs
-
-	return nil
 }
 
 func (s *Subscriber) initAddPubs() {
@@ -208,13 +210,10 @@ func (s *Subscriber) initAddPubs() {
 		}
 
 		// fetching topics of the publisher connected
-		var topics []string
-		for topic, pubs := range s.topicPeerMap {
-			for _, pub := range pubs {
-				if pub == conn.Peer {
-					topics = append(topics, topic)
-				}
-			}
+		topics, err := s.topicsByPub(conn.Peer)
+		if err != nil {
+			s.log.Error(fmt.Sprintf(`fetching topics for publisher %s failed - %v`, conn.Peer, err))
+			continue
 		}
 
 		if len(topics) == 0 {
@@ -264,6 +263,89 @@ func (s *Subscriber) parseInvURL(rawUrl string) (inv string, err error) {
 	}
 
 	return params[0], nil
+}
+
+func (s *Subscriber) pubsByTopic(topic string) (pubs []string, err error) {
+	val, ok := s.topcPubMap.Load(topic)
+	if !ok {
+		return nil, nil
+	}
+
+	pubs, ok = val.([]string)
+	if !ok {
+		return nil, fmt.Errorf(`invalid publishers found (%v) for topic %s - should be []string`, val, topic)
+	}
+
+	return pubs, nil
+}
+
+func (s *Subscriber) topicsByPub(pub string) (topics []string, err error) {
+	s.topcPubMap.Range(func(key, val any) bool {
+		topic, ok := key.(string)
+		if !ok {
+			err = fmt.Errorf(`invalid topic key (%v) - should be []string`, key)
+			return false
+		}
+
+		pubs, ok := val.([]string)
+		if !ok {
+			err = fmt.Errorf(`invalid publisher list found (%v) for topic %s - should be []string`, val, key)
+			return false
+		}
+
+		for _, connPub := range pubs {
+			if connPub == pub {
+				topics = append(topics, topic)
+				return true
+			}
+		}
+		return true
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf(`iterating topic-publisher sync map failed - %v`, err)
+	}
+
+	return topics, nil
+}
+
+func (s *Subscriber) addPub(topic, pub string) error {
+	pubs, err := s.pubsByTopic(topic)
+	if err != nil {
+		return fmt.Errorf(`fetching publishers failed - %v`, err)
+	}
+
+	if pubs == nil {
+		pubs = []string{}
+	}
+
+	s.topcPubMap.Store(topic, append(pubs, pub))
+	return nil
+}
+
+func (s *Subscriber) deletePub(topic, label string) error {
+	pubs, err := s.pubsByTopic(topic)
+	if err != nil {
+		return fmt.Errorf(`fetching publishers failed - %v`, err)
+	}
+
+	var tmpPubs []string
+	for _, pub := range pubs {
+		if pub != label {
+			tmpPubs = append(tmpPubs, pub)
+		}
+	}
+	s.topcPubMap.Store(topic, tmpPubs)
+
+	return nil
+}
+
+func (s *Subscriber) unsubscribePub(topic, label string) error {
+	subTopic := topic + `_` + label + `_` + s.label
+	if err := s.sktMsgs.SetUnsubscribe(subTopic); err != nil {
+		return fmt.Errorf(`unsubscribing topic %s via zmq socket failed - %v`, subTopic, err)
+	}
+	return nil
 }
 
 func (s *Subscriber) listen() {

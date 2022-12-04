@@ -194,7 +194,7 @@ func (r *runner) subscribe() {
 	topic := strings.TrimSpace(r.input(`Topic`))
 	strBrokers := r.input(`Brokers (as a comma-separated list)`)
 	brokers := strings.Split(strings.TrimSpace(strBrokers), `,`)
-	//brokers = []string{`tcp://127.0.0.1:9998`, `tcp://127.0.0.1:9999`}
+	brokers = []string{`tcp://127.0.0.1:9998`, `tcp://127.0.0.1:9999`}
 	r.sub.AddBrokers(topic, brokers)
 
 	if err := r.sub.Subscribe(topic); err != nil {
