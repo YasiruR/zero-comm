@@ -21,7 +21,7 @@ type Subscriber struct {
 	sktPubs      *zmq.Socket
 	sktMsgs      *zmq.Socket
 	probr        services.DIDComm
-	ks           services.KeyManager
+	km           services.KeyManager
 	topcBrokrMap *sync.Map // broker list for each topic
 	topcPubMap   *sync.Map
 	connDone     chan models.Connection
@@ -45,7 +45,7 @@ func NewSubscriber(zmqCtx *zmq.Context, c *domain.Container) (*Subscriber, error
 		sktPubs:      sktPubs,
 		sktMsgs:      sktMsgs,
 		probr:        c.Prober,
-		ks:           c.KeyManager,
+		km:           c.KeyManager,
 		log:          c.Log,
 		connDone:     c.ConnDoneChan,
 		outChan:      c.OutChan,
@@ -116,7 +116,7 @@ func (s *Subscriber) initConnListnr() {
 	for {
 		// add termination
 		conn := <-s.connDone
-		subPublicKey, err := s.ks.PublicKey(conn.Peer)
+		subPublicKey, err := s.km.PublicKey(conn.Peer)
 		if err != nil {
 			s.log.Error(fmt.Sprintf(`getting public key for the connection with %s failed - %v`, conn.Peer, err))
 			continue
@@ -200,12 +200,12 @@ func (s *Subscriber) Subscribe(topic string) error {
 }
 
 func (s *Subscriber) Unsubscribe(topic string) error {
-	peers, err := s.pubsByTopic(topic)
+	pubs, err := s.pubsByTopic(topic)
 	if err != nil {
-		return fmt.Errorf(`fetching peers for topic %s failed - %v`, topic, err)
+		return fmt.Errorf(`fetching publishers for topic %s failed - %v`, topic, err)
 	}
 
-	if len(peers) == 0 {
+	if len(pubs) == 0 {
 		return fmt.Errorf(`no subscription found for topic %s`, topic)
 	}
 
@@ -213,7 +213,7 @@ func (s *Subscriber) Unsubscribe(topic string) error {
 		return fmt.Errorf(`unsubscribing %s%s via zmq socket failed - %v`, topic, domain.PubTopicSuffix, err)
 	}
 
-	for _, peer := range peers {
+	for _, peer := range pubs {
 		subTopic := topic + `_` + peer + `_` + s.label
 		if err = s.sktMsgs.SetUnsubscribe(subTopic); err != nil {
 			return fmt.Errorf(`unsubscribing to zmq socket failed - %v`, err)
@@ -226,6 +226,7 @@ func (s *Subscriber) Unsubscribe(topic string) error {
 			Peer:      s.label,
 			Topics:    []string{topic},
 		}
+
 		byts, err := json.Marshal(sm)
 		if err != nil {
 			return fmt.Errorf(`marshalling unsubscribe message failed - %v`, err)
@@ -245,28 +246,24 @@ func (s *Subscriber) Unsubscribe(topic string) error {
 func (s *Subscriber) subscribePubs(topic string) error {
 	// todo should be continuous for dynamic subscriptions and publishers
 	// todo may need not to do for already connected pubs
-	val, ok := s.topcBrokrMap.Load(topic)
-	if !ok {
-		return fmt.Errorf(`no brokers found for topic %v`, topic)
-	}
-
-	brokrs, ok := val.([]string)
-	if !ok {
-		return fmt.Errorf(`incompatible value found for brokers (%v) - should be []string`, val)
+	brokrs, err := s.brokrsByTopic(topic)
+	if err != nil {
+		return fmt.Errorf(`fetching brokers for topic %s failed - %v`, topic, err)
 	}
 
 	for _, pubEndpoint := range brokrs {
-		if err := s.sktPubs.Connect(pubEndpoint); err != nil {
+		if err = s.sktPubs.Connect(pubEndpoint); err != nil {
 			return fmt.Errorf(`connecting to publisher for status (%s) failed - %v`, pubEndpoint, err)
 		}
 
-		if err := s.sktMsgs.Connect(pubEndpoint); err != nil {
+		if err = s.sktMsgs.Connect(pubEndpoint); err != nil {
 			return fmt.Errorf(`connecting to publisher for messages (%s) failed - %v`, pubEndpoint, err)
 		}
+	}
 
-		if err := s.sktPubs.SetSubscribe(topic + domain.PubTopicSuffix); err != nil {
-			return fmt.Errorf(`setting zmq subscription failed - %v`, err)
-		}
+	// if zmq subscription is called multiple times, it will create multiple instances of subscribers
+	if err = s.sktPubs.SetSubscribe(topic + domain.PubTopicSuffix); err != nil {
+		return fmt.Errorf(`setting zmq subscription failed - %v`, err)
 	}
 
 	return nil
@@ -298,6 +295,20 @@ func (s *Subscriber) parseInvURL(rawUrl string) (inv string, err error) {
 	}
 
 	return params[0], nil
+}
+
+func (s *Subscriber) brokrsByTopic(topic string) (brokrs []string, err error) {
+	val, ok := s.topcBrokrMap.Load(topic)
+	if !ok {
+		return nil, fmt.Errorf(`no brokers found for topic %v`, topic)
+	}
+
+	brokrs, ok = val.([]string)
+	if !ok {
+		return nil, fmt.Errorf(`incompatible value found for brokers (%v) - should be []string`, val)
+	}
+
+	return brokrs, nil
 }
 
 func (s *Subscriber) pubsByTopic(topic string) (pubs []string, err error) {
