@@ -4,17 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	zmq "github.com/pebbe/zmq4"
+	"sync"
 )
 
 type Client struct {
 	ctx   *zmq.Context
-	peers map[string]*zmq.Socket // use sync map if accessed concurrently
+	peers *sync.Map
 }
 
 func NewClient(zmqCtx *zmq.Context) *Client {
 	return &Client{
 		ctx:   zmqCtx,
-		peers: make(map[string]*zmq.Socket),
+		peers: &sync.Map{},
 	}
 }
 
@@ -47,7 +48,7 @@ receive:
 	if len(msgs) == 0 {
 		return ``, fmt.Errorf(`received an empty message`)
 	}
-	
+
 	if msgs[0] == failedRes {
 		return ``, fmt.Errorf(`received an error message`)
 	}
@@ -56,9 +57,12 @@ receive:
 }
 
 func (c *Client) socket(endpoint string) (skt *zmq.Socket, err error) {
-	skt, ok := c.peers[endpoint]
+	val, ok := c.peers.Load(endpoint)
 	if ok {
-		return skt, nil
+		skt, ok = val.(*zmq.Socket)
+		if ok {
+			return skt, nil
+		}
 	}
 
 	skt, err = c.ctx.NewSocket(zmq.REQ)
@@ -70,6 +74,6 @@ func (c *Client) socket(endpoint string) (skt *zmq.Socket, err error) {
 		return nil, fmt.Errorf(`connecting to zmq socket (%s) failed - %v`, endpoint, err)
 	}
 
-	c.peers[endpoint] = skt
+	c.peers.Store(endpoint, skt)
 	return skt, nil
 }

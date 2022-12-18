@@ -7,6 +7,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
+	"sync"
 )
 
 type handler struct {
@@ -15,9 +16,9 @@ type handler struct {
 }
 
 type Server struct {
-	skt      *zmq.Socket
-	handlers map[string]*handler
-	log      log.Logger
+	skt     *zmq.Socket
+	handlrs *sync.Map
+	log     log.Logger
 }
 
 func NewServer(zmqCtx *zmq.Context, c *domain.Container) (*Server, error) {
@@ -31,18 +32,18 @@ func NewServer(zmqCtx *zmq.Context, c *domain.Container) (*Server, error) {
 	}
 
 	return &Server{
-		skt:      skt,
-		handlers: make(map[string]*handler),
-		log:      c.Log,
+		skt:     skt,
+		handlrs: &sync.Map{},
+		log:     c.Log,
 	}, nil
 }
 
 func (s *Server) AddHandler(msgType string, notifier chan models.Message, async bool) {
-	s.handlers[msgType] = &handler{async: async, notifier: notifier}
+	s.handlrs.Store(msgType, &handler{async: async, notifier: notifier})
 }
 
 func (s *Server) RemoveHandler(msgType string) {
-	delete(s.handlers, msgType)
+	s.handlrs.Delete(msgType)
 }
 
 func (s *Server) Start() error {
@@ -68,9 +69,9 @@ func (s *Server) Start() error {
 		}
 
 		m := models.Message{Type: md.Type, Data: []byte(msg[1])}
-		h, ok := s.handlers[m.Type]
-		if !ok {
-			s.sendAck(fmt.Errorf(`no handler defined for the received message type (%s)`, m.Type))
+		h, err := s.handlrByTyp(m.Type)
+		if err != nil {
+			s.sendAck(fmt.Errorf(`fetching handler failed - %v`, err))
 			continue
 		}
 
@@ -102,6 +103,20 @@ func (s *Server) sendRes(data []byte) {
 	if _, err := s.skt.Send(string(data), 0); err != nil {
 		s.log.Error(fmt.Sprintf(`sending zmq response message by receiver failed - %v`, err))
 	}
+}
+
+func (s *Server) handlrByTyp(msgTyp string) (*handler, error) {
+	val, ok := s.handlrs.Load(msgTyp)
+	if !ok {
+		return nil, fmt.Errorf(`no handler found for message type %s`, msgTyp)
+	}
+
+	h, ok := val.(*handler)
+	if !ok {
+		return nil, fmt.Errorf(`invalid type for handler found for message type %s - should be *handler`)
+	}
+
+	return h, nil
 }
 
 func (s *Server) Stop() error {
