@@ -2,13 +2,16 @@ package main
 
 import (
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/core/connection"
+	"github.com/YasiruR/didcomm-prober/core/did"
+	"github.com/YasiruR/didcomm-prober/core/invitation"
 	"github.com/YasiruR/didcomm-prober/crypto"
-	"github.com/YasiruR/didcomm-prober/did"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/log"
 	"github.com/YasiruR/didcomm-prober/prober"
 	"github.com/YasiruR/didcomm-prober/pubsub"
-	"github.com/YasiruR/didcomm-prober/reqrep"
+	reqRepZmq "github.com/YasiruR/didcomm-prober/reqrep/zmq"
 	zmq "github.com/pebbe/zmq4"
 	"strconv"
 )
@@ -30,33 +33,33 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	logger := log.NewLogger(cfg.Args.Verbose)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
+	ctx, err := zmq.NewContext()
+	if err != nil {
+		logger.Fatal(fmt.Sprintf(`zmq context initialization failed - %v`, err))
+	}
 
 	c := &domain.Container{
 		Cfg:          cfg,
-		KS:           km,
+		KeyManager:   km,
 		Packer:       packer,
-		DS:           &did.Handler{},
-		OOB:          did.NewOOBService(cfg),
+		DidAgent:     did.NewHandler(),
+		Connector:    connection.NewConnector(),
+		OOB:          invitation.NewOOBService(cfg),
+		Client:       reqRepZmq.NewClient(ctx),
 		Log:          logger,
-		InChan:       make(chan domain.Message),
-		SubChan:      make(chan domain.Message),
-		ConnDoneChan: make(chan domain.Connection),
+		ConnDoneChan: make(chan models.Connection),
 		OutChan:      make(chan string),
 	}
 
-	//if c.Cfg.PubPort != 0 {
-	//	c.ConnDoneChan = make(chan domain.Connection)
-	//}
-
-	ctx, err := zmq.NewContext()
+	s, err := reqRepZmq.NewServer(ctx, c)
 	if err != nil {
-		c.Log.Fatal(fmt.Sprintf(`zmq context initialization failed - %v`, err))
+		logger.Fatal(`initializing zmq server failed`, err)
 	}
-	initZmqReqRep(ctx, c)
+	c.Server = s
 
 	prb, err := prober.NewProber(c)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatal(`initializing prober failed`, err)
 	}
 	c.Prober = prb
 
@@ -64,14 +67,6 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	initZmqPubSub(ctx, c)
 
 	return c
-}
-
-func initZmqReqRep(ctx *zmq.Context, c *domain.Container) {
-	z, err := reqrep.NewZmq(ctx, c)
-	if err != nil {
-		c.Log.Fatal(err)
-	}
-	c.Tr = z
 }
 
 func initZmqPubSub(ctx *zmq.Context, c *domain.Container) {
@@ -91,5 +86,5 @@ func initZmqPubSub(ctx *zmq.Context, c *domain.Container) {
 }
 
 func shutdown(c *domain.Container) {
-	c.Tr.Stop()
+	c.Server.Stop()
 }

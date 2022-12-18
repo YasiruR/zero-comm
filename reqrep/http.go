@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/gorilla/mux"
 	"github.com/tryfix/log"
 	"io/ioutil"
@@ -13,8 +14,8 @@ import (
 
 type HTTP struct {
 	port   int
-	packer domain.Packer
-	ks     domain.KeyService
+	packer services.Packer
+	ks     services.KeyManager
 	log    log.Logger
 	router *mux.Router
 	client *http.Client
@@ -25,7 +26,7 @@ func NewHTTP(c *domain.Container) *HTTP {
 	return &HTTP{
 		port:   c.Cfg.Args.Port,
 		packer: c.Packer,
-		ks:     c.KS,
+		ks:     c.KeyManager,
 		log:    c.Log,
 		client: &http.Client{},
 		router: mux.NewRouter(),

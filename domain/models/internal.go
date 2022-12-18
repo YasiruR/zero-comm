@@ -1,8 +1,9 @@
-package domain
+package models
 
 type Message struct {
-	Type string
-	Data []byte
+	Type  string
+	Data  []byte
+	Reply chan []byte
 }
 
 type Connection struct {
@@ -17,3 +18,10 @@ type Peer struct {
 	PubKey       []byte
 	ExchangeThId string // thread id used in did-exchange (to correlate any message to the peer)
 }
+
+type Feature struct {
+	Id    string   `json:"id"`
+	Roles []string `json:"roles"`
+}
+
+type HandlerFunc func(msg Message) error

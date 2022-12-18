@@ -5,20 +5,32 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
+	"github.com/YasiruR/didcomm-prober/domain/models"
+	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/btcsuite/btcutil/base58"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
+	"sync"
 )
 
+type subKey map[string][]byte // subscriber to public key map
+
+// performance may be improved by using granular locks and
+// trading off with complexity and memory utilization
+type topicStore struct {
+	*sync.RWMutex
+	subs map[string]subKey // can extend to multiple keys per peer
+}
+
 type Publisher struct {
-	label       string
-	skt         *zmq.Socket
-	prb         domain.DIDCommService
-	ks          domain.KeyService
-	packer      domain.Packer
-	log         log.Logger
-	subChan     chan domain.Message
-	topicSubMap map[string]map[string][]byte // topic to subscriber to pub key map - use sync map, can extend to multiple keys per peer
+	label   string
+	skt     *zmq.Socket
+	prb     services.DIDComm
+	ks      services.KeyManager
+	packer  services.Packer
+	log     log.Logger
+	outChan chan string
+	ts      *topicStore
 }
 
 // todo add publisher as a service endpoint in did doc / invitation
@@ -34,18 +46,24 @@ func NewPublisher(zmqCtx *zmq.Context, c *domain.Container) (*Publisher, error) 
 	}
 
 	p := &Publisher{
-		label:       c.Cfg.Args.Name,
-		skt:         skt,
-		prb:         c.Prober,
-		ks:          c.KS,
-		packer:      c.Packer,
-		log:         c.Log,
-		subChan:     c.SubChan,
-		topicSubMap: map[string]map[string][]byte{},
+		label:   c.Cfg.Args.Name,
+		skt:     skt,
+		prb:     c.Prober,
+		ks:      c.KeyManager,
+		packer:  c.Packer,
+		log:     c.Log,
+		outChan: c.OutChan,
+		ts:      &topicStore{RWMutex: &sync.RWMutex{}, subs: map[string]subKey{}},
 	}
 
-	go p.initAddSubs()
+	p.initHandlers(c.Server)
 	return p, err
+}
+
+func (p *Publisher) initHandlers(s services.Server) {
+	subChan := make(chan models.Message)
+	s.AddHandler(domain.MsgTypSubscribe, subChan, true)
+	go p.listen(subChan)
 }
 
 func (p *Publisher) Register(topic string) error {
@@ -55,49 +73,57 @@ func (p *Publisher) Register(topic string) error {
 		return fmt.Errorf(`generating invitation failed - %v`, err)
 	}
 
-	status := messages.PublisherStatus{Active: true, Inv: inv, Topic: topic}
+	status := messages.PublisherStatus{Label: p.label, Active: true, Inv: inv, Topic: topic}
 	byts, err := json.Marshal(status)
 	if err != nil {
 		return fmt.Errorf(`marshalling publisher status failed - %v`, err)
 	}
 
-	if _, err = p.skt.SendMessage(fmt.Sprintf(`%s_pubs %s`, topic, string(byts))); err != nil {
+	if _, err = p.skt.SendMessage(fmt.Sprintf(`%s%s %s`, topic, domain.PubTopicSuffix, string(byts))); err != nil {
 		return fmt.Errorf(`publishing active status failed - %v`, err)
 	}
 
 	return nil
 }
 
-// initAddSubs follows subscription of a topic which is done through a separate
+// listen follows subscription of a topic which is done through a separate
 // DIDComm message. Alternatively, it can be included in connection request.
-func (p *Publisher) initAddSubs() {
+func (p *Publisher) listen(subChan chan models.Message) {
 	for {
 		// add termination
-		msg := <-p.subChan
-		unpackedMsg, err := p.prb.ReadMessage(msg.Data)
+		msg := <-subChan
+		unpackedMsg, err := p.prb.ReadMessage(msg)
 		if err != nil {
 			p.log.Error(fmt.Sprintf(`reading subscribe msg failed - %v`, err))
 			continue
 		}
 
-		var sub messages.SubscribeMsg
-		if err = json.Unmarshal([]byte(unpackedMsg), &sub); err != nil {
+		var sm messages.SubscribeMsg
+		if err = json.Unmarshal([]byte(unpackedMsg), &sm); err != nil {
 			p.log.Error(fmt.Sprintf(`unmarshalling subscribe message failed - %v`, err))
 			continue
 		}
 
-		subKey := base58.Decode(sub.PubKey)
-		for _, t := range sub.Topics {
-			if p.topicSubMap[t] == nil {
-				p.topicSubMap[t] = map[string][]byte{}
-			}
-			p.topicSubMap[t][sub.Peer] = subKey
+		if !sm.Subscribe {
+			p.deleteSub(sm)
+			continue
+		}
+
+		sk := base58.Decode(sm.PubKey)
+		for _, t := range sm.Topics {
+			p.addSub(t, sm.Peer, sk)
 		}
 	}
 }
 
 func (p *Publisher) Publish(topic, msg string) error {
-	for sub, subKey := range p.topicSubMap[topic] {
+	subs, err := p.subsByTopic(topic)
+	if err != nil {
+		return fmt.Errorf(`fetching subscribers for topic %s failed - %v`, topic, err)
+	}
+
+	var published bool
+	for sub, key := range subs {
 		ownPubKey, err := p.ks.PublicKey(sub)
 		if err != nil {
 			return fmt.Errorf(`getting public key for connection with %s failed - %v`, sub, err)
@@ -108,7 +134,7 @@ func (p *Publisher) Publish(topic, msg string) error {
 			return fmt.Errorf(`getting private key for connection with %s failed - %v`, sub, err)
 		}
 
-		encryptdMsg, err := p.packer.Pack([]byte(msg), subKey, ownPubKey, ownPrvKey)
+		encryptdMsg, err := p.packer.Pack([]byte(msg), key, ownPubKey, ownPrvKey)
 		if err != nil {
 			p.log.Error(err)
 			return err
@@ -125,14 +151,69 @@ func (p *Publisher) Publish(topic, msg string) error {
 			return fmt.Errorf(`publishing message (%s) failed for %s - %v`, msg, sub, err)
 		}
 
-		fmt.Printf("-> Published '%s' to %s\n", msg, subTopic)
+		published = true
+		p.log.Trace(fmt.Sprintf(`published %s to %s`, msg, subTopic))
 	}
 
+	if published {
+		p.outChan <- `Published '` + msg + `' to '` + topic + `'`
+	}
 	return nil
 }
 
+func (p *Publisher) Unregister(topic string) error {
+	status := messages.PublisherStatus{Label: p.label, Active: false, Topic: topic}
+	byts, err := json.Marshal(status)
+	if err != nil {
+		return fmt.Errorf(`marshalling publisher inactive status failed - %v`, err)
+	}
+
+	if _, err = p.skt.SendMessage(fmt.Sprintf(`%s%s %s`, topic, domain.PubTopicSuffix, string(byts))); err != nil {
+		return fmt.Errorf(`publishing inactive status failed - %v`, err)
+	}
+
+	p.deleteTopic(topic)
+	p.outChan <- `Unregistered ` + topic
+	return nil
+}
+
+func (p *Publisher) subsByTopic(topic string) (subKey, error) {
+	p.ts.RLock()
+	defer p.ts.RUnlock()
+	subs, ok := p.ts.subs[topic]
+	if !ok {
+		return nil, fmt.Errorf(`topic (%s) is not registered`, topic)
+	}
+
+	return subs, nil
+}
+
+// addSub replaces the key if already exists for the subscriber
+func (p *Publisher) addSub(topic, sub string, key []byte) {
+	p.ts.Lock()
+	defer p.ts.Unlock()
+	if p.ts.subs[topic] == nil {
+		p.ts.subs[topic] = subKey{}
+	}
+	p.ts.subs[topic][sub] = key
+}
+
+func (p *Publisher) deleteSub(sm messages.SubscribeMsg) {
+	p.ts.Lock()
+	defer p.ts.Unlock()
+	for _, t := range sm.Topics {
+		delete(p.ts.subs[t], sm.Peer)
+	}
+}
+
+func (p *Publisher) deleteTopic(topic string) {
+	p.ts.Lock()
+	defer p.ts.Unlock()
+	delete(p.ts.subs, topic)
+}
+
 func (p *Publisher) Close() error {
-	// publish inactive to all _pubs
+	// todo publish inactive to all _pubs
 	// close sockets
 	// close context
 

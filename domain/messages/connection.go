@@ -69,30 +69,3 @@ type ConnRes struct {
 		}
 	} `json:"did_doc~attach"`
 }
-
-//type PeerDIDDoc struct {
-//	Context       string `json:"@context"`
-//	PublicKey     []key  `json:"publicKey"`
-//	Authorization auth   `json:"authorization"`
-//}
-//
-//type key struct {
-//	Crv string `json:"crv"`
-//	Kty string `json:"kty"`
-//	X   string `json:"x"`
-//	Y   string `json:"y"`
-//	Kid string `json:"kid"`
-//}
-//
-//type auth struct {
-//	Profiles []struct {
-//		Key   string   `json:"key"`
-//		Roles []string `json:"roles"`
-//	} `json:"profiles"`
-//	Rules []struct {
-//		Grant []string `json:"grant"`
-//		When  struct {
-//			Roles string `json:"roles"`
-//		} `json:"when"`
-//	}
-//}

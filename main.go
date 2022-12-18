@@ -9,7 +9,11 @@ func main() {
 	cfg := setConfigs(args)
 	c := initContainer(cfg)
 
-	go c.Tr.Start()
+	go func() {
+		if err := c.Server.Start(); err != nil {
+			c.Log.Fatal(`failed to start the server`, err)
+		}
+	}()
 	defer shutdown(c)
 	cli.Init(c)
 }

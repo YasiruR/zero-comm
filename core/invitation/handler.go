@@ -1,4 +1,4 @@
-package did
+package invitation
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ func NewOOBService(cfg *domain.Config) *OOBService {
 func (o *OOBService) CreateInv(label, did string, didDoc messages.DIDDocument) (url string, err error) {
 	inv := messages.Invitation{
 		Id:       uuid.New().String(),
-		Type:     "https://didcomm.org/out-of-band/1.0/invitation",
+		Type:     messages.OOBInvitationV1,
 		From:     did,
 		Label:    label,
 		Services: didDoc.Service, // a separate service to reach back for exchange
