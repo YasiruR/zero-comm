@@ -25,12 +25,12 @@ type Container struct {
 	Cfg          *Config
 	KeyManager   services.KeyManager
 	Packer       services.Packer
-	DidAgent     services.DIDAgent
+	DidAgent     services.DIDUtils
 	OOB          services.OutOfBand
 	Connector    services.Connector
 	Pub          services.Publisher
 	Sub          services.Subscriber
-	Prober       services.DIDComm
+	Prober       services.Agent
 	Client       services.Client
 	Server       services.Server
 	ConnDoneChan chan models.Connection

@@ -24,11 +24,11 @@ type Prober struct {
 	grpJoinEndpoint string
 	ks              services.KeyManager
 	packer          services.Packer
-	did             services.DIDAgent
+	did             services.DIDUtils
 	conn            services.Connector
 	oob             services.OutOfBand
 	peers           map[string]models.Peer
-	didDocs         map[string]messages.DIDDocument
+	myDidDocs       map[string]messages.DIDDocument
 	dids            map[string]string
 	outChan         chan string
 	connDone        chan models.Connection
@@ -50,7 +50,7 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		outChan:         c.OutChan,
 		label:           c.Cfg.Args.Name,
 		peers:           map[string]models.Peer{}, // name as the key may not be ideal
-		didDocs:         map[string]messages.DIDDocument{},
+		myDidDocs:       map[string]messages.DIDDocument{},
 		dids:            map[string]string{},
 		connDone:        c.ConnDoneChan,
 		client:          c.Client,
@@ -126,7 +126,7 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 	}
 
 	// marshals did doc to proceed with packing process
-	docBytes, err := json.Marshal(p.didDocs[inv.Label])
+	docBytes, err := json.Marshal(p.myDidDocs[inv.Label])
 	if err != nil {
 		return ``, fmt.Errorf(`marshalling did doc failed - %v`, err)
 	}
@@ -166,9 +166,14 @@ func (p *Prober) processConnReq(msg models.Message) error {
 	}
 
 	// decrypts peer did doc which is encrypted with invitation keys
-	peerEndpoint, peerPubKey, err := p.getPeerInfo(peerEncDocBytes, p.ks.InvPublicKey(), p.ks.InvPrivateKey())
+	svcs, err := p.getPeerInfo(peerEncDocBytes, p.ks.InvPublicKey(), p.ks.InvPrivateKey())
 	if err != nil {
 		return fmt.Errorf(`getting peer data failed - %v`, err)
+	}
+
+	prMsgEndpnt, prMsgPubKy, err := p.infoByServc(domain.ServcMessage, svcs)
+	if err != nil {
+		return fmt.Errorf(`getting message endpoint failed - %v`, err)
 	}
 
 	// set up prerequisites for a connection (diddoc, did, keys)
@@ -178,13 +183,13 @@ func (p *Prober) processConnReq(msg models.Message) error {
 	}
 
 	// marshals own did doc to proceed with packing process
-	docBytes, err := json.Marshal(p.didDocs[peerLabel])
+	docBytes, err := json.Marshal(p.myDidDocs[peerLabel])
 	if err != nil {
 		return fmt.Errorf(`marshalling did doc failed - %v`, err)
 	}
 
 	// encrypts did doc with peer invitation public key and default own key pair
-	encDidDoc, err := p.packer.Pack(docBytes, peerPubKey, pubKey, prvKey)
+	encDidDoc, err := p.packer.Pack(docBytes, prMsgPubKy, pubKey, prvKey)
 	if err != nil {
 		return fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
@@ -199,11 +204,11 @@ func (p *Prober) processConnReq(msg models.Message) error {
 		return fmt.Errorf(`marshalling connection response failed - %v`, err)
 	}
 
-	if _, err = p.client.Send(domain.MsgTypConnRes, connResBytes, peerEndpoint); err != nil {
+	if _, err = p.client.Send(domain.MsgTypConnRes, connResBytes, prMsgEndpnt); err != nil {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
-	p.peers[peerLabel] = models.Peer{DID: peerDid, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
+	p.peers[peerLabel] = models.Peer{DID: peerDid, Services: svcs, ExchangeThId: pthId}
 	p.outChan <- `Connection established with ` + peerLabel
 
 	return nil
@@ -230,16 +235,22 @@ func (p *Prober) processConnRes(msg models.Message) error {
 			}
 
 			// decrypts peer did doc which is encrypted with default keys
-			peerEndpoint, peerPubKey, err := p.getPeerInfo(peerEncDocBytes, ownPubKey, ownPrvKey)
+			svcs, err := p.getPeerInfo(peerEncDocBytes, ownPubKey, ownPrvKey)
 			if err != nil {
 				return fmt.Errorf(`getting peer data failed - %v`, err)
 			}
 
-			p.peers[name] = models.Peer{DID: peer.DID, Endpoint: peerEndpoint, PubKey: peerPubKey, ExchangeThId: pthId}
+			// todo may need to remove along with connection channel below
+			_, prMsgPubKy, err := p.infoByServc(domain.ServcMessage, svcs)
+			if err != nil {
+				return fmt.Errorf(`getting message endpoint failed - %v`, err)
+			}
+
+			p.peers[name] = models.Peer{DID: peer.DID, Services: svcs, ExchangeThId: pthId}
 
 			// should not be sent to non-pubsub relationships but the validation is done in pubsub module
 			if p.connDone != nil {
-				p.connDone <- models.Connection{Peer: name, PubKey: peerPubKey}
+				p.connDone <- models.Connection{Peer: name, PubKey: prMsgPubKy}
 			}
 
 			p.outChan <- `Connection established with ` + name
@@ -250,34 +261,40 @@ func (p *Prober) processConnRes(msg models.Message) error {
 	return fmt.Errorf(`requested peer is unknown to the agent`)
 }
 
-func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (endpoint string, pubKey []byte, err error) {
+func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (svcs []models.Service, err error) {
 	peerDocBytes, err := p.packer.Unpack(encDocBytes, recPubKey, recPrvKey)
 	if err != nil {
-		return ``, nil, fmt.Errorf(`decrypting did doc failed - %v`, err)
+		return nil, fmt.Errorf(`decrypting did doc failed - %v`, err)
 	}
 
 	// unmarshalls decrypted did doc
 	var peerDidDoc messages.DIDDocument
 	if err = json.Unmarshal(peerDocBytes, &peerDidDoc); err != nil {
-		return ``, nil, fmt.Errorf(`unmarshalling decrypted did doc failed - %v`, err)
+		return nil, fmt.Errorf(`unmarshalling decrypted did doc failed - %v`, err)
 	}
 
 	if len(peerDidDoc.Service) == 0 {
-		return ``, nil, fmt.Errorf(`did doc does not contain a service`)
+		return nil, fmt.Errorf(`did doc does not contain a service`)
 	}
 
-	// assumes first service is the valid one
-	if len(peerDidDoc.Service[0].RecipientKeys) == 0 {
-		return ``, nil, fmt.Errorf(`did doc does not contain recipient keys for the service`)
+	for _, s := range peerDidDoc.Service {
+		if len(s.RecipientKeys) == 0 {
+			p.log.Error(fmt.Sprintf(`did doc does not contain recipient keys for the service (%s)`, s.Type))
+			continue
+		}
+
+		for _, rk := range s.RecipientKeys {
+			peerPubKey, err := base64.StdEncoding.DecodeString(rk) // assumes the first eligible key-pair works fine for POC
+			if err != nil {
+				p.log.Error(fmt.Sprintf(`decoding recipient key failed for service (%s) - %v`, s.Type, err))
+				continue
+			}
+			svcs = append(svcs, models.Service{Id: s.Id, Type: s.Type, Endpoint: s.ServiceEndpoint, PubKey: peerPubKey})
+			break
+		}
 	}
 
-	peerEndpoint := peerDidDoc.Service[0].ServiceEndpoint
-	peerPubKey, err := base64.StdEncoding.DecodeString(peerDidDoc.Service[0].RecipientKeys[0])
-	if err != nil {
-		return ``, nil, fmt.Errorf(`decoding recipient key failed - %v`, err)
-	}
-
-	return peerEndpoint, peerPubKey, nil
+	return svcs, nil
 }
 
 func (p *Prober) SendMessage(typ, to, text string) error {
@@ -296,7 +313,12 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 		return fmt.Errorf(`getting private key for connection with %s failed - %v`, to, err)
 	}
 
-	msg, err := p.packer.Pack([]byte(text), peer.PubKey, ownPubKey, ownPrvKey)
+	prMsgEndpnt, prMsgPubKy, err := p.infoByServc(domain.ServcMessage, peer.Services)
+	if err != nil {
+		return fmt.Errorf(`getting message endpoint failed - %v`, err)
+	}
+
+	msg, err := p.packer.Pack([]byte(text), prMsgPubKy, ownPubKey, ownPrvKey)
 	if err != nil {
 		return fmt.Errorf(`packing message failed - %v`, err)
 	}
@@ -306,7 +328,7 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 		return fmt.Errorf(`marshalling didcomm message failed - %v`, err)
 	}
 
-	if _, err = p.client.Send(typ, data, peer.Endpoint); err != nil {
+	if _, err = p.client.Send(typ, data, prMsgEndpnt); err != nil {
 		return fmt.Errorf(`sending siscomm message failed - %v`, err)
 	}
 
@@ -369,7 +391,7 @@ func (p *Prober) setConnPrereqs(peer string) (pubKey, prvKey []byte, err error) 
 		return nil, nil, fmt.Errorf(`creating peer did failed - %v`, err)
 	}
 
-	p.didDocs[peer] = didDoc
+	p.myDidDocs[peer] = didDoc
 	p.dids[peer] = did
 	return pubKey, prvKey, nil
 }
@@ -398,4 +420,22 @@ func (p *Prober) peerByMsg(data []byte) (name string, err error) {
 
 	decodedPubKey := base58.Decode(payload.Recipients[0].Header.Kid)
 	return p.ks.Peer(decodedPubKey)
+}
+
+func (p *Prober) infoByServc(filter string, svcs []models.Service) (endpoint string, pubKey []byte, err error) {
+	for _, s := range svcs {
+		if s.Type == filter {
+			return s.Endpoint, s.PubKey, nil
+		}
+	}
+
+	return ``, nil, fmt.Errorf(`services does not contain %s`, filter)
+}
+
+func (p *Prober) Peer(label string) (models.Peer, error) {
+	pr, ok := p.peers[label]
+	if !ok {
+		return models.Peer{}, fmt.Errorf(`no peer found for the label (%s)`, label)
+	}
+	return pr, nil
 }

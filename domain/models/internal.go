@@ -13,10 +13,10 @@ type Connection struct {
 }
 
 type Peer struct {
-	Active       bool // todo
-	DID          string
-	Endpoint     string
-	PubKey       []byte
+	Active bool // todo
+	DID    string
+	//Endpoint     string
+	//PubKey       []byte
 	ExchangeThId string // thread id used in did-exchange (to correlate any message to the peer)
 	Services     []Service
 }

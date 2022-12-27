@@ -25,7 +25,7 @@ type topicStore struct {
 type Publisher struct {
 	label   string
 	skt     *zmq.Socket
-	prb     services.DIDComm
+	prb     services.Agent
 	ks      services.KeyManager
 	packer  services.Packer
 	log     log.Logger

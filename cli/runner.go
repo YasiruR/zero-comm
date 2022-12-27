@@ -17,7 +17,7 @@ import (
 type runner struct {
 	cfg     *domain.Config
 	reader  *bufio.Reader
-	prober  services.DIDComm
+	prober  services.Agent
 	pub     services.Publisher
 	sub     services.Subscriber
 	disc    services.Discoverer

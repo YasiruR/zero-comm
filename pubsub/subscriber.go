@@ -20,7 +20,7 @@ type Subscriber struct {
 	label        string
 	sktPubs      *zmq.Socket
 	sktMsgs      *zmq.Socket
-	probr        services.DIDComm
+	probr        services.Agent
 	km           services.KeyManager
 	topcBrokrMap *sync.Map // broker list for each topic
 	topcPubMap   *sync.Map
