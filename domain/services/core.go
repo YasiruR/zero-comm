@@ -15,7 +15,7 @@ type DIDComm interface {
 }
 
 type DIDAgent interface {
-	CreateDIDDoc(endpoint, typ string, pubKey []byte) messages.DIDDocument
+	CreateDIDDoc(svcs []models.Service) messages.DIDDocument
 	CreatePeerDID(doc messages.DIDDocument) (did string, err error)
 	ValidatePeerDID(did string) error
 }

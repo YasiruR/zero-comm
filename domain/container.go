@@ -15,11 +15,10 @@ type Args struct {
 
 type Config struct {
 	Args
-	Hostname         string
-	InvEndpoint      string
-	ExchangeEndpoint string
-	PubEndpoint      string
-	LogLevel         string
+	Hostname    string
+	InvEndpoint string
+	PubEndpoint string
+	LogLevel    string
 }
 
 type Container struct {

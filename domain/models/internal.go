@@ -13,10 +13,12 @@ type Connection struct {
 }
 
 type Peer struct {
+	Active       bool // todo
 	DID          string
 	Endpoint     string
 	PubKey       []byte
 	ExchangeThId string // thread id used in did-exchange (to correlate any message to the peer)
+	Services     []Service
 }
 
 type Feature struct {
@@ -24,4 +26,9 @@ type Feature struct {
 	Roles []string `json:"roles"`
 }
 
-type HandlerFunc func(msg Message) error
+type Service struct {
+	Id       string
+	Type     string
+	Endpoint string
+	PubKey   []byte
+}

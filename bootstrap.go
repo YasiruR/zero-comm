@@ -20,12 +20,11 @@ func setConfigs(args *domain.Args) *domain.Config {
 	//hostname := `http://localhost:`
 	hostname := `tcp://127.0.0.1:`
 	return &domain.Config{
-		Args:             *args,
-		Hostname:         hostname,
-		InvEndpoint:      hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
-		ExchangeEndpoint: hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
-		PubEndpoint:      hostname + strconv.Itoa(args.PubPort),
-		LogLevel:         "DEBUG",
+		Args:        *args,
+		Hostname:    hostname,
+		InvEndpoint: hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
+		PubEndpoint: hostname + strconv.Itoa(args.PubPort),
+		LogLevel:    "DEBUG",
 	}
 }
 

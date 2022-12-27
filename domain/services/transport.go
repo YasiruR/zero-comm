@@ -46,3 +46,6 @@ type Subscriber interface {
 	Unsubscribe(topic string) error
 	Close() error
 }
+
+type PubSubAgent interface {
+}

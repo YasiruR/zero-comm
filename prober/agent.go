@@ -9,6 +9,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/btcsuite/btcutil/base58"
+	"github.com/google/uuid"
 	"github.com/tryfix/log"
 )
 
@@ -17,40 +18,42 @@ type streams struct {
 }
 
 type Prober struct {
-	label        string
-	invEndpoint  string
-	exchEndpoint string
-	ks           services.KeyManager
-	packer       services.Packer
-	did          services.DIDAgent
-	conn         services.Connector
-	oob          services.OutOfBand
-	peers        map[string]models.Peer
-	didDocs      map[string]messages.DIDDocument
-	dids         map[string]string
-	outChan      chan string
-	connDone     chan models.Connection
-	log          log.Logger
-	client       services.Client
+	label           string
+	invEndpoint     string
+	exchEndpoint    string
+	grpJoinEndpoint string
+	ks              services.KeyManager
+	packer          services.Packer
+	did             services.DIDAgent
+	conn            services.Connector
+	oob             services.OutOfBand
+	peers           map[string]models.Peer
+	didDocs         map[string]messages.DIDDocument
+	dids            map[string]string
+	outChan         chan string
+	connDone        chan models.Connection
+	log             log.Logger
+	client          services.Client
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
 	p = &Prober{
-		invEndpoint:  c.Cfg.InvEndpoint,
-		exchEndpoint: c.Cfg.InvEndpoint,
-		ks:           c.KeyManager,
-		packer:       c.Packer,
-		log:          c.Log,
-		did:          c.DidAgent,
-		conn:         c.Connector,
-		oob:          c.OOB,
-		outChan:      c.OutChan,
-		label:        c.Cfg.Args.Name,
-		peers:        map[string]models.Peer{}, // name as the key may not be ideal
-		didDocs:      map[string]messages.DIDDocument{},
-		dids:         map[string]string{},
-		connDone:     c.ConnDoneChan,
-		client:       c.Client,
+		invEndpoint:     c.Cfg.InvEndpoint,
+		exchEndpoint:    c.Cfg.InvEndpoint,
+		grpJoinEndpoint: c.Cfg.InvEndpoint,
+		ks:              c.KeyManager,
+		packer:          c.Packer,
+		log:             c.Log,
+		did:             c.DidAgent,
+		conn:            c.Connector,
+		oob:             c.OOB,
+		outChan:         c.OutChan,
+		label:           c.Cfg.Args.Name,
+		peers:           map[string]models.Peer{}, // name as the key may not be ideal
+		didDocs:         map[string]messages.DIDDocument{},
+		dids:            map[string]string{},
+		connDone:        c.ConnDoneChan,
+		client:          c.Client,
 	}
 
 	p.initHandlers(c.Server)
@@ -96,7 +99,9 @@ func (p *Prober) Invite() (url string, err error) {
 	}
 
 	// creates a did doc for connection request with a separate endpoint and public key
-	invDidDoc := p.did.CreateDIDDoc(p.invEndpoint, `did-exchange`, p.ks.InvPublicKey())
+	invDidDoc := p.did.CreateDIDDoc([]models.Service{
+		{Id: uuid.New().String(), Type: domain.ServcDIDExchange, Endpoint: p.invEndpoint, PubKey: p.ks.InvPublicKey()},
+	})
 
 	// but uses did created from default did doc as it serves as the identifier in invitation
 	url, err = p.oob.CreateInv(p.label, ``, invDidDoc) // todo null did
@@ -355,7 +360,10 @@ func (p *Prober) setConnPrereqs(peer string) (pubKey, prvKey []byte, err error) 
 	prvKey, _ = p.ks.PrivateKey(peer)
 
 	// creating own did and did doc
-	didDoc := p.did.CreateDIDDoc(p.exchEndpoint, `message-service`, pubKey)
+	didDoc := p.did.CreateDIDDoc([]models.Service{
+		{Id: uuid.New().String(), Type: domain.ServcMessage, Endpoint: p.exchEndpoint, PubKey: pubKey},
+		{Id: uuid.New().String(), Type: domain.ServcGroupJoin, Endpoint: p.grpJoinEndpoint, PubKey: pubKey},
+	})
 	did, err := p.did.CreatePeerDID(didDoc)
 	if err != nil {
 		return nil, nil, fmt.Errorf(`creating peer did failed - %v`, err)
