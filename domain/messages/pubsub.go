@@ -1,5 +1,7 @@
 package messages
 
+import "github.com/YasiruR/didcomm-prober/domain/models"
+
 type PublisherStatus struct {
 	Id     string `json:"@id"`
 	Type   string `json:"@type"`
@@ -16,4 +18,14 @@ type SubscribeMsg struct {
 	Peer      string   `json:"peer"`
 	PubKey    string   `json:"pubKey"` // base58 encoding of public key
 	Topics    []string `json:"topics"`
+}
+
+type ReqGroupJoin struct {
+	Topic        string `json:"topic"`
+	RequesterInv string `json:"requesterInv"`
+}
+
+type ResGroupJoin struct {
+	AcceptorInv string          `json:"acceptorInv"`
+	Members     []models.Member `json:"members"`
 }

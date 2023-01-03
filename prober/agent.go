@@ -432,6 +432,7 @@ func (p *Prober) infoByServc(filter string, svcs []models.Service) (endpoint str
 	return ``, nil, fmt.Errorf(`services does not contain %s`, filter)
 }
 
+// Peer returns the connected models.Peer queried by label
 func (p *Prober) Peer(label string) (models.Peer, error) {
 	pr, ok := p.peers[label]
 	if !ok {

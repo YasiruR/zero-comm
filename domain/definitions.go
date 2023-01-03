@@ -6,6 +6,8 @@ const (
 	MsgTypData      = `data`
 	MsgTypSubscribe = `subscribe`
 	MsgTypQuery     = `query`
+
+	MsgTypGroupJoin = `group-join`
 )
 
 const (
