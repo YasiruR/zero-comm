@@ -32,6 +32,7 @@ type Service struct {
 }
 
 type Member struct {
+	Active      bool   `json:"active"`
 	Label       string `json:"label"`
 	Inv         string `json:"inv"`
 	PubEndpoint string `json:"pubEndpoint"`

@@ -34,6 +34,8 @@ type Prober struct {
 	connDone        chan models.Connection
 	log             log.Logger
 	client          services.Client
+
+	syncConns map[string]chan bool
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -110,6 +112,20 @@ func (p *Prober) Invite() (url string, err error) {
 	}
 
 	return url, nil
+}
+
+// todo remove connDone chan
+func (p *Prober) SyncAccept(encodedInv string) error {
+	inviter, err := p.Accept(encodedInv)
+	if err != nil {
+		return fmt.Errorf(`accepting invitation failed - %v`, err)
+	}
+
+	// todo set a timeout for waiting
+	p.syncConns[inviter] = make(chan bool)
+	<-p.syncConns[inviter]
+
+	return nil
 }
 
 // Accept creates a connection request and sends it to the invitation endpoint
@@ -251,6 +267,10 @@ func (p *Prober) processConnRes(msg models.Message) error {
 			// should not be sent to non-pubsub relationships but the validation is done in pubsub module
 			if p.connDone != nil {
 				p.connDone <- models.Connection{Peer: name, PubKey: prMsgPubKy}
+			}
+
+			if p.syncConns[name] != nil {
+				p.syncConns[name] <- true
 			}
 
 			p.outChan <- `Connection established with ` + name

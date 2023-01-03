@@ -13,15 +13,6 @@ import (
 	"sync"
 )
 
-type subKey map[string][]byte // subscriber to public key map
-
-// performance may be improved by using granular locks and
-// trading off with complexity and memory utilization
-type topicStore struct {
-	*sync.RWMutex
-	subs map[string]subKey // can extend to multiple keys per peer
-}
-
 type Publisher struct {
 	label   string
 	skt     *zmq.Socket
