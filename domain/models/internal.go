@@ -33,7 +33,8 @@ type Service struct {
 
 type Member struct {
 	Active      bool   `json:"active"`
-	Label       string `json:"label"`
+	Publisher   bool   `json:"publisher"`
+	Label       string `json:"label"` // todo check if DID can be used
 	Inv         string `json:"inv"`
 	PubEndpoint string `json:"pubEndpoint"`
 }
