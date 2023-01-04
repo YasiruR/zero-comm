@@ -31,18 +31,22 @@ type sockets struct {
 }
 
 type Agent struct {
-	myLabel string
-	invs    map[string]string // invitation per each topic
-	groups  map[string][]models.Member
-	probr   services.Agent
-	client  services.Client
-	km      services.KeyManager
-	ts      *keyStore
-	log     log.Logger
+	myLabel     string
+	pubEndpoint string
+	invs        map[string]string // invitation per each topic
+	groups      map[string][]models.Member
+	probr       services.Agent
+	client      services.Client
+	km          services.KeyManager
+	packer      services.Packer
+	ts          *keyStore
+	log         log.Logger
+	outChan     chan string
 	*sockets
 }
 
 func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
+	// create PUB and SUB sockets for msgs and statuses
 	sktPub, err := zmqCtx.NewSocket(zmq.PUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
@@ -63,14 +67,17 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 	}
 
 	a := &Agent{
-		myLabel: c.Cfg.Args.Name,
-		invs:    make(map[string]string),
-		groups:  make(map[string][]models.Member),
-		probr:   c.Prober,
-		client:  c.Client,
-		km:      c.KeyManager,
-		log:     c.Log,
-		ts:      &keyStore{RWMutex: &sync.RWMutex{}, subs: map[string]subKey{}},
+		myLabel:     c.Cfg.Args.Name,
+		pubEndpoint: c.Cfg.PubEndpoint,
+		invs:        make(map[string]string),
+		groups:      make(map[string][]models.Member),
+		probr:       c.Prober,
+		client:      c.Client,
+		km:          c.KeyManager,
+		packer:      c.Packer,
+		log:         c.Log,
+		outChan:     c.OutChan,
+		ts:          &keyStore{RWMutex: &sync.RWMutex{}, subs: map[string]subKey{}},
 		sockets: &sockets{
 			sktPub:   sktPub,
 			sktState: sktStates,
@@ -78,11 +85,11 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 		},
 	}
 
-	a.Init(c.Server)
+	a.init(c.Server)
 	return a, nil
 }
 
-func (a *Agent) Init(s services.Server) {
+func (a *Agent) init(s services.Server) {
 	// add handler for subscribe messages
 	subChan := make(chan models.Message)
 	s.AddHandler(domain.MsgTypSubscribe, subChan, true)
@@ -94,12 +101,30 @@ func (a *Agent) Init(s services.Server) {
 	joinChan := make(chan models.Message)
 	s.AddHandler(domain.MsgTypGroupJoin, joinChan, false)
 
-	// create PUB and SUB sockets for msgs and statuses
-
 	go a.joinReqListnr(joinChan)
 	go a.subscrptionListnr(subChan)
 	go a.statusListnr()
 	go a.msgListnr()
+}
+
+func (a *Agent) Create(topic string, publisher bool) error {
+	inv, err := a.probr.Invite()
+	if err != nil {
+		return fmt.Errorf(`generating invitation failed - %v`, err)
+	}
+
+	m := models.Member{
+		Active:      true,
+		Publisher:   publisher,
+		Label:       a.myLabel,
+		Inv:         inv,
+		PubEndpoint: a.pubEndpoint,
+	}
+
+	a.invs[topic] = inv
+	a.groups[topic] = []models.Member{m}
+
+	return nil
 }
 
 func (a *Agent) Join(topic, acceptor string, publisher bool) error {
@@ -151,6 +176,8 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`group-join request failed - %v`, err)
 	}
 
+	fmt.Println("received join res", res)
+
 	// save received group info in-memory (map with topics?)
 	var resGroup messages.ResGroupJoin
 	if err = json.Unmarshal([]byte(res), &resGroup); err != nil {
@@ -184,8 +211,49 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	return nil
 }
 
-func (a *Agent) Publish() {
+func (a *Agent) Publish(topic, msg string) error {
+	subs, err := a.subsByTopic(topic)
+	if err != nil {
+		return fmt.Errorf(`fetching subscribers for topic %s failed - %v`, topic, err)
+	}
 
+	var published bool
+	for sub, key := range subs {
+		ownPubKey, err := a.km.PublicKey(sub)
+		if err != nil {
+			return fmt.Errorf(`getting public key for connection with %s failed - %v`, sub, err)
+		}
+
+		ownPrvKey, err := a.km.PrivateKey(sub)
+		if err != nil {
+			return fmt.Errorf(`getting private key for connection with %s failed - %v`, sub, err)
+		}
+
+		encryptdMsg, err := a.packer.Pack([]byte(msg), key, ownPubKey, ownPrvKey)
+		if err != nil {
+			a.log.Error(err)
+			return err
+		}
+
+		data, err := json.Marshal(encryptdMsg)
+		if err != nil {
+			a.log.Error(err)
+			return err
+		}
+
+		subTopic := topic + `_` + a.myLabel + `_` + sub
+		if _, err = a.sktMsgs.SendMessage(fmt.Sprintf(`%s %s`, subTopic, string(data))); err != nil {
+			return fmt.Errorf(`publishing message (%s) failed for %s - %v`, msg, sub, err)
+		}
+
+		published = true
+		a.log.Trace(fmt.Sprintf(`published %s to %s`, msg, subTopic))
+	}
+
+	if published {
+		a.outChan <- `Published '` + msg + `' to '` + topic + `'`
+	}
+	return nil
 }
 
 func (a *Agent) connect(m models.Member) error {
@@ -265,14 +333,16 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 	//	  - A sends group-info
 	for {
 		msg := <-joinChan
-		unpackedMsg, err := a.probr.ReadMessage(msg)
-		if err != nil {
-			a.log.Error(fmt.Sprintf(`reading group-join request failed - %v`, err))
-			continue
-		}
+		//unpackedMsg, err := a.probr.ReadMessage(msg)
+		//if err != nil {
+		//	a.log.Error(fmt.Sprintf(`reading group-join request failed - %v`, err))
+		//	continue
+		//}
+
+		fmt.Println("received join req", string(msg.Data))
 
 		var req messages.ReqGroupJoin
-		if err = json.Unmarshal([]byte(unpackedMsg), &req); err != nil {
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
 			a.log.Error(fmt.Sprintf(`unmarshalling group-join request failed - %v`, err))
 			continue
 		}
@@ -291,6 +361,8 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`marshalling group-join response failed - %v`, err))
 		}
+
+		fmt.Println("sending join res", string(byts))
 
 		// a null response is sent if an error occurred
 		msg.Reply <- byts
@@ -429,6 +501,17 @@ func (a *Agent) parseMembrStatus(msg string) (*messages.Status, error) {
 // dummy validation for PoC
 func (a *Agent) validJoiner(label string) bool {
 	return true
+}
+
+func (a *Agent) subsByTopic(topic string) (subKey, error) {
+	a.ts.RLock()
+	defer a.ts.RUnlock()
+	subs, ok := a.ts.subs[topic]
+	if !ok {
+		return nil, fmt.Errorf(`topic (%s) is not registered`, topic)
+	}
+
+	return subs, nil
 }
 
 // addSub replaces the key if already exists for the subscriber

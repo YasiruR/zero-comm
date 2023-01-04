@@ -47,5 +47,8 @@ type Subscriber interface {
 	Close() error
 }
 
-type PubSubAgent interface {
+type GroupAgent interface {
+	Create(topic string, publisher bool) error
+	Join(topic, acceptor string, publisher bool) error
+	Publish(topic, msg string) error
 }

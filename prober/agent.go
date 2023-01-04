@@ -257,17 +257,17 @@ func (p *Prober) processConnRes(msg models.Message) error {
 			}
 
 			// todo may need to remove along with connection channel below
-			_, prMsgPubKy, err := p.infoByServc(domain.ServcMessage, svcs)
-			if err != nil {
-				return fmt.Errorf(`getting message endpoint failed - %v`, err)
-			}
+			//_, prMsgPubKy, err := p.infoByServc(domain.ServcMessage, svcs)
+			//if err != nil {
+			//	return fmt.Errorf(`getting message endpoint failed - %v`, err)
+			//}
 
 			p.peers[name] = models.Peer{DID: peer.DID, Services: svcs, ExchangeThId: pthId}
 
 			// should not be sent to non-pubsub relationships but the validation is done in pubsub module
-			if p.connDone != nil {
-				p.connDone <- models.Connection{Peer: name, PubKey: prMsgPubKy}
-			}
+			//if p.connDone != nil {
+			//	p.connDone <- models.Connection{Peer: name, PubKey: prMsgPubKy}
+			//}
 
 			if p.syncConns[name] != nil {
 				p.syncConns[name] <- true

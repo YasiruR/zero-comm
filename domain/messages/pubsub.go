@@ -21,18 +21,10 @@ type SubscribeMsg struct {
 	//PubEndpoint string   `json:"pubEndpoint"`
 }
 
-type Role string
-
-const (
-	RolePublisher  = `pub-role`
-	RoleSubscriber = `sub-role`
-)
-
 type Status struct {
 	Id     string        `json:"@id"`
 	Type   string        `json:"@type"`
 	Topic  string        `json:"topic"` // might be a redundant info in general mq systems
-	Roles  []Role        `json:"roles"`
 	Member models.Member `json:"member"`
 }
 
@@ -43,6 +35,5 @@ type ReqGroupJoin struct {
 }
 
 type ResGroupJoin struct {
-	//AcceptorInv string          `json:"acceptorInv"`
 	Members []models.Member `json:"members"` // includes acceptor
 }
