@@ -12,13 +12,24 @@ type PublisherStatus struct {
 }
 
 type SubscribeMsg struct {
-	Id        string   `json:"@id"`
-	Type      string   `json:"@type"`
-	Subscribe bool     `json:"subscribe"`
-	Peer      string   `json:"peer"`
-	PubKey    string   `json:"pubKey"` // base58 encoding of public key
-	Topics    []string `json:"topics"`
-	//PubEndpoint string   `json:"pubEndpoint"`
+	Id          string   `json:"@id"`
+	Type        string   `json:"@type"`
+	Subscribe   bool     `json:"subscribe"`
+	Peer        string   `json:"peer"`
+	PubKey      string   `json:"pubKey"` // base58 encoding of public key
+	Topics      []string `json:"topics"`
+	PubEndpoint string   `json:"pubEndpoint"`
+
+	Topic string `json:"topic"`
+}
+
+type SubscribeMsgNew struct {
+	Id        string        `json:"@id"`
+	Type      string        `json:"@type"`
+	Subscribe bool          `json:"subscribe"`
+	PubKey    string        `json:"pubKey"` // base58 encoding of public key
+	Topic     string        `json:"topic"`
+	Member    models.Member `json:"member"`
 }
 
 type Status struct {

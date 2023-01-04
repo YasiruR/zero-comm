@@ -171,6 +171,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`marshalling group-join request failed - %v`, err)
 	}
 
+	// todo can pack and send this via didcomm
 	res, err := a.client.Send(domain.MsgTypGroupJoin, byts, srvcJoin.Endpoint)
 	if err != nil {
 		return fmt.Errorf(`group-join request failed - %v`, err)
@@ -180,6 +181,11 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	var resGroup messages.ResGroupJoin
 	if err = json.Unmarshal([]byte(res), &resGroup); err != nil {
 		return fmt.Errorf(`unmarshalling group-join response failed - %v`, err)
+	}
+
+	// todo check if should be used after connect
+	if err = a.subscribeStatus(topic); err != nil {
+		return fmt.Errorf(`subscribing to status topic of %s failed - %v`, topic, err)
 	}
 
 	// for each pub in group info
@@ -194,11 +200,30 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 			return fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
 		}
 
-		if err = a.subscribe(topic, m); err != nil {
+		if err = a.subscribeData(topic, publisher, m); err != nil {
 			return fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
 		}
 
+		// add as a member to be shared with another in future
 		a.groups[topic] = append(a.groups[topic], m)
+
+		if !publisher {
+			continue
+		}
+
+		// todo improve (or can remove sending by sub msg to other peer)
+		pr, err := a.probr.Peer(m.Label)
+		if err != nil {
+			return fmt.Errorf(`getting peer info for %s failed - %v`, m.Label, err)
+		}
+
+		var sk []byte
+		for _, s := range pr.Services {
+			if s.Type == domain.ServcGroupJoin {
+				sk = s.PubKey
+			}
+		}
+		a.addSub(topic, m.Label, sk)
 	}
 
 	// publish status
@@ -278,14 +303,17 @@ func (a *Agent) connect(m models.Member) error {
 	return nil
 }
 
+func (a *Agent) subscribeStatus(topic string) error {
+	if err := a.sktState.SetSubscribe(topic + domain.PubTopicSuffix); err != nil {
+		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, topic+domain.PubTopicSuffix, err)
+	}
+	return nil
+}
+
 // subscribe sets subscriptions via zmq for status topic of the member.
 // If the member is a publisher, it proceeds with sending a subscription
 // didcomm message and subscribing to message topic via zmq.
-func (a *Agent) subscribe(topic string, m models.Member) error {
-	if err := a.sktMsgs.SetSubscribe(topic + domain.PubTopicSuffix); err != nil {
-		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, topic+domain.PubTopicSuffix, err)
-	}
-
+func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) error {
 	if !m.Publisher {
 		return nil
 	}
@@ -298,14 +326,19 @@ func (a *Agent) subscribe(topic string, m models.Member) error {
 
 	// B sends agent subscribe msg to pub
 	subTopic := topic + `_` + m.Label + `_` + a.myLabel
-	sm := messages.SubscribeMsg{
+	sm := messages.SubscribeMsgNew{
 		Id:        uuid.New().String(),
 		Type:      messages.SubscribeV1,
 		Subscribe: true,
-		Peer:      a.myLabel,
 		PubKey:    base58.Encode(subPublcKey),
-		Topics:    []string{topic},
-		//PubEndpoint: a.myPubEndpnt,
+		Topic:     topic,
+		Member: models.Member{
+			Active:      true,
+			Publisher:   publisher,
+			Label:       a.myLabel,
+			Inv:         a.invs[topic],
+			PubEndpoint: a.pubEndpoint,
+		},
 	}
 
 	byts, err := json.Marshal(sm)
@@ -322,6 +355,8 @@ func (a *Agent) subscribe(topic string, m models.Member) error {
 		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, subTopic, err)
 	}
 
+	// todo add sub msg response and add sub
+
 	return nil
 }
 
@@ -331,12 +366,6 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 	//	  - A sends group-info
 	for {
 		msg := <-joinChan
-		//unpackedMsg, err := a.probr.ReadMessage(msg)
-		//if err != nil {
-		//	a.log.Error(fmt.Sprintf(`reading group-join request failed - %v`, err))
-		//	continue
-		//}
-
 		var req messages.ReqGroupJoin
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
 			a.log.Error(fmt.Sprintf(`unmarshalling group-join request failed - %v`, err))
@@ -377,7 +406,7 @@ func (a *Agent) subscrptionListnr(subChan chan models.Message) {
 			continue
 		}
 
-		var sm messages.SubscribeMsg
+		var sm messages.SubscribeMsgNew
 		if err = json.Unmarshal([]byte(unpackedMsg), &sm); err != nil {
 			a.log.Error(fmt.Sprintf(`unmarshalling subscribe message failed - %v`, err))
 			continue
@@ -388,14 +417,41 @@ func (a *Agent) subscrptionListnr(subChan chan models.Message) {
 			continue
 		}
 
-		if !a.validJoiner(sm.Peer) {
-			a.log.Error(fmt.Sprintf(`requester (%s) is not eligible`, sm.Peer))
+		if !a.validJoiner(sm.Member.Label) {
+			a.log.Error(fmt.Sprintf(`requester (%s) is not eligible`, sm.Member.Label))
 			continue
 		}
 
+		var newTopic bool
+		if _, err = a.subsByTopic(sm.Topic); err != nil {
+			newTopic = true
+		}
+
 		sk := base58.Decode(sm.PubKey)
-		for _, t := range sm.Topics {
-			a.addSub(t, sm.Peer, sk)
+		a.addSub(sm.Topic, sm.Member.Label, sk)
+
+		if err = a.sktState.Connect(sm.Member.PubEndpoint); err != nil {
+			a.log.Error(fmt.Sprintf(`connecting to publisher state socket failed - %v`, err))
+			continue
+		}
+
+		if newTopic {
+			if err = a.subscribeStatus(sm.Topic); err != nil {
+				a.log.Error(fmt.Sprintf(`subscribing to status topic of %s failed - %v`, sm.Topic, err))
+				continue
+			}
+		}
+
+		if sm.Member.Publisher {
+			if err = a.sktMsgs.Connect(sm.Member.PubEndpoint); err != nil {
+				a.log.Error(fmt.Sprintf(`connecting to publisher message socket failed - %v`, err))
+				continue
+			}
+
+			subTopic := sm.Topic + `_` + sm.Member.Label + `_` + a.myLabel
+			if err = a.sktMsgs.SetSubscribe(subTopic); err != nil {
+				a.log.Error(fmt.Sprintf(`setting zmq subscription failed for topic %s - %v`, subTopic, err))
+			}
 		}
 	}
 }
@@ -422,19 +478,16 @@ func (a *Agent) statusListnr() {
 			a.log.Error(fmt.Sprintf(`parsing member status message failed - %v`, err))
 			continue
 		}
+		fmt.Println("status received", ms)
 
 		if !ms.Member.Active {
 			// todo remove member from group
 			continue
 		}
 
-		if err = a.connect(ms.Member); err != nil {
-			a.log.Error(fmt.Sprintf(`connecting to %s failed in listener - %v`, ms.Member.Label, err))
-		}
-
-		if err = a.subscribe(ms.Topic, ms.Member); err != nil {
-			a.log.Error(fmt.Sprintf(`subscribing to topic %s with %s failed in listener - %v`, ms.Topic, ms.Member.Label, err))
-		}
+		//if err = a.connect(ms.Member); err != nil {
+		//	a.log.Error(fmt.Sprintf(`connecting to %s failed in listener - %v`, ms.Member.Label, err))
+		//}
 
 		// todo add validation to check if already added
 		a.groups[ms.Topic] = append(a.groups[ms.Topic], ms.Member)
@@ -518,10 +571,8 @@ func (a *Agent) addSub(topic, sub string, key []byte) {
 	a.ts.subs[topic][sub] = key
 }
 
-func (a *Agent) deleteSub(sm messages.SubscribeMsg) {
+func (a *Agent) deleteSub(sm messages.SubscribeMsgNew) {
 	a.ts.Lock()
 	defer a.ts.Unlock()
-	for _, t := range sm.Topics {
-		delete(a.ts.subs[t], sm.Peer)
-	}
+	delete(a.ts.subs[sm.Topic], sm.Member.Label)
 }

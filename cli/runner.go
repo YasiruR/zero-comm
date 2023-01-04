@@ -288,7 +288,6 @@ func (r *runner) groupMsg() {
 		r.error(`sending group message failed`, err)
 		return
 	}
-	r.output(`sent message to group ` + topic)
 }
 
 /* command-line specific functions */
