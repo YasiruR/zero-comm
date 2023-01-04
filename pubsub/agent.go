@@ -176,8 +176,6 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`group-join request failed - %v`, err)
 	}
 
-	fmt.Println("received join res", res)
-
 	// save received group info in-memory (map with topics?)
 	var resGroup messages.ResGroupJoin
 	if err = json.Unmarshal([]byte(res), &resGroup); err != nil {
@@ -242,7 +240,7 @@ func (a *Agent) Publish(topic, msg string) error {
 		}
 
 		subTopic := topic + `_` + a.myLabel + `_` + sub
-		if _, err = a.sktMsgs.SendMessage(fmt.Sprintf(`%s %s`, subTopic, string(data))); err != nil {
+		if _, err = a.sktPub.SendMessage(fmt.Sprintf(`%s %s`, subTopic, string(data))); err != nil {
 			return fmt.Errorf(`publishing message (%s) failed for %s - %v`, msg, sub, err)
 		}
 
@@ -306,7 +304,7 @@ func (a *Agent) subscribe(topic string, m models.Member) error {
 		Subscribe: true,
 		Peer:      a.myLabel,
 		PubKey:    base58.Encode(subPublcKey),
-		Topics:    []string{subTopic},
+		Topics:    []string{topic},
 		//PubEndpoint: a.myPubEndpnt,
 	}
 
@@ -339,8 +337,6 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 		//	continue
 		//}
 
-		fmt.Println("received join req", string(msg.Data))
-
 		var req messages.ReqGroupJoin
 		if err := json.Unmarshal(msg.Data, &req); err != nil {
 			a.log.Error(fmt.Sprintf(`unmarshalling group-join request failed - %v`, err))
@@ -361,8 +357,6 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`marshalling group-join response failed - %v`, err))
 		}
-
-		fmt.Println("sending join res", string(byts))
 
 		// a null response is sent if an error occurred
 		msg.Reply <- byts
