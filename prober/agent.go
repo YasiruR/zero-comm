@@ -34,8 +34,7 @@ type Prober struct {
 	connDone        chan models.Connection
 	log             log.Logger
 	client          services.Client
-
-	syncConns map[string]chan bool
+	syncConns       map[string]chan bool
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -56,6 +55,7 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		dids:            map[string]string{},
 		connDone:        c.ConnDoneChan,
 		client:          c.Client,
+		syncConns:       map[string]chan bool{},
 	}
 
 	p.initHandlers(c.Server)
@@ -116,6 +116,7 @@ func (p *Prober) Invite() (url string, err error) {
 
 // todo remove connDone chan
 func (p *Prober) SyncAccept(encodedInv string) error {
+	fmt.Println("encoded inv: ", encodedInv)
 	inviter, err := p.Accept(encodedInv)
 	if err != nil {
 		return fmt.Errorf(`accepting invitation failed - %v`, err)

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -188,6 +189,15 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`subscribing to status topic of %s failed - %v`, topic, err)
 	}
 
+	// adding joiner as a member
+	a.groups[topic] = append(a.groups[topic], models.Member{
+		Active:      true,
+		Publisher:   publisher,
+		Label:       a.myLabel,
+		Inv:         inv,
+		PubEndpoint: a.pubEndpoint,
+	})
+
 	// for each pub in group info
 	// - connect
 	// - stores/updates pub in-memory
@@ -284,7 +294,17 @@ func (a *Agent) connect(m models.Member) error {
 	// - sets up DIDComm connection via inv
 	_, err := a.probr.Peer(m.Label)
 	if err != nil {
-		if err = a.probr.SyncAccept(m.Inv); err != nil {
+		u, err := url.Parse(strings.TrimSpace(m.Inv))
+		if err != nil {
+			return fmt.Errorf(`parsing invitation url failed - %v`, err)
+		}
+
+		inv, ok := u.Query()[`oob`]
+		if !ok {
+			return fmt.Errorf(`invitation url does not contain oob query param`)
+		}
+
+		if err = a.probr.SyncAccept(inv[0]); err != nil {
 			return fmt.Errorf(`accepting group-member invitation failed - %v`, err)
 		}
 	}
@@ -354,8 +374,6 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 	if err = a.sktMsgs.SetSubscribe(subTopic); err != nil {
 		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, subTopic, err)
 	}
-
-	// todo add sub msg response and add sub
 
 	return nil
 }
@@ -485,11 +503,7 @@ func (a *Agent) statusListnr() {
 			continue
 		}
 
-		//if err = a.connect(ms.Member); err != nil {
-		//	a.log.Error(fmt.Sprintf(`connecting to %s failed in listener - %v`, ms.Member.Label, err))
-		//}
-
-		// todo add validation to check if already added
+		// todo add validation to check if already added - use a map
 		a.groups[ms.Topic] = append(a.groups[ms.Topic], ms.Member)
 	}
 }
