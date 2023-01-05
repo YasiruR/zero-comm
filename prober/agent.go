@@ -116,7 +116,6 @@ func (p *Prober) Invite() (url string, err error) {
 
 // todo remove connDone chan
 func (p *Prober) SyncAccept(encodedInv string) error {
-	fmt.Println("encoded inv: ", encodedInv)
 	inviter, err := p.Accept(encodedInv)
 	if err != nil {
 		return fmt.Errorf(`accepting invitation failed - %v`, err)

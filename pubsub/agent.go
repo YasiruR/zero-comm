@@ -311,7 +311,7 @@ func (a *Agent) connect(m models.Member) error {
 
 	// B connects to member via SUB for statuses and msgs
 	if err = a.sktState.Connect(m.PubEndpoint); err != nil {
-		return fmt.Errorf(`connecting to publisher state socket failed - %v`, err)
+		return fmt.Errorf(`connecting to publisher (%s) state socket failed - %v`, m.PubEndpoint, err)
 	}
 
 	if m.Publisher {
@@ -334,10 +334,6 @@ func (a *Agent) subscribeStatus(topic string) error {
 // If the member is a publisher, it proceeds with sending a subscription
 // didcomm message and subscribing to message topic via zmq.
 func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) error {
-	if !m.Publisher {
-		return nil
-	}
-
 	// get my public key corresponding to this member
 	subPublcKey, err := a.km.PublicKey(m.Label)
 	if err != nil {
@@ -345,7 +341,6 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 	}
 
 	// B sends agent subscribe msg to pub
-	subTopic := topic + `_` + m.Label + `_` + a.myLabel
 	sm := messages.SubscribeMsgNew{
 		Id:        uuid.New().String(),
 		Type:      messages.SubscribeV1,
@@ -367,10 +362,15 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 	}
 
 	if err = a.probr.SendMessage(domain.MsgTypSubscribe, m.Label, string(byts)); err != nil {
-		return fmt.Errorf(`sending subscribe message failed for topic %s - %v`, subTopic, err)
+		return fmt.Errorf(`sending subscribe message failed for topic %s - %v`, topic, err)
+	}
+
+	if !m.Publisher {
+		return nil
 	}
 
 	// B subscribes via zmq
+	subTopic := topic + `_` + m.Label + `_` + a.myLabel
 	if err = a.sktMsgs.SetSubscribe(subTopic); err != nil {
 		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, subTopic, err)
 	}
@@ -496,7 +496,6 @@ func (a *Agent) statusListnr() {
 			a.log.Error(fmt.Sprintf(`parsing member status message failed - %v`, err))
 			continue
 		}
-		fmt.Println("status received", ms)
 
 		if !ms.Member.Active {
 			// todo remove member from group
@@ -531,7 +530,7 @@ func (a *Agent) msgListnr() {
 
 func (a *Agent) notifyAll(topic string, active, publisher bool) error {
 	byts, err := json.Marshal(messages.Status{
-		Member: models.Member{Label: a.myLabel, Active: active, Inv: a.invs[topic], Publisher: publisher},
+		Member: models.Member{Label: a.myLabel, Active: active, Inv: a.invs[topic], Publisher: publisher, PubEndpoint: a.pubEndpoint},
 		Topic:  topic,
 	})
 	if err != nil {
