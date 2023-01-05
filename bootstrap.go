@@ -63,7 +63,12 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	c.Prober = prb
 
 	// should be done after prober since it is a dependency
-	initZmqPubSub(ctx, c)
+	//initZmqPubSub(ctx, c)
+
+	c.PubSub, err = pubsub.NewAgent(ctx, c)
+	if err != nil {
+		logger.Fatal(`initializing pubsub group agent failed`, err)
+	}
 
 	return c
 }

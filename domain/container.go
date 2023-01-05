@@ -36,4 +36,6 @@ type Container struct {
 	ConnDoneChan chan models.Connection
 	OutChan      chan string
 	Log          log.Logger
+
+	PubSub services.GroupAgent
 }

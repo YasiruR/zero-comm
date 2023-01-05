@@ -64,7 +64,7 @@ func (k *KeyManager) Peer(pubKey []byte) (name string, err error) {
 		}
 	}
 
-	return ``, fmt.Errorf(`could find the requested public key (%s)`, string(pubKey))
+	return ``, fmt.Errorf(`could not find the requested public key (%s)`, string(pubKey))
 }
 
 func (k *KeyManager) GenerateInvKeys() error {

@@ -13,10 +13,8 @@ type Connection struct {
 }
 
 type Peer struct {
-	Active bool // todo
-	DID    string
-	//Endpoint     string
-	//PubKey       []byte
+	Active       bool // todo (currently all stored peers are active since no disconnect is implemented)
+	DID          string
 	ExchangeThId string // thread id used in did-exchange (to correlate any message to the peer)
 	Services     []Service
 }
@@ -31,4 +29,12 @@ type Service struct {
 	Type     string
 	Endpoint string
 	PubKey   []byte
+}
+
+type Member struct {
+	Active      bool   `json:"active"`
+	Publisher   bool   `json:"publisher"`
+	Label       string `json:"label"` // todo check if DID can be used
+	Inv         string `json:"inv"`
+	PubEndpoint string `json:"pubEndpoint"`
 }

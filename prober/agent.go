@@ -34,6 +34,7 @@ type Prober struct {
 	connDone        chan models.Connection
 	log             log.Logger
 	client          services.Client
+	syncConns       map[string]chan bool
 }
 
 func NewProber(c *domain.Container) (p *Prober, err error) {
@@ -54,6 +55,7 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		dids:            map[string]string{},
 		connDone:        c.ConnDoneChan,
 		client:          c.Client,
+		syncConns:       map[string]chan bool{},
 	}
 
 	p.initHandlers(c.Server)
@@ -110,6 +112,20 @@ func (p *Prober) Invite() (url string, err error) {
 	}
 
 	return url, nil
+}
+
+// todo remove connDone chan
+func (p *Prober) SyncAccept(encodedInv string) error {
+	inviter, err := p.Accept(encodedInv)
+	if err != nil {
+		return fmt.Errorf(`accepting invitation failed - %v`, err)
+	}
+
+	// todo set a timeout for waiting
+	p.syncConns[inviter] = make(chan bool)
+	<-p.syncConns[inviter]
+
+	return nil
 }
 
 // Accept creates a connection request and sends it to the invitation endpoint
@@ -241,16 +257,20 @@ func (p *Prober) processConnRes(msg models.Message) error {
 			}
 
 			// todo may need to remove along with connection channel below
-			_, prMsgPubKy, err := p.infoByServc(domain.ServcMessage, svcs)
-			if err != nil {
-				return fmt.Errorf(`getting message endpoint failed - %v`, err)
-			}
+			//_, prMsgPubKy, err := p.infoByServc(domain.ServcMessage, svcs)
+			//if err != nil {
+			//	return fmt.Errorf(`getting message endpoint failed - %v`, err)
+			//}
 
 			p.peers[name] = models.Peer{DID: peer.DID, Services: svcs, ExchangeThId: pthId}
 
 			// should not be sent to non-pubsub relationships but the validation is done in pubsub module
-			if p.connDone != nil {
-				p.connDone <- models.Connection{Peer: name, PubKey: prMsgPubKy}
+			//if p.connDone != nil {
+			//	p.connDone <- models.Connection{Peer: name, PubKey: prMsgPubKy}
+			//}
+
+			if p.syncConns[name] != nil {
+				p.syncConns[name] <- true
 			}
 
 			p.outChan <- `Connection established with ` + name
@@ -432,6 +452,7 @@ func (p *Prober) infoByServc(filter string, svcs []models.Service) (endpoint str
 	return ``, nil, fmt.Errorf(`services does not contain %s`, filter)
 }
 
+// Peer returns the connected models.Peer queried by label
 func (p *Prober) Peer(label string) (models.Peer, error) {
 	pr, ok := p.peers[label]
 	if !ok {

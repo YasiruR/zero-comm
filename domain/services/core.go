@@ -9,6 +9,7 @@ import (
 
 type Agent interface {
 	Invite() (url string, err error)
+	SyncAccept(encodedInv string) error
 	Accept(encodedInv string) (sender string, err error)
 	SendMessage(typ, to, text string) error
 	ReadMessage(msg models.Message) (text string, err error)

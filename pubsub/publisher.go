@@ -13,15 +13,6 @@ import (
 	"sync"
 )
 
-type subKey map[string][]byte // subscriber to public key map
-
-// performance may be improved by using granular locks and
-// trading off with complexity and memory utilization
-type topicStore struct {
-	*sync.RWMutex
-	subs map[string]subKey // can extend to multiple keys per peer
-}
-
 type Publisher struct {
 	label   string
 	skt     *zmq.Socket
@@ -30,7 +21,7 @@ type Publisher struct {
 	packer  services.Packer
 	log     log.Logger
 	outChan chan string
-	ts      *topicStore
+	ts      *keyStore
 }
 
 // todo add publisher as a service endpoint in did doc / invitation
@@ -53,7 +44,7 @@ func NewPublisher(zmqCtx *zmq.Context, c *domain.Container) (*Publisher, error) 
 		packer:  c.Packer,
 		log:     c.Log,
 		outChan: c.OutChan,
-		ts:      &topicStore{RWMutex: &sync.RWMutex{}, subs: map[string]subKey{}},
+		ts:      &keyStore{RWMutex: &sync.RWMutex{}, subs: map[string]subKey{}},
 	}
 
 	p.initHandlers(c.Server)
