@@ -28,14 +28,11 @@ type Container struct {
 	DidAgent     services.DIDUtils
 	OOB          services.OutOfBand
 	Connector    services.Connector
-	Pub          services.Publisher
-	Sub          services.Subscriber
 	Prober       services.Agent
 	Client       services.Client
 	Server       services.Server
 	ConnDoneChan chan models.Connection
 	OutChan      chan string
 	Log          log.Logger
-
-	PubSub services.GroupAgent
+	PubSub       services.GroupAgent
 }

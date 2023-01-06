@@ -31,7 +31,6 @@ type Prober struct {
 	myDidDocs       map[string]messages.DIDDocument
 	dids            map[string]string
 	outChan         chan string
-	connDone        chan models.Connection
 	log             log.Logger
 	client          services.Client
 	syncConns       map[string]chan bool
@@ -53,7 +52,6 @@ func NewProber(c *domain.Container) (p *Prober, err error) {
 		peers:           map[string]models.Peer{}, // name as the key may not be ideal
 		myDidDocs:       map[string]messages.DIDDocument{},
 		dids:            map[string]string{},
-		connDone:        c.ConnDoneChan,
 		client:          c.Client,
 		syncConns:       map[string]chan bool{},
 	}
@@ -256,18 +254,7 @@ func (p *Prober) processConnRes(msg models.Message) error {
 				return fmt.Errorf(`getting peer data failed - %v`, err)
 			}
 
-			// todo may need to remove along with connection channel below
-			//_, prMsgPubKy, err := p.infoByServc(domain.ServcMessage, svcs)
-			//if err != nil {
-			//	return fmt.Errorf(`getting message endpoint failed - %v`, err)
-			//}
-
 			p.peers[name] = models.Peer{DID: peer.DID, Services: svcs, ExchangeThId: pthId}
-
-			// should not be sent to non-pubsub relationships but the validation is done in pubsub module
-			//if p.connDone != nil {
-			//	p.connDone <- models.Connection{Peer: name, PubKey: prMsgPubKy}
-			//}
 
 			if p.syncConns[name] != nil {
 				p.syncConns[name] <- true
@@ -355,7 +342,7 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 	if typ == domain.MsgTypData {
 		p.outChan <- `Message sent`
 	} else {
-		p.log.Trace(fmt.Sprintf(`'%s' message sent`, typ))
+		p.log.Trace(fmt.Sprintf(`'%s' message sent to %s`, typ, to))
 	}
 
 	return nil

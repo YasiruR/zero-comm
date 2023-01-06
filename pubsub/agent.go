@@ -25,6 +25,13 @@ type keyStore struct {
 	subs map[string]subKey // can extend to multiple keys per peer
 }
 
+type groupStore struct {
+	*sync.RWMutex
+	// nested map for group state where primary key is the topic
+	// and secondary is the member's label
+	states map[string]map[string]models.Member
+}
+
 type sockets struct {
 	sktPub   *zmq.Socket
 	sktState *zmq.Socket
@@ -35,12 +42,12 @@ type Agent struct {
 	myLabel     string
 	pubEndpoint string
 	invs        map[string]string // invitation per each topic
-	groups      map[string][]models.Member
 	probr       services.Agent
 	client      services.Client
 	km          services.KeyManager
 	packer      services.Packer
-	ts          *keyStore
+	keys        *keyStore
+	groups      *groupStore
 	log         log.Logger
 	outChan     chan string
 	*sockets
@@ -71,14 +78,17 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 		myLabel:     c.Cfg.Args.Name,
 		pubEndpoint: c.Cfg.PubEndpoint,
 		invs:        make(map[string]string),
-		groups:      make(map[string][]models.Member),
 		probr:       c.Prober,
 		client:      c.Client,
 		km:          c.KeyManager,
 		packer:      c.Packer,
 		log:         c.Log,
 		outChan:     c.OutChan,
-		ts:          &keyStore{RWMutex: &sync.RWMutex{}, subs: map[string]subKey{}},
+		keys:        &keyStore{RWMutex: &sync.RWMutex{}, subs: map[string]subKey{}},
+		groups: &groupStore{
+			RWMutex: &sync.RWMutex{},
+			states:  map[string]map[string]models.Member{},
+		},
 		sockets: &sockets{
 			sktPub:   sktPub,
 			sktState: sktStates,
@@ -90,15 +100,14 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 	return a, nil
 }
 
+// init initializes handlers for subscribe and join requests (async),
+// and listeners for all incoming messages eg: join requests,
+// subscriptions, state changes (active/inactive) and data messages.
 func (a *Agent) init(s services.Server) {
 	// add handler for subscribe messages
 	subChan := make(chan models.Message)
 	s.AddHandler(domain.MsgTypSubscribe, subChan, true)
 
-	// add handler for group-join requests as sync
-	//  - upon request, check if eligible
-	//  - if eligible
-	//	  - A sends group-info
 	joinChan := make(chan models.Message)
 	s.AddHandler(domain.MsgTypGroupJoin, joinChan, false)
 
@@ -108,6 +117,8 @@ func (a *Agent) init(s services.Server) {
 	go a.msgListnr()
 }
 
+// Create constructs a group including creator's invitation
+// and models.Member
 func (a *Agent) Create(topic string, publisher bool) error {
 	inv, err := a.probr.Invite()
 	if err != nil {
@@ -123,14 +134,14 @@ func (a *Agent) Create(topic string, publisher bool) error {
 	}
 
 	a.invs[topic] = inv
-	a.groups[topic] = []models.Member{m}
+	a.addMember(topic, m)
 
 	return nil
 }
 
 func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	// check if already joined to the topic
-	if _, ok := a.groups[topic]; ok {
+	if a.joined(topic) {
 		return fmt.Errorf(`already connected to group %s`, topic)
 	}
 
@@ -139,49 +150,10 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`generating invitation failed - %v`, err)
 	}
 
-	a.groups[topic] = []models.Member{}
 	a.invs[topic] = inv
-
-	// check if B is already connected with acceptor (A)
-	// - only needs to check if ever connected (in agent's map), since disconnect is not implemented
-	// if not, return
-	p, err := a.probr.Peer(acceptor)
+	group, err := a.reqState(topic, acceptor, inv)
 	if err != nil {
-		return fmt.Errorf(`fetching acceptor failed - %v`, err)
-	}
-
-	// if connected, check if A's DID Doc has join-endpoint
-	//  - save services in prober's peers map upon connection
-	//  - open a func to get peer data
-	var srvcJoin models.Service
-	for _, s := range p.Services {
-		if s.Type == domain.ServcGroupJoin {
-			srvcJoin = s
-			break
-		}
-	}
-
-	// if join service is not present, return
-	if srvcJoin.Type == `` {
-		return fmt.Errorf(`acceptor does not provide group-join service`)
-	}
-
-	// call A's group-join/<topic> endpoint
-	byts, err := json.Marshal(messages.ReqGroupJoin{Label: a.myLabel, Topic: topic, RequesterInv: inv})
-	if err != nil {
-		return fmt.Errorf(`marshalling group-join request failed - %v`, err)
-	}
-
-	// todo can pack and send this via didcomm
-	res, err := a.client.Send(domain.MsgTypGroupJoin, byts, srvcJoin.Endpoint)
-	if err != nil {
-		return fmt.Errorf(`group-join request failed - %v`, err)
-	}
-
-	// save received group info in-memory (map with topics?)
-	var resGroup messages.ResGroupJoin
-	if err = json.Unmarshal([]byte(res), &resGroup); err != nil {
-		return fmt.Errorf(`unmarshalling group-join response failed - %v`, err)
+		return fmt.Errorf(`requesting group state from %s failed - %v`, acceptor, err)
 	}
 
 	// todo check if should be used after connect
@@ -189,8 +161,8 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`subscribing to status topic of %s failed - %v`, topic, err)
 	}
 
-	// adding joiner as a member
-	a.groups[topic] = append(a.groups[topic], models.Member{
+	// adding this node as a member
+	a.addMember(topic, models.Member{
 		Active:      true,
 		Publisher:   publisher,
 		Label:       a.myLabel,
@@ -198,10 +170,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		PubEndpoint: a.pubEndpoint,
 	})
 
-	// for each pub in group info
-	// - connect
-	// - stores/updates pub in-memory
-	for _, m := range resGroup.Members {
+	for _, m := range group.Members {
 		if !m.Active {
 			continue
 		}
@@ -215,7 +184,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		}
 
 		// add as a member to be shared with another in future
-		a.groups[topic] = append(a.groups[topic], m)
+		a.addMember(topic, m)
 
 		if !publisher {
 			continue
@@ -242,6 +211,75 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	return nil
+}
+
+func (a *Agent) reqState(topic, acctpr, inv string) (*messages.ResGroupJoin, error) {
+	// check if B is already connected with acceptor (A)
+	// - only needs to check if ever connected (in agent's map), since disconnect is not implemented
+	// if not, return
+	p, err := a.probr.Peer(acctpr)
+	if err != nil {
+		return nil, fmt.Errorf(`fetching acceptor failed - %v`, err)
+	}
+
+	// if connected, check if A's DID Doc has join-endpoint
+	//  - save services in prober's peers map upon connection
+	//  - open a func to get peer data
+	var srvcJoin models.Service
+	var accptrKey []byte
+	for _, s := range p.Services {
+		if s.Type == domain.ServcGroupJoin {
+			srvcJoin = s
+			accptrKey = s.PubKey
+			break
+		}
+	}
+
+	// if join service is not present, return
+	if srvcJoin.Type == `` {
+		return nil, fmt.Errorf(`acceptor does not provide group-join service`)
+	}
+
+	// call A's group-join/<topic> endpoint
+	byts, err := json.Marshal(messages.ReqGroupJoin{Label: a.myLabel, Topic: topic, RequesterInv: inv})
+	if err != nil {
+		return nil, fmt.Errorf(`marshalling group-join request failed - %v`, err)
+	}
+
+	ownPubKey, err := a.km.PublicKey(acctpr)
+	if err != nil {
+		return nil, fmt.Errorf(`getting public key for connection with %s failed - %v`, acctpr, err)
+	}
+
+	ownPrvKey, err := a.km.PrivateKey(acctpr)
+	if err != nil {
+		return nil, fmt.Errorf(`getting private key for connection with %s failed - %v`, acctpr, err)
+	}
+
+	encryptdMsg, err := a.packer.Pack(byts, accptrKey, ownPubKey, ownPrvKey)
+	if err != nil {
+		return nil, fmt.Errorf(`packing message failed - %v`, err)
+	}
+
+	// todo group request is marshalled twice - could be improved by minimizing this costly ops
+	data, err := json.Marshal(encryptdMsg)
+	if err != nil {
+		return nil, fmt.Errorf(`marshalling authcrypt message failed - %v`, err)
+	}
+
+	res, err := a.client.Send(domain.MsgTypGroupJoin, data, srvcJoin.Endpoint)
+	if err != nil {
+		return nil, fmt.Errorf(`group-join request failed - %v`, err)
+	}
+	a.log.Debug(`group-join response received`, res)
+
+	// save received group info in-memory (map with topics?)
+	var resGroup messages.ResGroupJoin
+	if err = json.Unmarshal([]byte(res), &resGroup); err != nil {
+		return nil, fmt.Errorf(`unmarshalling group-join response failed - %v`, err)
+	}
+
+	return &resGroup, nil
 }
 
 func (a *Agent) Publish(topic, msg string) error {
@@ -290,8 +328,6 @@ func (a *Agent) Publish(topic, msg string) error {
 }
 
 func (a *Agent) connect(m models.Member) error {
-	// if not already connected
-	// - sets up DIDComm connection via inv
 	_, err := a.probr.Peer(m.Label)
 	if err != nil {
 		u, err := url.Parse(strings.TrimSpace(m.Inv))
@@ -379,13 +415,16 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 }
 
 func (a *Agent) joinReqListnr(joinChan chan models.Message) {
-	//  - upon request, check if eligible
-	//  - if eligible
-	//	  - A sends group-info
 	for {
 		msg := <-joinChan
+		body, err := a.probr.ReadMessage(msg)
+		if err != nil {
+			a.log.Error(fmt.Sprintf(`reading group-join authcrypt request failed - %v`, err))
+			continue
+		}
+
 		var req messages.ReqGroupJoin
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
+		if err = json.Unmarshal([]byte(body), &req); err != nil {
 			a.log.Error(fmt.Sprintf(`unmarshalling group-join request failed - %v`, err))
 			continue
 		}
@@ -395,15 +434,11 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 			continue
 		}
 
-		res := messages.ResGroupJoin{Members: []models.Member{}}
-		for _, membr := range a.groups[req.Topic] {
-			res.Members = append(res.Members, membr)
-		}
-
-		byts, err := json.Marshal(res)
+		byts, err := json.Marshal(messages.ResGroupJoin{Members: a.membrs(req.Topic)})
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`marshalling group-join response failed - %v`, err))
 		}
+		a.log.Debug(`shared group state upon join request`, string(byts))
 
 		// a null response is sent if an error occurred
 		msg.Reply <- byts
@@ -411,11 +446,6 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 }
 
 func (a *Agent) subscrptionListnr(subChan chan models.Message) {
-	// if B is a publisher
-	// - if didcomm connection is established
-	//   - if sub msg is received
-	//     - B connects to sub via SUB for statuses
-
 	for {
 		msg := <-subChan
 		unpackedMsg, err := a.probr.ReadMessage(msg)
@@ -471,19 +501,11 @@ func (a *Agent) subscrptionListnr(subChan chan models.Message) {
 				a.log.Error(fmt.Sprintf(`setting zmq subscription failed for topic %s - %v`, subTopic, err))
 			}
 		}
+		a.log.Debug(`processed subscription request`, sm)
 	}
 }
 
 func (a *Agent) statusListnr() {
-	// if status received,
-	// - store/update in-memory
-	// - if active
-	//  - if B is a sub
-	//    - if sender is a pub
-	//      - if not already connected
-	//		  - connect
-	// - if not active, remove/disconnect
-
 	for {
 		msg, err := a.sktState.Recv(0)
 		if err != nil {
@@ -502,8 +524,8 @@ func (a *Agent) statusListnr() {
 			continue
 		}
 
-		// todo add validation to check if already added - use a map
-		a.groups[ms.Topic] = append(a.groups[ms.Topic], ms.Member)
+		a.addMember(ms.Topic, ms.Member)
+		a.log.Debug(`group state updated`, *ms)
 	}
 }
 
@@ -564,9 +586,9 @@ func (a *Agent) validJoiner(label string) bool {
 }
 
 func (a *Agent) subsByTopic(topic string) (subKey, error) {
-	a.ts.RLock()
-	defer a.ts.RUnlock()
-	subs, ok := a.ts.subs[topic]
+	a.keys.RLock()
+	defer a.keys.RUnlock()
+	subs, ok := a.keys.subs[topic]
 	if !ok {
 		return nil, fmt.Errorf(`topic (%s) is not registered`, topic)
 	}
@@ -576,16 +598,50 @@ func (a *Agent) subsByTopic(topic string) (subKey, error) {
 
 // addSub replaces the key if already exists for the subscriber
 func (a *Agent) addSub(topic, sub string, key []byte) {
-	a.ts.Lock()
-	defer a.ts.Unlock()
-	if a.ts.subs[topic] == nil {
-		a.ts.subs[topic] = subKey{}
+	a.keys.Lock()
+	defer a.keys.Unlock()
+	if a.keys.subs[topic] == nil {
+		a.keys.subs[topic] = subKey{}
 	}
-	a.ts.subs[topic][sub] = key
+	a.keys.subs[topic][sub] = key
 }
 
 func (a *Agent) deleteSub(sm messages.SubscribeMsgNew) {
-	a.ts.Lock()
-	defer a.ts.Unlock()
-	delete(a.ts.subs[sm.Topic], sm.Member.Label)
+	a.keys.Lock()
+	defer a.keys.Unlock()
+	delete(a.keys.subs[sm.Topic], sm.Member.Label)
+}
+
+func (a *Agent) addMember(topic string, m models.Member) {
+	a.groups.Lock()
+	defer a.groups.Unlock()
+	if a.groups.states[topic] == nil {
+		a.groups.states[topic] = make(map[string]models.Member)
+	}
+	a.groups.states[topic][m.Label] = m
+	a.log.Trace(`group member added`, m.Label)
+}
+
+// joined checks if current member has already joined a group
+// with the given topic
+func (a *Agent) joined(topic string) bool {
+	a.groups.RLock()
+	defer a.groups.RUnlock()
+	if a.groups.states[topic] == nil {
+		return false
+	}
+	return true
+}
+
+func (a *Agent) membrs(topic string) (mems []models.Member) {
+	a.groups.RLock()
+	defer a.groups.RUnlock()
+	if a.groups.states[topic] == nil {
+		return []models.Member{}
+	}
+
+	for _, m := range a.groups.states[topic] {
+		mems = append(mems, m)
+	}
+	return mems
 }
