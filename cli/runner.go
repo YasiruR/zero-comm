@@ -89,6 +89,8 @@ basicCmds:
 		r.joinGroup()
 	case "6":
 		r.groupMsg()
+	case "7":
+		r.leave()
 	case "8":
 		r.discover()
 	case "0":
@@ -227,7 +229,13 @@ func (r *runner) groupMsg() {
 
 	if err := r.pubsub.Publish(topic, msg); err != nil {
 		r.error(`sending group message failed`, err)
-		return
+	}
+}
+
+func (r *runner) leave() {
+	topic := strings.TrimSpace(r.input(`Topic`))
+	if err := r.pubsub.Leave(topic); err != nil {
+		r.error(`leaving group failed`, err)
 	}
 }
 

@@ -134,7 +134,7 @@ func (a *Agent) Create(topic string, publisher bool) error {
 	}
 
 	a.invs[topic] = inv
-	a.addMember(topic, m)
+	a.addMembr(topic, m)
 
 	return nil
 }
@@ -162,7 +162,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	// adding this node as a member
-	a.addMember(topic, models.Member{
+	a.addMembr(topic, models.Member{
 		Active:      true,
 		Publisher:   publisher,
 		Label:       a.myLabel,
@@ -184,7 +184,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		}
 
 		// add as a member to be shared with another in future
-		a.addMember(topic, m)
+		a.addMembr(topic, m)
 
 		if !publisher {
 			continue
@@ -377,7 +377,7 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 	}
 
 	// B sends agent subscribe msg to pub
-	sm := messages.SubscribeMsgNew{
+	sm := messages.Subscribe{
 		Id:        uuid.New().String(),
 		Type:      messages.SubscribeV1,
 		Subscribe: true,
@@ -445,6 +445,7 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 	}
 }
 
+// todo check if subscription can be done with active status
 func (a *Agent) subscrptionListnr(subChan chan models.Message) {
 	for {
 		msg := <-subChan
@@ -454,14 +455,14 @@ func (a *Agent) subscrptionListnr(subChan chan models.Message) {
 			continue
 		}
 
-		var sm messages.SubscribeMsgNew
+		var sm messages.Subscribe
 		if err = json.Unmarshal([]byte(unpackedMsg), &sm); err != nil {
 			a.log.Error(fmt.Sprintf(`unmarshalling subscribe message failed - %v`, err))
 			continue
 		}
 
 		if !sm.Subscribe {
-			a.deleteSub(sm)
+			a.deleteSub(sm.Topic, sm.Member.Label)
 			continue
 		}
 
@@ -520,11 +521,12 @@ func (a *Agent) statusListnr() {
 		}
 
 		if !ms.Member.Active {
-			// todo remove member from group
+			a.deleteSub(ms.Topic, ms.Member.Label)
+			a.deleteMembr(ms.Topic, ms.Member.Label)
 			continue
 		}
 
-		a.addMember(ms.Topic, ms.Member)
+		a.addMembr(ms.Topic, ms.Member)
 		a.log.Debug(`group state updated`, *ms)
 	}
 }
@@ -606,13 +608,13 @@ func (a *Agent) addSub(topic, sub string, key []byte) {
 	a.keys.subs[topic][sub] = key
 }
 
-func (a *Agent) deleteSub(sm messages.SubscribeMsgNew) {
+func (a *Agent) deleteSub(topic, label string) {
 	a.keys.Lock()
 	defer a.keys.Unlock()
-	delete(a.keys.subs[sm.Topic], sm.Member.Label)
+	delete(a.keys.subs[topic], label)
 }
 
-func (a *Agent) addMember(topic string, m models.Member) {
+func (a *Agent) addMembr(topic string, m models.Member) {
 	a.groups.Lock()
 	defer a.groups.Unlock()
 	if a.groups.states[topic] == nil {
@@ -620,6 +622,25 @@ func (a *Agent) addMember(topic string, m models.Member) {
 	}
 	a.groups.states[topic][m.Label] = m
 	a.log.Trace(`group member added`, m.Label)
+}
+
+func (a *Agent) deleteMembr(topic, membr string) {
+	a.groups.Lock()
+	defer a.groups.Unlock()
+	if a.groups.states[topic] == nil {
+		return
+	}
+	delete(a.groups.states[topic], membr)
+}
+
+func (a *Agent) deleteTopic(topic string) {
+	a.keys.Lock()
+	delete(a.keys.subs, topic)
+	a.keys.Unlock()
+
+	a.groups.Lock()
+	delete(a.groups.states, topic)
+	a.groups.Unlock()
 }
 
 // joined checks if current member has already joined a group
@@ -633,15 +654,46 @@ func (a *Agent) joined(topic string) bool {
 	return true
 }
 
-func (a *Agent) membrs(topic string) (mems []models.Member) {
+func (a *Agent) membrs(topic string) (m []models.Member) {
 	a.groups.RLock()
 	defer a.groups.RUnlock()
 	if a.groups.states[topic] == nil {
 		return []models.Member{}
 	}
 
-	for _, m := range a.groups.states[topic] {
-		mems = append(mems, m)
+	for _, mem := range a.groups.states[topic] {
+		m = append(m, mem)
 	}
-	return mems
+	return m
+}
+
+func (a *Agent) Leave(topic string) error {
+	if err := a.sktState.SetUnsubscribe(topic + domain.PubTopicSuffix); err != nil {
+		return fmt.Errorf(`unsubscribing %s%s via zmq socket failed - %v`, topic, domain.PubTopicSuffix, err)
+	}
+
+	membrs := a.membrs(topic)
+	if len(membrs) == 0 {
+		return fmt.Errorf(`no members found`)
+	}
+
+	var publisher bool
+	for _, m := range membrs {
+		if m.Label == a.myLabel {
+			publisher = m.Publisher
+		}
+	}
+
+	if err := a.notifyAll(topic, false, publisher); err != nil {
+		return fmt.Errorf(`publishing inactive status failed - %v`, err)
+	}
+
+	a.deleteTopic(topic)
+	a.outChan <- `Left group ` + topic
+	return nil
+}
+
+func (a *Agent) Close() error {
+	// close all sockets
+	return nil
 }
