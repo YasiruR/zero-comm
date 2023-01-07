@@ -73,22 +73,6 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	return c
 }
 
-func initZmqPubSub(ctx *zmq.Context, c *domain.Container) {
-	if c.Cfg.Args.PubPort != 0 {
-		pub, err := pubsub.NewPublisher(ctx, c)
-		if err != nil {
-			c.Log.Fatal(fmt.Sprintf(`initializing zmq publisher failed - %v`, err))
-		}
-		c.Pub = pub
-	}
-
-	sub, err := pubsub.NewSubscriber(ctx, c)
-	if err != nil {
-		c.Log.Fatal(fmt.Sprintf(`initializing zmq subscriber failed - %v`, err))
-	}
-	c.Sub = sub
-}
-
 func shutdown(c *domain.Container) {
 	c.Server.Stop()
 }
