@@ -20,12 +20,11 @@ func setConfigs(args *domain.Args) *domain.Config {
 	//hostname := `http://localhost:`
 	hostname := `tcp://127.0.0.1:`
 	return &domain.Config{
-		Args:             *args,
-		Hostname:         hostname,
-		InvEndpoint:      hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
-		ExchangeEndpoint: hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
-		PubEndpoint:      hostname + strconv.Itoa(args.PubPort),
-		LogLevel:         "DEBUG",
+		Args:        *args,
+		Hostname:    hostname,
+		InvEndpoint: hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
+		PubEndpoint: hostname + strconv.Itoa(args.PubPort),
+		LogLevel:    "DEBUG",
 	}
 }
 
@@ -64,25 +63,14 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	c.Prober = prb
 
 	// should be done after prober since it is a dependency
-	initZmqPubSub(ctx, c)
+	//initZmqPubSub(ctx, c)
+
+	c.PubSub, err = pubsub.NewAgent(ctx, c)
+	if err != nil {
+		logger.Fatal(`initializing pubsub group agent failed`, err)
+	}
 
 	return c
-}
-
-func initZmqPubSub(ctx *zmq.Context, c *domain.Container) {
-	if c.Cfg.Args.PubPort != 0 {
-		pub, err := pubsub.NewPublisher(ctx, c)
-		if err != nil {
-			c.Log.Fatal(fmt.Sprintf(`initializing zmq publisher failed - %v`, err))
-		}
-		c.Pub = pub
-	}
-
-	sub, err := pubsub.NewSubscriber(ctx, c)
-	if err != nil {
-		c.Log.Fatal(fmt.Sprintf(`initializing zmq subscriber failed - %v`, err))
-	}
-	c.Sub = sub
 }
 
 func shutdown(c *domain.Container) {

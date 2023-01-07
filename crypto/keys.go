@@ -12,8 +12,6 @@ type keys struct {
 }
 
 type KeyManager struct {
-	//pubKey    *[32]byte
-	//prvKey    *[32]byte
 	invPubKey *[32]byte
 	invPrvKey *[32]byte
 
@@ -66,33 +64,15 @@ func (k *KeyManager) Peer(pubKey []byte) (name string, err error) {
 		}
 	}
 
-	return ``, fmt.Errorf(`could find the requested public key (%s)`, string(pubKey))
+	return ``, fmt.Errorf(`could not find the requested public key (%s)`, string(pubKey))
 }
 
-//func (k *KeyManager) GenerateKeys() error {
-//	reader := rand.Reader
-//	pubKey, prvKey, err := box.GenerateKey(reader)
-//	if err != nil {
-//		return err
-//	}
-//
-//	k.prvKey = prvKey
-//	k.pubKey = pubKey
-//
-//	return nil
-//}
-//
-//func (k *KeyManager) PrivateKey() []byte {
-//	tmpPrvKey := *k.prvKey
-//	return tmpPrvKey[:]
-//}
-//
-//func (k *KeyManager) PublicKey() []byte {
-//	tmpPubKey := *k.pubKey
-//	return tmpPubKey[:]
-//}
-
 func (k *KeyManager) GenerateInvKeys() error {
+	// uses one key-pair for all invitations but can use separate ones for higher security
+	if k.invPrvKey != nil && k.invPubKey != nil {
+		return nil
+	}
+
 	reader := rand.Reader
 	pubKey, prvKey, err := box.GenerateKey(reader)
 	if err != nil {

@@ -7,15 +7,17 @@ import (
 
 /* core services */
 
-type DIDComm interface {
+type Agent interface {
 	Invite() (url string, err error)
+	SyncAccept(encodedInv string) error
 	Accept(encodedInv string) (sender string, err error)
 	SendMessage(typ, to, text string) error
 	ReadMessage(msg models.Message) (text string, err error)
+	Peer(label string) (models.Peer, error)
 }
 
-type DIDAgent interface {
-	CreateDIDDoc(endpoint, typ string, pubKey []byte) messages.DIDDocument
+type DIDUtils interface {
+	CreateDIDDoc(svcs []models.Service) messages.DIDDocument
 	CreatePeerDID(doc messages.DIDDocument) (did string, err error)
 	ValidatePeerDID(did string) error
 }

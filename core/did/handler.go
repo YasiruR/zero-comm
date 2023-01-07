@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
+	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/btcsuite/btcutil/base58"
-	"github.com/google/uuid"
 )
 
 type Handler struct{}
@@ -17,22 +17,26 @@ func NewHandler() *Handler {
 	return &Handler{}
 }
 
-func (h *Handler) CreateDIDDoc(endpoint, typ string, pubKey []byte) messages.DIDDocument {
-	encodedKey := make([]byte, 64)
-	base64.StdEncoding.Encode(encodedKey, pubKey)
-	// removes redundant elements from the allocated byte slice
-	encodedKey = bytes.Trim(encodedKey, "\x00")
+func (h *Handler) CreateDIDDoc(svcs []models.Service) messages.DIDDocument {
+	var msgSvcs []messages.Service
+	for _, svc := range svcs {
+		encodedKey := make([]byte, 64)
+		base64.StdEncoding.Encode(encodedKey, svc.PubKey)
+		// removes redundant elements from the allocated byte slice
+		encodedKey = bytes.Trim(encodedKey, "\x00")
 
-	s := messages.Service{
-		Id:              uuid.New().String(),
-		Type:            typ,
-		RecipientKeys:   []string{string(encodedKey)},
-		RoutingKeys:     nil,
-		ServiceEndpoint: endpoint,
-		Accept:          nil,
+		s := messages.Service{
+			Id:              svc.Id,
+			Type:            svc.Type,
+			RecipientKeys:   []string{string(encodedKey)},
+			RoutingKeys:     nil,
+			ServiceEndpoint: svc.Endpoint,
+			Accept:          nil,
+		}
+		msgSvcs = append(msgSvcs, s)
 	}
 
-	return messages.DIDDocument{Service: []messages.Service{s}}
+	return messages.DIDDocument{Service: msgSvcs}
 }
 
 func (h *Handler) CreatePeerDID(doc messages.DIDDocument) (did string, err error) {

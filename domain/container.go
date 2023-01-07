@@ -15,26 +15,24 @@ type Args struct {
 
 type Config struct {
 	Args
-	Hostname         string
-	InvEndpoint      string
-	ExchangeEndpoint string
-	PubEndpoint      string
-	LogLevel         string
+	Hostname    string
+	InvEndpoint string
+	PubEndpoint string
+	LogLevel    string
 }
 
 type Container struct {
 	Cfg          *Config
 	KeyManager   services.KeyManager
 	Packer       services.Packer
-	DidAgent     services.DIDAgent
+	DidAgent     services.DIDUtils
 	OOB          services.OutOfBand
 	Connector    services.Connector
-	Pub          services.Publisher
-	Sub          services.Subscriber
-	Prober       services.DIDComm
+	Prober       services.Agent
 	Client       services.Client
 	Server       services.Server
 	ConnDoneChan chan models.Connection
 	OutChan      chan string
 	Log          log.Logger
+	PubSub       services.GroupAgent
 }

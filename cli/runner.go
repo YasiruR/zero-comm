@@ -17,13 +17,12 @@ import (
 type runner struct {
 	cfg     *domain.Config
 	reader  *bufio.Reader
-	prober  services.DIDComm
-	pub     services.Publisher
-	sub     services.Subscriber
+	prober  services.Agent
 	disc    services.Discoverer
 	log     log.Logger
 	outChan chan string
 	disCmds uint64 // flag to identify whether output cursor is on basic commands or not
+	pubsub  services.GroupAgent
 }
 
 func ParseArgs() *domain.Args {
@@ -44,11 +43,10 @@ func Init(c *domain.Container) {
 		cfg:     c.Cfg,
 		reader:  bufio.NewReader(os.Stdin),
 		prober:  c.Prober,
-		pub:     c.Pub,
-		sub:     c.Sub,
 		disc:    discovery.NewDiscoverer(c),
 		outChan: c.OutChan,
 		log:     c.Log,
+		pubsub:  c.PubSub,
 	}
 
 	go r.listen()
@@ -64,12 +62,11 @@ basicCmds:
 		"[1] Generate invitation\n\t" +
 		"[2] Connect via invitation\n\t" +
 		"[3] Send a message\n\t" +
-		"[4] Register a publisher\n\t" +
-		"[5] Set a subscriber\n\t" +
-		"[6] Publish a message\n\t" +
-		"[7] Unregister\n\t" +
-		"[8] Unsubscribe\n\t" +
-		"[9] Discover Features\n\t" +
+		"[4] Create a group\n\t" +
+		"[5] Join a group\n\t" +
+		"[6] Send group message\n\t" +
+		"[7] Leave group\n\t" +
+		"[8] Discover Features\n\t" +
 		"[0] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
@@ -87,16 +84,14 @@ basicCmds:
 	case "3":
 		r.sendMsg()
 	case "4":
-		r.addPublisher()
+		r.createGroup()
 	case "5":
-		r.subscribe()
+		r.joinGroup()
 	case "6":
-		r.publishMsg()
+		r.groupMsg()
 	case "7":
-		r.unregister()
+		r.leave()
 	case "8":
-		r.unsubscribe()
-	case "9":
 		r.discover()
 	case "0":
 		fmt.Println(`program exited`)
@@ -176,55 +171,6 @@ func (r *runner) sendMsg() {
 	}
 }
 
-func (r *runner) addPublisher() {
-	if r.cfg.PubPort == 0 {
-		r.error(`unable to initialize a publisher as no specific port is provided`, nil)
-		return
-	}
-	topic := strings.TrimSpace(r.input(`Topic`))
-	if err := r.pub.Register(topic); err != nil {
-		r.error(`topic may be invalid, please try again`, err)
-		return
-	}
-
-	r.output(fmt.Sprintf("Publisher registered with topic %s", topic))
-}
-
-func (r *runner) subscribe() {
-	topic := strings.TrimSpace(r.input(`Topic`))
-	strBrokers := r.input(`Brokers (as a comma-separated list)`)
-	brokers := strings.Split(strings.TrimSpace(strBrokers), `,`)
-	brokers = []string{`tcp://127.0.0.1:9998`, `tcp://127.0.0.1:9999`}
-	r.sub.AddBrokers(topic, brokers)
-
-	if err := r.sub.Subscribe(topic); err != nil {
-		r.error(`failed to subscribe, please try again`, err)
-	}
-}
-
-func (r *runner) publishMsg() {
-	topic := strings.TrimSpace(r.input(`Topic`))
-	msg := strings.TrimSpace(r.input(`Message`))
-
-	if err := r.pub.Publish(topic, msg); err != nil {
-		r.error(`publishing message failed, please try again`, err)
-	}
-}
-
-func (r *runner) unregister() {
-	topic := strings.TrimSpace(r.input(`Topic`))
-	if err := r.pub.Unregister(topic); err != nil {
-		r.error(`failed to register, please try again`, err)
-	}
-}
-
-func (r *runner) unsubscribe() {
-	topic := strings.TrimSpace(r.input(`Topic`))
-	if err := r.sub.Unsubscribe(topic); err != nil {
-		r.error(`failed to unsubscribe, please try again`, err)
-	}
-}
-
 func (r *runner) discover() {
 	endpoint := strings.TrimSpace(r.input(`Endpoint`))
 	query := strings.TrimSpace(r.input(`Query`))
@@ -240,6 +186,57 @@ func (r *runner) discover() {
 		list = append(list, fmt.Sprintf(`feature: "%s", roles: %v`, f.Id, f.Roles))
 	}
 	r.outputList(`Supported features`, list)
+}
+
+func (r *runner) createGroup() {
+	topic := strings.TrimSpace(r.input(`Topic`))
+	strPub := strings.TrimSpace(r.input(`Publisher (Y/N)`))
+
+	publisher, err := r.validBool(strPub)
+	if err != nil {
+		r.error(`invalid input`, err)
+		return
+	}
+
+	if err = r.pubsub.Create(topic, publisher); err != nil {
+		r.error(`create group failed`, err)
+		return
+	}
+	r.output(`group created`)
+}
+
+func (r *runner) joinGroup() {
+	topic := strings.TrimSpace(r.input(`Topic`))
+	acceptor := strings.TrimSpace(r.input(`Acceptor`))
+	strPub := strings.TrimSpace(r.input(`Publisher (Y/N)`))
+
+	publisher, err := r.validBool(strPub)
+	if err != nil {
+		r.error(`invalid input`, err)
+		return
+	}
+
+	if err = r.pubsub.Join(topic, acceptor, publisher); err != nil {
+		r.error(`group join failed`, err)
+		return
+	}
+	r.output(`joined group ` + topic)
+}
+
+func (r *runner) groupMsg() {
+	topic := strings.TrimSpace(r.input(`Topic`))
+	msg := strings.TrimSpace(r.input(`Message`))
+
+	if err := r.pubsub.Publish(topic, msg); err != nil {
+		r.error(`sending group message failed`, err)
+	}
+}
+
+func (r *runner) leave() {
+	topic := strings.TrimSpace(r.input(`Topic`))
+	if err := r.pubsub.Leave(topic); err != nil {
+		r.error(`leaving group failed`, err)
+	}
 }
 
 /* command-line specific functions */
@@ -279,4 +276,13 @@ func (r *runner) cancelCmd(input string) bool {
 		return true
 	}
 	return false
+}
+
+func (r *runner) validBool(input string) (output bool, err error) {
+	if strings.ToLower(input) == `y` {
+		return true, nil
+	} else if strings.ToLower(input) != `n` {
+		return false, fmt.Errorf(`invalid input for publisher`)
+	}
+	return false, nil
 }
