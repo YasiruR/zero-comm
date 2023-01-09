@@ -14,7 +14,7 @@ type Args struct {
 }
 
 type Config struct {
-	Args
+	*Args
 	Hostname    string
 	InvEndpoint string
 	PubEndpoint string

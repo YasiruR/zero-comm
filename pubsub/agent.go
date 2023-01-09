@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 )
 
 type subKey map[string][]byte // subscriber to public key map
@@ -112,7 +113,7 @@ func (a *Agent) init(s services.Server) {
 	s.AddHandler(domain.MsgTypGroupJoin, joinChan, false)
 
 	go a.joinReqListnr(joinChan)
-	go a.subscrptionListnr(subChan)
+	go a.subscrptionLisntr(subChan)
 	go a.statusListnr()
 	go a.msgListnr()
 }
@@ -206,6 +207,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	// publish status
+	time.Sleep(1 * time.Second) // buffer for zmq subscription latency
 	if err = a.notifyAll(topic, true, publisher); err != nil {
 		return fmt.Errorf(`publishing status active failed - %v`, err)
 	}
@@ -241,7 +243,13 @@ func (a *Agent) reqState(topic, acctpr, inv string) (*messages.ResGroupJoin, err
 	}
 
 	// call A's group-join/<topic> endpoint
-	byts, err := json.Marshal(messages.ReqGroupJoin{Label: a.myLabel, Topic: topic, RequesterInv: inv})
+	byts, err := json.Marshal(messages.ReqGroupJoin{
+		Id:           uuid.New().String(),
+		Type:         messages.JoinRequestV1,
+		Label:        a.myLabel,
+		Topic:        topic,
+		RequesterInv: inv,
+	})
 	if err != nil {
 		return nil, fmt.Errorf(`marshalling group-join request failed - %v`, err)
 	}
@@ -434,11 +442,15 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 			continue
 		}
 
-		byts, err := json.Marshal(messages.ResGroupJoin{Members: a.membrs(req.Topic)})
+		byts, err := json.Marshal(messages.ResGroupJoin{
+			Id:      uuid.New().String(),
+			Type:    messages.JoinResponseV1,
+			Members: a.membrs(req.Topic),
+		})
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`marshalling group-join response failed - %v`, err))
 		}
-		a.log.Debug(`shared group state upon join request`, string(byts))
+		a.log.Debug(fmt.Sprintf(`shared group state upon join request by %s`, req.Label), string(byts))
 
 		// a null response is sent if an error occurred
 		msg.Reply <- byts
@@ -446,7 +458,7 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 }
 
 // todo check if subscription can be done with active status
-func (a *Agent) subscrptionListnr(subChan chan models.Message) {
+func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 	for {
 		msg := <-subChan
 		unpackedMsg, err := a.probr.ReadMessage(msg)
@@ -554,8 +566,16 @@ func (a *Agent) msgListnr() {
 
 func (a *Agent) notifyAll(topic string, active, publisher bool) error {
 	byts, err := json.Marshal(messages.Status{
-		Member: models.Member{Label: a.myLabel, Active: active, Inv: a.invs[topic], Publisher: publisher, PubEndpoint: a.pubEndpoint},
-		Topic:  topic,
+		Id:   uuid.New().String(),
+		Type: messages.MemberStatusV1,
+		Member: models.Member{
+			Label:       a.myLabel,
+			Active:      active,
+			Inv:         a.invs[topic],
+			Publisher:   publisher,
+			PubEndpoint: a.pubEndpoint,
+		},
+		Topic: topic,
 	})
 	if err != nil {
 		return fmt.Errorf(`marshalling publisher status failed - %v`, err)
@@ -565,6 +585,7 @@ func (a *Agent) notifyAll(topic string, active, publisher bool) error {
 		return fmt.Errorf(`publishing active status failed - %v`, err)
 	}
 
+	a.log.Debug(fmt.Sprintf(`published status (topic: %s, active: %t, publisher: %t)`, topic, active, publisher))
 	return nil
 }
 
@@ -691,6 +712,10 @@ func (a *Agent) Leave(topic string) error {
 	a.deleteTopic(topic)
 	a.outChan <- `Left group ` + topic
 	return nil
+}
+
+func (a *Agent) Info(topic string) []models.Member {
+	return a.membrs(topic)
 }
 
 func (a *Agent) Close() error {

@@ -20,7 +20,7 @@ func setConfigs(args *domain.Args) *domain.Config {
 	//hostname := `http://localhost:`
 	hostname := `tcp://127.0.0.1:`
 	return &domain.Config{
-		Args:        *args,
+		Args:        args,
 		Hostname:    hostname,
 		InvEndpoint: hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
 		PubEndpoint: hostname + strconv.Itoa(args.PubPort),
@@ -29,7 +29,7 @@ func setConfigs(args *domain.Args) *domain.Config {
 }
 
 func initContainer(cfg *domain.Config) *domain.Container {
-	logger := log.NewLogger(cfg.Args.Verbose)
+	logger := log.NewLogger(cfg.Args.Verbose, 3)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
 	ctx, err := zmq.NewContext()
@@ -62,14 +62,12 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	}
 	c.Prober = prb
 
-	// should be done after prober since it is a dependency
-	//initZmqPubSub(ctx, c)
-
 	c.PubSub, err = pubsub.NewAgent(ctx, c)
 	if err != nil {
 		logger.Fatal(`initializing pubsub group agent failed`, err)
 	}
 
+	c.Log.Info(fmt.Sprintf(`didcomm agent initialized with messaging port (%d) and publishing port (%d)`, c.Cfg.Port, c.Cfg.PubPort))
 	return c
 }
 

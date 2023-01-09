@@ -7,6 +7,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/core/discovery"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/services"
+	internalLog "github.com/YasiruR/didcomm-prober/log"
 	"github.com/tryfix/log"
 	"net/url"
 	"os"
@@ -45,7 +46,7 @@ func Init(c *domain.Container) {
 		prober:  c.Prober,
 		disc:    discovery.NewDiscoverer(c),
 		outChan: c.OutChan,
-		log:     c.Log,
+		log:     internalLog.NewLogger(c.Cfg.Verbose, 5),
 		pubsub:  c.PubSub,
 	}
 
@@ -66,7 +67,8 @@ basicCmds:
 		"[5] Join a group\n\t" +
 		"[6] Send group message\n\t" +
 		"[7] Leave group\n\t" +
-		"[8] Discover Features\n\t" +
+		"[8] Group Info\n\t" +
+		"[9] Discover Features\n\t" +
 		"[0] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
@@ -92,6 +94,8 @@ basicCmds:
 	case "7":
 		r.leave()
 	case "8":
+		r.groupInfo()
+	case "9":
 		r.discover()
 	case "0":
 		fmt.Println(`program exited`)
@@ -237,6 +241,11 @@ func (r *runner) leave() {
 	if err := r.pubsub.Leave(topic); err != nil {
 		r.error(`leaving group failed`, err)
 	}
+}
+
+func (r *runner) groupInfo() {
+	topic := strings.TrimSpace(r.input(`Topic`))
+	r.output(fmt.Sprintf(`%v`, r.pubsub.Info(topic)))
 }
 
 /* command-line specific functions */

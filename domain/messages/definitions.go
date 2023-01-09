@@ -9,5 +9,7 @@ const (
 	DiscoverFeatQuery    = `https://didcomm.org/discover-features/1.0/query`
 	DiscoverFeatDisclose = `https://didcomm.org/discover-features/1.0/disclose`
 	SubscribeV1          = `https://didcomm.org/pub-sub/1.0/subscribe`
-	PublisherStatusV1    = `https://didcomm.org/pub-sub/1.0/notify`
+	JoinRequestV1        = `https://didcomm.org/pub-sub/1.0/join-request`
+	JoinResponseV1       = `https://didcomm.org/pub-sub/1.0/join-response`
+	MemberStatusV1       = `https://didcomm.org/pub-sub/1.0/status`
 )
