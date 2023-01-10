@@ -109,6 +109,8 @@ func (a *Agent) init(s services.Server) {
 	subChan := make(chan models.Message)
 	s.AddHandler(domain.MsgTypSubscribe, subChan, true)
 
+	// sync handler for join-requests as requester expects
+	// the group-info in return
 	joinChan := make(chan models.Message)
 	s.AddHandler(domain.MsgTypGroupJoin, joinChan, false)
 
@@ -119,7 +121,7 @@ func (a *Agent) init(s services.Server) {
 }
 
 // Create constructs a group including creator's invitation
-// and models.Member
+// for the group and its models.Member
 func (a *Agent) Create(topic string, publisher bool) error {
 	inv, err := a.probr.Invite()
 	if err != nil {
@@ -215,18 +217,17 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	return nil
 }
 
+// reqState checks if requester has already connected with acceptor
+// via didcomm and if true, sends a didcomm group-join request using
+// fetched peer's information. Returns the group-join response if both
+// request is successful and requester is eligible.
 func (a *Agent) reqState(topic, acctpr, inv string) (*messages.ResGroupJoin, error) {
-	// check if B is already connected with acceptor (A)
-	// - only needs to check if ever connected (in agent's map), since disconnect is not implemented
-	// if not, return
 	p, err := a.probr.Peer(acctpr)
 	if err != nil {
 		return nil, fmt.Errorf(`fetching acceptor failed - %v`, err)
 	}
 
-	// if connected, check if A's DID Doc has join-endpoint
-	//  - save services in prober's peers map upon connection
-	//  - open a func to get peer data
+	// fetching group-join endpoint and public key of acceptor
 	var srvcJoin models.Service
 	var accptrKey []byte
 	for _, s := range p.Services {
@@ -237,12 +238,10 @@ func (a *Agent) reqState(topic, acctpr, inv string) (*messages.ResGroupJoin, err
 		}
 	}
 
-	// if join service is not present, return
 	if srvcJoin.Type == `` {
 		return nil, fmt.Errorf(`acceptor does not provide group-join service`)
 	}
 
-	// call A's group-join/<topic> endpoint
 	byts, err := json.Marshal(messages.ReqGroupJoin{
 		Id:           uuid.New().String(),
 		Type:         messages.JoinRequestV1,
@@ -281,7 +280,6 @@ func (a *Agent) reqState(topic, acctpr, inv string) (*messages.ResGroupJoin, err
 	}
 	a.log.Debug(`group-join response received`, res)
 
-	// save received group info in-memory (map with topics?)
 	var resGroup messages.ResGroupJoin
 	if err = json.Unmarshal([]byte(res), &resGroup); err != nil {
 		return nil, fmt.Errorf(`unmarshalling group-join response failed - %v`, err)

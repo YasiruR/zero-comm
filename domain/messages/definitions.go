@@ -1,6 +1,5 @@
 package messages
 
-// todo extend to pub sub messages after defining them
 const (
 	OOBInvitationV1      = `https://didcomm.org/out-of-band/1.0/invitation`
 	DIDExchangeReqV1     = `https://didcomm.org/didexchange/1.0/request`

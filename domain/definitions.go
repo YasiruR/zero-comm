@@ -21,8 +21,6 @@ const (
 	ServcPubSub      = `group-message-service`
 )
 
-// todo remove
-// not used for zmq transport
 const (
 	InvitationEndpoint = ``
 	ExchangeEndpoint   = `/did-exchange/`
