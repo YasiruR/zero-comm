@@ -231,7 +231,7 @@ func (r *runner) groupMsg() {
 	topic := strings.TrimSpace(r.input(`Topic`))
 	msg := strings.TrimSpace(r.input(`Message`))
 
-	if err := r.pubsub.Publish(topic, msg); err != nil {
+	if err := r.pubsub.Send(topic, msg); err != nil {
 		r.error(`sending group message failed`, err)
 	}
 }

@@ -11,10 +11,6 @@ const (
 )
 
 const (
-	PubTopicSuffix = `_pubs`
-)
-
-const (
 	ServcDIDExchange = `did-exchange-service`
 	ServcMessage     = `message-service`
 	ServcGroupJoin   = `group-join-service`
