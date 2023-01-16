@@ -9,14 +9,14 @@ type Logger struct {
 	log.Logger
 }
 
-func NewLogger(logEnabled bool) *Logger {
+func NewLogger(logEnabled bool, skipCount int) *Logger {
 	return &Logger{
 		logEnabled: logEnabled,
 		Logger: log.Constructor.Log(
 			log.WithColors(true),
 			log.WithLevel("TRACE"),
 			log.WithFilePath(true),
-			log.WithSkipFrameCount(4), // todo fix this count for different logs
+			log.WithSkipFrameCount(skipCount),
 		),
 	}
 }

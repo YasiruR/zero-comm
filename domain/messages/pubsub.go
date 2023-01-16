@@ -19,11 +19,15 @@ type Status struct {
 }
 
 type ReqGroupJoin struct {
+	Id           string `json:"@id"`
+	Type         string `json:"@type"`
 	Label        string `json:"label"`
 	Topic        string `json:"topic"`
 	RequesterInv string `json:"requesterInv"`
 }
 
 type ResGroupJoin struct {
+	Id      string          `json:"@id"`
+	Type    string          `json:"@type"`
 	Members []models.Member `json:"members"` // includes acceptor
 }
