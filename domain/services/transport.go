@@ -31,6 +31,7 @@ type Server interface {
 type GroupAgent interface {
 	Create(topic string, publisher bool) error
 	Join(topic, acceptor string, publisher bool) error
-	Publish(topic, msg string) error
+	Send(topic, msg string) error
 	Leave(topic string) error
+	Info(topic string) []models.Member
 }
