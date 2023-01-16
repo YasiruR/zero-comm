@@ -187,7 +187,7 @@ func (r *runner) discover() {
 
 	var list []string
 	for _, f := range features {
-		list = append(list, fmt.Sprintf(`feature: "%s", roles: %v`, f.Id, f.Roles))
+		list = append(list, fmt.Sprintf(`Protocol: "%s", Roles: %v`, f.Id, f.Roles))
 	}
 	r.outputList(`Supported features`, list)
 }

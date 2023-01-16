@@ -446,3 +446,12 @@ func (p *Prober) Peer(label string) (models.Peer, error) {
 	}
 	return pr, nil
 }
+
+func (p *Prober) PeerByExchID(id string) (ok bool, pr models.Peer) {
+	for _, connPr := range p.peers {
+		if connPr.ExchangeThId == id {
+			return true, connPr
+		}
+	}
+	return false, models.Peer{}
+}

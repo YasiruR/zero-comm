@@ -13,25 +13,8 @@ import (
 	"github.com/tryfix/log"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 )
-
-type subKey map[string][]byte // subscriber to public key map
-
-// performance may be improved by using granular locks and
-// trading off with complexity and memory utilization
-type keyStore struct {
-	*sync.RWMutex
-	subs map[string]subKey // can extend to multiple keys per peer
-}
-
-type groupStore struct {
-	*sync.RWMutex
-	// nested map for group state where primary key is the topic
-	// and secondary is the member's label
-	states map[string]map[string]models.Member
-}
 
 type sockets struct {
 	sktPub   *zmq.Socket
@@ -47,8 +30,9 @@ type Agent struct {
 	client      services.Client
 	km          services.KeyManager
 	packer      services.Packer
-	keys        *keyStore
-	groups      *groupStore
+	subs        *subStore
+	gs          *groupStore
+	es          *exchIdStore
 	log         log.Logger
 	outChan     chan string
 	*sockets
@@ -85,11 +69,9 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 		packer:      c.Packer,
 		log:         c.Log,
 		outChan:     c.OutChan,
-		keys:        &keyStore{RWMutex: &sync.RWMutex{}, subs: map[string]subKey{}},
-		groups: &groupStore{
-			RWMutex: &sync.RWMutex{},
-			states:  map[string]map[string]models.Member{},
-		},
+		subs:        newSubStore(),
+		gs:          newGroupStore(),
+		es:          newExchStore(),
 		sockets: &sockets{
 			sktPub:   sktPub,
 			sktState: sktStates,
@@ -137,14 +119,14 @@ func (a *Agent) Create(topic string, publisher bool) error {
 	}
 
 	a.invs[topic] = inv
-	a.addMembr(topic, m)
+	a.gs.addMembr(topic, m)
 
 	return nil
 }
 
 func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	// check if already joined to the topic
-	if a.joined(topic) {
+	if a.gs.joined(topic) {
 		return fmt.Errorf(`already connected to group %s`, topic)
 	}
 
@@ -165,7 +147,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	// adding this node as a member
-	a.addMembr(topic, models.Member{
+	a.gs.addMembr(topic, models.Member{
 		Active:      true,
 		Publisher:   publisher,
 		Label:       a.myLabel,
@@ -174,6 +156,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	})
 
 	for _, m := range group.Members {
+		// todo can do in parallel?
 		if !m.Active {
 			continue
 		}
@@ -187,16 +170,18 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		}
 
 		// add as a member to be shared with another in future
-		a.addMembr(topic, m)
-
-		if !publisher {
-			continue
-		}
+		a.gs.addMembr(topic, m)
 
 		// todo improve (or can remove sending by sub msg to other peer)
 		pr, err := a.probr.Peer(m.Label)
 		if err != nil {
 			return fmt.Errorf(`getting peer info for %s failed - %v`, m.Label, err)
+		}
+		// adding exchange id for status filtering
+		a.es.add(pr.ExchangeThId)
+
+		if !publisher {
+			continue
 		}
 
 		var sk []byte
@@ -205,7 +190,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 				sk = s.PubKey
 			}
 		}
-		a.addSub(topic, m.Label, sk)
+		a.subs.add(topic, m.Label, sk)
 	}
 
 	// publish status
@@ -289,7 +274,7 @@ func (a *Agent) reqState(topic, acctpr, inv string) (*messages.ResGroupJoin, err
 }
 
 func (a *Agent) Send(topic, msg string) error {
-	subs, err := a.subsByTopic(topic)
+	subs, err := a.subs.queryByTopic(topic)
 	if err != nil {
 		return fmt.Errorf(`fetching subscribers for topic %s failed - %v`, topic, err)
 	}
@@ -443,7 +428,7 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 		byts, err := json.Marshal(messages.ResGroupJoin{
 			Id:      uuid.New().String(),
 			Type:    messages.JoinResponseV1,
-			Members: a.membrs(req.Topic),
+			Members: a.gs.membrs(req.Topic),
 		})
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`marshalling group-join response failed - %v`, err))
@@ -472,7 +457,7 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 		}
 
 		if !sm.Subscribe {
-			a.deleteSub(sm.Topic, sm.Member.Label)
+			a.subs.delete(sm.Topic, sm.Member.Label)
 			continue
 		}
 
@@ -482,12 +467,12 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 		}
 
 		var newTopic bool
-		if _, err = a.subsByTopic(sm.Topic); err != nil {
+		if _, err = a.subs.queryByTopic(sm.Topic); err != nil {
 			newTopic = true
 		}
 
 		sk := base58.Decode(sm.PubKey)
-		a.addSub(sm.Topic, sm.Member.Label, sk)
+		a.subs.add(sm.Topic, sm.Member.Label, sk)
 
 		if err = a.sktState.Connect(sm.Member.PubEndpoint); err != nil {
 			a.log.Error(fmt.Sprintf(`connecting to publisher state socket failed - %v`, err))
@@ -530,13 +515,20 @@ func (a *Agent) statusListnr() {
 			continue
 		}
 
+		pr, err := a.probr.Peer(ms.Member.Label)
+		if err != nil {
+			a.log.Error(fmt.Sprintf(`getting peer info for %s failed - %v`, ms.Member.Label, err))
+		}
+
 		if !ms.Member.Active {
-			a.deleteSub(ms.Topic, ms.Member.Label)
-			a.deleteMembr(ms.Topic, ms.Member.Label)
+			a.subs.delete(ms.Topic, ms.Member.Label)
+			a.gs.deleteMembr(ms.Topic, ms.Member.Label)
+			a.es.delete(pr.ExchangeThId)
 			continue
 		}
 
-		a.addMembr(ms.Topic, ms.Member)
+		a.gs.addMembr(ms.Topic, ms.Member)
+		a.es.add(pr.ExchangeThId)
 		a.log.Debug(`group state updated`, *ms)
 	}
 }
@@ -563,6 +555,14 @@ func (a *Agent) msgListnr() {
 }
 
 func (a *Agent) notifyAll(topic string, active, publisher bool) error {
+	// construct basic status message
+	// for each member (do in parallel)
+	//	- fetch exch id of member
+	//	- add member details
+	//	- marshall
+	//	- pack message
+	//	- publish with additional frame exch id
+
 	byts, err := json.Marshal(messages.Status{
 		Id:   uuid.New().String(),
 		Type: messages.MemberStatusV1,
@@ -615,92 +615,12 @@ func (a *Agent) validJoiner(label string) bool {
 	return true
 }
 
-func (a *Agent) subsByTopic(topic string) (subKey, error) {
-	a.keys.RLock()
-	defer a.keys.RUnlock()
-	subs, ok := a.keys.subs[topic]
-	if !ok {
-		return nil, fmt.Errorf(`topic (%s) is not registered`, topic)
-	}
-
-	return subs, nil
-}
-
-// addSub replaces the key if already exists for the subscriber
-func (a *Agent) addSub(topic, sub string, key []byte) {
-	a.keys.Lock()
-	defer a.keys.Unlock()
-	if a.keys.subs[topic] == nil {
-		a.keys.subs[topic] = subKey{}
-	}
-	a.keys.subs[topic][sub] = key
-}
-
-func (a *Agent) deleteSub(topic, label string) {
-	a.keys.Lock()
-	defer a.keys.Unlock()
-	delete(a.keys.subs[topic], label)
-}
-
-func (a *Agent) addMembr(topic string, m models.Member) {
-	a.groups.Lock()
-	defer a.groups.Unlock()
-	if a.groups.states[topic] == nil {
-		a.groups.states[topic] = make(map[string]models.Member)
-	}
-	a.groups.states[topic][m.Label] = m
-	a.log.Trace(`group member added`, m.Label)
-}
-
-func (a *Agent) deleteMembr(topic, membr string) {
-	a.groups.Lock()
-	defer a.groups.Unlock()
-	if a.groups.states[topic] == nil {
-		return
-	}
-	delete(a.groups.states[topic], membr)
-}
-
-func (a *Agent) deleteTopic(topic string) {
-	a.keys.Lock()
-	delete(a.keys.subs, topic)
-	a.keys.Unlock()
-
-	a.groups.Lock()
-	delete(a.groups.states, topic)
-	a.groups.Unlock()
-}
-
-// joined checks if current member has already joined a group
-// with the given topic
-func (a *Agent) joined(topic string) bool {
-	a.groups.RLock()
-	defer a.groups.RUnlock()
-	if a.groups.states[topic] == nil {
-		return false
-	}
-	return true
-}
-
-func (a *Agent) membrs(topic string) (m []models.Member) {
-	a.groups.RLock()
-	defer a.groups.RUnlock()
-	if a.groups.states[topic] == nil {
-		return []models.Member{}
-	}
-
-	for _, mem := range a.groups.states[topic] {
-		m = append(m, mem)
-	}
-	return m
-}
-
 func (a *Agent) Leave(topic string) error {
 	if err := a.sktState.SetUnsubscribe(a.stateTopic(topic)); err != nil {
 		return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, a.stateTopic(topic), err)
 	}
 
-	membrs := a.membrs(topic)
+	membrs := a.gs.membrs(topic)
 	if len(membrs) == 0 {
 		return fmt.Errorf(`no members found`)
 	}
@@ -716,13 +636,14 @@ func (a *Agent) Leave(topic string) error {
 		return fmt.Errorf(`publishing inactive status failed - %v`, err)
 	}
 
-	a.deleteTopic(topic)
+	a.subs.deleteTopic(topic)
+	a.gs.deleteTopic(topic)
 	a.outChan <- `Left group ` + topic
 	return nil
 }
 
 func (a *Agent) Info(topic string) []models.Member {
-	return a.membrs(topic)
+	return a.gs.membrs(topic)
 }
 
 func (a *Agent) Close() error {
