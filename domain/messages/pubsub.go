@@ -12,12 +12,10 @@ type Subscribe struct {
 }
 
 type Status struct {
-	Id     string                  `json:"@id"`
-	Type   string                  `json:"@type"`
-	Topic  string                  `json:"topic"` // might be a redundant info in general mq systems
-	Member models.Member           `json:"member"`
-	Enc    map[string]string       `json:"enc"` // todo change
-	Mesgs  map[string]AuthCryptMsg `json:"mesgs"`
+	Id       string            `json:"@id"`
+	Type     string            `json:"@type"`
+	Topic    string            `json:"topic"` // might be a redundant info in general mq systems
+	AuthMsgs map[string]string `json:"auth_msgs"`
 }
 
 type ReqGroupJoin struct {
