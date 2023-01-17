@@ -334,6 +334,36 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 		return fmt.Errorf(`marshalling didcomm message failed - %v`, err)
 	}
 
+	//fmt.Println("MARSHALLED: ", data)
+	//fmt.Println("LENGTH: ", len(data))
+	//
+	//var b bytes.Buffer
+	//gz, err := gzip.NewWriterLevel(&b, gzip.BestCompression)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//
+	//if _, err = gz.Write(data); err != nil {
+	//	log.Fatal(err)
+	//}
+	//if err = gz.Close(); err != nil {
+	//	log.Fatal(err)
+	//}
+	//fmt.Println("GZIPPED: ", string(b.Bytes()))
+	//fmt.Println("GZ LEN: ", len(b.Bytes()))
+	//
+	//fmt.Println("COMPRESSABILITY: ", compress.Estimate(data))
+	//
+	//var b bytes.Buffer
+	//e, err := zstd.NewWriter(&b, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//
+	//var dst []byte
+	//out := e.EncodeAll(data, dst)
+	//fmt.Println("ZIPPED: ", len(out))
+
 	if _, err = p.client.Send(typ, data, prMsgEndpnt); err != nil {
 		return fmt.Errorf(`sending siscomm message failed - %v`, err)
 	}

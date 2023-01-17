@@ -9,6 +9,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
+	"github.com/klauspost/compress/zstd"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 	"net/url"
@@ -509,27 +510,39 @@ func (a *Agent) statusListnr() {
 			continue
 		}
 
-		ms, err := a.parseMembrStatus(msg)
-		if err != nil {
-			a.log.Error(fmt.Sprintf(`parsing member status message failed - %v`, err))
+		fmt.Println("INITIAL MSG: ", msg)
+		fmt.Println()
+
+		// check if exchange ID is valid
+		// if valid, read using prober
+		frames := strings.SplitN(msg, ` `, 2)
+		if len(frames) != 2 {
+			a.log.Error(fmt.Sprintf(`received an invalid status message (length=%v) - %v`, len(frames), err))
 			continue
 		}
+		a.extract(frames[1])
 
-		pr, err := a.probr.Peer(ms.Member.Label)
-		if err != nil {
-			a.log.Error(fmt.Sprintf(`getting peer info for %s failed - %v`, ms.Member.Label, err))
-		}
-
-		if !ms.Member.Active {
-			a.subs.delete(ms.Topic, ms.Member.Label)
-			a.gs.deleteMembr(ms.Topic, ms.Member.Label)
-			a.es.delete(pr.ExchangeThId)
-			continue
-		}
-
-		a.gs.addMembr(ms.Topic, ms.Member)
-		a.es.add(pr.ExchangeThId)
-		a.log.Debug(`group state updated`, *ms)
+		//ms, err := a.parseMembrStatus(msg)
+		//if err != nil {
+		//	a.log.Error(fmt.Sprintf(`parsing member status message failed - %v`, err))
+		//	continue
+		//}
+		//
+		//pr, err := a.probr.Peer(ms.Member.Label)
+		//if err != nil {
+		//	a.log.Error(fmt.Sprintf(`getting peer info for %s failed - %v`, ms.Member.Label, err))
+		//}
+		//
+		//if !ms.Member.Active {
+		//	a.subs.delete(ms.Topic, ms.Member.Label)
+		//	a.gs.deleteMembr(ms.Topic, ms.Member.Label)
+		//	a.es.delete(pr.ExchangeThId)
+		//	continue
+		//}
+		//
+		//a.gs.addMembr(ms.Topic, ms.Member)
+		//a.es.add(pr.ExchangeThId)
+		//a.log.Debug(`group state updated`, *ms)
 	}
 }
 
@@ -554,32 +567,215 @@ func (a *Agent) msgListnr() {
 	}
 }
 
-func (a *Agent) notifyAll(topic string, active, publisher bool) error {
-	// construct basic status message
-	// for each member (do in parallel)
-	//	- fetch exch id of member
-	//	- add member details
-	//	- marshall
-	//	- pack message
-	//	- publish with additional frame exch id
+//func (a *Agent) check(topic string, active, publisher bool) error {
+//	// construct basic status message
+//	// for each member (do in parallel)
+//	//	- fetch exch id of member
+//	//	- add member details
+//	//	- marshall
+//	//	- pack message
+//	//	- publish with additional frame exch id
+//
+//	sm := messages.Status{Id: uuid.New().String(), Type: messages.MemberStatusV1, Topic: topic, Enc: map[string]string{}}
+//	byts, err := json.Marshal(models.Member{
+//		Label:       a.myLabel,
+//		Active:      active,
+//		Inv:         a.invs[topic],
+//		Publisher:   publisher,
+//		PubEndpoint: a.pubEndpoint,
+//	})
+//	if err != nil {
+//		return fmt.Errorf(`marshal error - %v`, err)
+//	}
+//
+//	mems := a.gs.membrs(topic)
+//
+//	for _, m := range mems {
+//		if m.Label == a.myLabel {
+//			continue
+//		}
+//
+//		ownPubKey, err := a.km.PublicKey(m.Label)
+//		if err != nil {
+//			return fmt.Errorf(`getting public key for connection with %s failed - %v`, m.Label, err)
+//		}
+//
+//		ownPrvKey, err := a.km.PrivateKey(m.Label)
+//		if err != nil {
+//			return fmt.Errorf(`getting private key for connection with %s failed - %v`, m.Label, err)
+//		}
+//
+//		pr, err := a.probr.Peer(m.Label)
+//		if err != nil {
+//			return fmt.Errorf(`no peer found - %v`, err)
+//		}
+//
+//		var sk []byte
+//		for _, s := range pr.Services {
+//			if s.Type == domain.ServcGroupJoin {
+//				sk = s.PubKey
+//			}
+//		}
+//
+//		encryptdMsg, err := a.packer.Pack(byts, sk, ownPubKey, ownPrvKey)
+//		if err != nil {
+//			a.log.Error(err)
+//			return err
+//		}
+//
+//		data, err := json.Marshal(encryptdMsg)
+//		if err != nil {
+//			a.log.Error(err)
+//			return err
+//		}
+//
+//		var b bytes.Buffer
+//		e, err := zstd.NewWriter(&b, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
+//		if err != nil {
+//			log.Fatal(err)
+//		}
+//
+//		var dst []byte
+//		out := e.EncodeAll(data, dst)
+//		sm.Enc[m.Label] = string(out)
+//	}
+//
+//	final, err := json.Marshal(sm)
+//	if err != nil {
+//		return fmt.Errorf(`final marshal error - %v`, err)
+//	}
+//
+//	fmt.Println("COMPRESSEDDDD: ", string(final))
+//	fmt.Println("COMPRESSD LEN: ", len(final))
+//	return nil
+//}
 
-	byts, err := json.Marshal(messages.Status{
-		Id:   uuid.New().String(),
-		Type: messages.MemberStatusV1,
-		Member: models.Member{
-			Label:       a.myLabel,
-			Active:      active,
-			Inv:         a.invs[topic],
-			Publisher:   publisher,
-			PubEndpoint: a.pubEndpoint,
-		},
-		Topic: topic,
-	})
+func (a *Agent) extract(msg string) {
+	//var b bytes.Buffer
+	r, err := zstd.NewReader(nil)
 	if err != nil {
-		return fmt.Errorf(`marshalling publisher status failed - %v`, err)
+		a.log.Fatal(`new reader errorrrr`, err)
 	}
 
-	if _, err = a.sktPub.SendMessage(fmt.Sprintf(`%s %s`, a.stateTopic(topic), string(byts))); err != nil {
+	fmt.Println("MSG: ", msg)
+	fmt.Println()
+	fmt.Println("MSG LEN: ", len([]byte(msg)))
+
+	//var dst []byte
+	out, err := r.DecodeAll([]byte(msg), nil)
+	if err != nil {
+		a.log.Fatal(`decode all errorrr`, err)
+	}
+
+	var sm messages.Status
+	if err = json.Unmarshal(out, &sm); err != nil {
+		a.log.Fatal(`unmarshal errorrr`, err)
+	}
+
+	fmt.Println("EXTRACTED: ", sm)
+}
+
+// todo error logging and finalize
+func (a *Agent) compress(topic string, active, publisher bool) ([]byte, error) {
+	sm := messages.Status{Id: uuid.New().String(), Type: messages.MemberStatusV1, Topic: topic, Enc: map[string]string{}}
+	byts, err := json.Marshal(models.Member{
+		Label:       a.myLabel,
+		Active:      active,
+		Inv:         a.invs[topic],
+		Publisher:   publisher,
+		PubEndpoint: a.pubEndpoint,
+	})
+	if err != nil {
+		return nil, fmt.Errorf(`marshal error - %v`, err)
+	}
+
+	mems := a.gs.membrs(topic)
+	for _, m := range mems {
+		if m.Label == a.myLabel {
+			continue
+		}
+
+		ownPubKey, err := a.km.PublicKey(m.Label)
+		if err != nil {
+			return nil, fmt.Errorf(`getting public key for connection with %s failed - %v`, m.Label, err)
+		}
+
+		ownPrvKey, err := a.km.PrivateKey(m.Label)
+		if err != nil {
+			return nil, fmt.Errorf(`getting private key for connection with %s failed - %v`, m.Label, err)
+		}
+
+		pr, err := a.probr.Peer(m.Label)
+		if err != nil {
+			return nil, fmt.Errorf(`no peer found - %v`, err)
+		}
+
+		var sk []byte
+		for _, s := range pr.Services {
+			if s.Type == domain.ServcGroupJoin {
+				sk = s.PubKey
+			}
+		}
+
+		encryptdMsg, err := a.packer.Pack(byts, sk, ownPubKey, ownPrvKey)
+		if err != nil {
+			return nil, fmt.Errorf(`packing error - %v`, err)
+		}
+
+		data, err := json.Marshal(encryptdMsg)
+		if err != nil {
+			return nil, fmt.Errorf(`marshalling packed message failed - %v`, err)
+		}
+		sm.Enc[pr.ExchangeThId] = string(data)
+	}
+
+	final, err := json.Marshal(sm)
+	if err != nil {
+		return nil, fmt.Errorf(`final marshal error - %v`, err)
+	}
+
+	//var b bytes.Buffer
+	e, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
+	if err != nil {
+		log.Fatal(`new writer errorrr`, err)
+	}
+
+	fmt.Println("FINAL: ", string(final))
+	fmt.Println()
+
+	//var dst []byte
+	out := e.EncodeAll(final, make([]byte, 0, len(final)))
+
+	fmt.Println("COMPRESSEDDDD ALL: ", out)
+	fmt.Println("COMPRESSD LEN ALL: ", len(out))
+
+	a.extract(string(out))
+	return out, nil
+}
+
+func (a *Agent) notifyAll(topic string, active, publisher bool) error {
+	comprsd, err := a.compress(topic, active, publisher)
+	if err != nil {
+		return fmt.Errorf(`compress failed - %v`, err)
+	}
+
+	//byts, err := json.Marshal(messages.Status{
+	//	Id:   uuid.New().String(),
+	//	Type: messages.MemberStatusV1,
+	//	Member: models.Member{
+	//		Label:       a.myLabel,
+	//		Active:      active,
+	//		Inv:         a.invs[topic],
+	//		Publisher:   publisher,
+	//		PubEndpoint: a.pubEndpoint,
+	//	},
+	//	Topic: topic,
+	//})
+	//if err != nil {
+	//	return fmt.Errorf(`marshalling publisher status failed - %v`, err)
+	//}
+
+	if _, err = a.sktPub.SendMessage(fmt.Sprintf(`%s %s`, a.stateTopic(topic), string(comprsd))); err != nil {
 		return fmt.Errorf(`publishing active status failed - %v`, err)
 	}
 
