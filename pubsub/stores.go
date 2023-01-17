@@ -118,38 +118,3 @@ func (g *groupStore) membrs(topic string) (m []models.Member) {
 	}
 	return m
 }
-
-/* Exchange ID Store */
-
-type exchIdStore struct {
-	*sync.RWMutex
-	ids map[string]bool
-}
-
-func newExchStore() *exchIdStore {
-	return &exchIdStore{
-		RWMutex: &sync.RWMutex{},
-		ids:     map[string]bool{},
-	}
-}
-
-func (e *exchIdStore) add(id string) {
-	e.Lock()
-	defer e.Unlock()
-	e.ids[id] = true
-}
-
-func (e *exchIdStore) delete(id string) {
-	e.Lock()
-	defer e.Unlock()
-	delete(e.ids, id)
-}
-
-func (e *exchIdStore) valid(id string) bool {
-	e.RLock()
-	defer e.RUnlock()
-	if _, ok := e.ids[id]; !ok {
-		return false
-	}
-	return true
-}

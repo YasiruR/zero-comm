@@ -2,6 +2,7 @@ package crypto
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"golang.org/x/crypto/nacl/box"
 )
@@ -64,7 +65,7 @@ func (k *KeyManager) Peer(pubKey []byte) (name string, err error) {
 		}
 	}
 
-	return ``, fmt.Errorf(`could not find the requested public key (%s)`, string(pubKey))
+	return ``, fmt.Errorf(`could not find the requested public key (base64-encoded: %s)`, base64.StdEncoding.EncodeToString(pubKey))
 }
 
 func (k *KeyManager) GenerateInvKeys() error {

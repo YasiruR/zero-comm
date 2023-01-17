@@ -33,9 +33,9 @@ type Agent struct {
 	packer      services.Packer
 	subs        *subStore
 	gs          *groupStore
-	es          *exchIdStore
 	log         log.Logger
 	outChan     chan string
+	connDone    chan models.Connection
 	*sockets
 }
 
@@ -72,7 +72,6 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 		outChan:     c.OutChan,
 		subs:        newSubStore(),
 		gs:          newGroupStore(),
-		es:          newExchStore(),
 		sockets: &sockets{
 			sktPub:   sktPub,
 			sktState: sktStates,
@@ -173,16 +172,14 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		// add as a member to be shared with another in future
 		a.gs.addMembr(topic, m)
 
+		if !publisher {
+			continue
+		}
+
 		// todo improve (or can remove sending by sub msg to other peer)
 		pr, err := a.probr.Peer(m.Label)
 		if err != nil {
 			return fmt.Errorf(`getting peer info for %s failed - %v`, m.Label, err)
-		}
-		// adding exchange id for status filtering
-		a.es.add(pr.ExchangeThId)
-
-		if !publisher {
-			continue
 		}
 
 		var sk []byte
@@ -510,8 +507,8 @@ func (a *Agent) statusListnr() {
 			continue
 		}
 
-		fmt.Println("INITIAL MSG: ", msg)
-		fmt.Println()
+		//fmt.Println("INITIAL MSG: ", msg)
+		//fmt.Println()
 
 		// check if exchange ID is valid
 		// if valid, read using prober
@@ -520,29 +517,55 @@ func (a *Agent) statusListnr() {
 			a.log.Error(fmt.Sprintf(`received an invalid status message (length=%v) - %v`, len(frames), err))
 			continue
 		}
-		a.extract(frames[1])
+		sm := a.extract(frames[1])
+
+		var validMsg string
+		for exchId, encMsg := range sm.Enc {
+			//if a.es.valid(exchId) {
+			//	validMsg = encMsg
+			//	break
+			//}
+
+			ok, _ := a.probr.ValidConn(exchId)
+			if ok {
+				validMsg = encMsg
+				break
+			}
+		}
+
+		if validMsg == `` {
+			a.log.Error(fmt.Sprintf(`status update is not intended to this member`))
+			continue
+		}
+
+		//fmt.Println("VALID MSG: ", validMsg)
+
+		strAuthMsg, err := a.probr.ReadMessage(models.Message{Type: domain.MsgTypGroupStatus, Data: []byte(validMsg)})
+		if err != nil {
+			a.log.Error(fmt.Sprintf(`reading status didcomm message failed - %v`, err))
+			continue
+		}
+
+		var member models.Member
+		if err = json.Unmarshal([]byte(strAuthMsg), &member); err != nil {
+			a.log.Error(fmt.Sprintf(`unmarshalling member message failed - %v`, err))
+			continue
+		}
 
 		//ms, err := a.parseMembrStatus(msg)
 		//if err != nil {
 		//	a.log.Error(fmt.Sprintf(`parsing member status message failed - %v`, err))
 		//	continue
 		//}
-		//
-		//pr, err := a.probr.Peer(ms.Member.Label)
-		//if err != nil {
-		//	a.log.Error(fmt.Sprintf(`getting peer info for %s failed - %v`, ms.Member.Label, err))
-		//}
-		//
-		//if !ms.Member.Active {
-		//	a.subs.delete(ms.Topic, ms.Member.Label)
-		//	a.gs.deleteMembr(ms.Topic, ms.Member.Label)
-		//	a.es.delete(pr.ExchangeThId)
-		//	continue
-		//}
-		//
-		//a.gs.addMembr(ms.Topic, ms.Member)
-		//a.es.add(pr.ExchangeThId)
-		//a.log.Debug(`group state updated`, *ms)
+
+		if !member.Active {
+			a.subs.delete(sm.Topic, member.Label)
+			a.gs.deleteMembr(sm.Topic, member.Label)
+			continue
+		}
+
+		a.gs.addMembr(sm.Topic, member)
+		a.log.Debug(fmt.Sprintf(`group state updated for member %s in topic %s`, member.Label, sm.Topic))
 	}
 }
 
@@ -568,13 +591,6 @@ func (a *Agent) msgListnr() {
 }
 
 //func (a *Agent) check(topic string, active, publisher bool) error {
-//	// construct basic status message
-//	// for each member (do in parallel)
-//	//	- fetch exch id of member
-//	//	- add member details
-//	//	- marshall
-//	//	- pack message
-//	//	- publish with additional frame exch id
 //
 //	sm := messages.Status{Id: uuid.New().String(), Type: messages.MemberStatusV1, Topic: topic, Enc: map[string]string{}}
 //	byts, err := json.Marshal(models.Member{
@@ -650,16 +666,16 @@ func (a *Agent) msgListnr() {
 //	return nil
 //}
 
-func (a *Agent) extract(msg string) {
+func (a *Agent) extract(msg string) messages.Status {
 	//var b bytes.Buffer
 	r, err := zstd.NewReader(nil)
 	if err != nil {
 		a.log.Fatal(`new reader errorrrr`, err)
 	}
 
-	fmt.Println("MSG: ", msg)
-	fmt.Println()
-	fmt.Println("MSG LEN: ", len([]byte(msg)))
+	//fmt.Println("MSG: ", msg)
+	//fmt.Println()
+	//fmt.Println("MSG LEN: ", len([]byte(msg)))
 
 	//var dst []byte
 	out, err := r.DecodeAll([]byte(msg), nil)
@@ -672,10 +688,12 @@ func (a *Agent) extract(msg string) {
 		a.log.Fatal(`unmarshal errorrr`, err)
 	}
 
-	fmt.Println("EXTRACTED: ", sm)
+	//fmt.Println("EXTRACTED: ", sm)
+	return sm
 }
 
 // todo error logging and finalize
+// tod move into compressor
 func (a *Agent) compress(topic string, active, publisher bool) ([]byte, error) {
 	sm := messages.Status{Id: uuid.New().String(), Type: messages.MemberStatusV1, Topic: topic, Enc: map[string]string{}}
 	byts, err := json.Marshal(models.Member{
@@ -727,6 +745,11 @@ func (a *Agent) compress(topic string, active, publisher bool) ([]byte, error) {
 			return nil, fmt.Errorf(`marshalling packed message failed - %v`, err)
 		}
 		sm.Enc[pr.ExchangeThId] = string(data)
+
+		//sm.Mesgs[pr.ExchangeThId] = encryptdMsg
+		//fmt.Println("STATE PACKED FOR", m.Label, base64.StdEncoding.EncodeToString(sk))
+		//fmt.Println("PACKED MSG FOR: ", m.Label, string(data))
+		//fmt.Println()
 	}
 
 	final, err := json.Marshal(sm)
@@ -740,20 +763,27 @@ func (a *Agent) compress(topic string, active, publisher bool) ([]byte, error) {
 		log.Fatal(`new writer errorrr`, err)
 	}
 
-	fmt.Println("FINAL: ", string(final))
-	fmt.Println()
+	//fmt.Println("FINAL: ", string(final))
+	//fmt.Println()
 
 	//var dst []byte
 	out := e.EncodeAll(final, make([]byte, 0, len(final)))
 
-	fmt.Println("COMPRESSEDDDD ALL: ", out)
-	fmt.Println("COMPRESSD LEN ALL: ", len(out))
+	//fmt.Println("COMPRESSEDDDD ALL: ", out)
+	//fmt.Println("COMPRESSD LEN ALL: ", len(out))
+	//a.extract(string(out))
 
-	a.extract(string(out))
 	return out, nil
 }
 
 func (a *Agent) notifyAll(topic string, active, publisher bool) error {
+	//	// construct basic status message
+	//	// for each member (do in parallel)
+	//	//	- fetch exch id of member
+	//	//	- add member details
+	//	//	- marshall
+	//	//	- pack message
+	//	//	- publish with additional frame exch id
 	comprsd, err := a.compress(topic, active, publisher)
 	if err != nil {
 		return fmt.Errorf(`compress failed - %v`, err)

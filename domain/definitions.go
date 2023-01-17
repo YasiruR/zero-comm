@@ -1,13 +1,13 @@
 package domain
 
 const (
-	MsgTypConnReq   = `conn-req`
-	MsgTypConnRes   = `conn-res`
-	MsgTypData      = `data`
-	MsgTypSubscribe = `subscribe`
-	MsgTypQuery     = `query`
-
-	MsgTypGroupJoin = `group-join`
+	MsgTypConnReq     = `conn-req`
+	MsgTypConnRes     = `conn-res`
+	MsgTypData        = `data`
+	MsgTypSubscribe   = `subscribe`
+	MsgTypQuery       = `query`
+	MsgTypGroupJoin   = `group-join`
+	MsgTypGroupStatus = `group-status`
 )
 
 const (
