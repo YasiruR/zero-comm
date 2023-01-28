@@ -35,3 +35,12 @@ type GroupAgent interface {
 	Leave(topic string) error
 	Info(topic string) []models.Member
 }
+
+/* Transport authentication */
+
+type Authenticator interface {
+	GenerateCert(md models.Metadata)
+	Allow()
+	Deny()
+	Close() error
+}

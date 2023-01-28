@@ -21,6 +21,7 @@ const (
 	zmqLatencyBufSec = 1
 )
 
+// todo remove skt from internal fields
 type sockets struct {
 	sktPub   *zmq.Socket
 	sktState *zmq.Socket
@@ -49,6 +50,16 @@ type Agent struct {
 }
 
 func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
+	//authntcatr, err := initAuthenticator(zmqCtx, c.Cfg.Verbose)
+	//if err != nil {
+	//	return nil, fmt.Errorf(`initializing zmq authenticator failed - %v`, err)
+	//}
+	//
+	//sktPub, err := authntcatr.pubSkt()
+	//if err != nil {
+	//	return nil, fmt.Errorf(`initializing authenticated zmq pub socket failed - %v`, err)
+	//}
+
 	// create PUB and SUB sockets for msgs and statuses
 	sktPub, err := zmqCtx.NewSocket(zmq.PUB)
 	if err != nil {
@@ -184,12 +195,16 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 			continue
 		}
 
-		if err = a.connect(m); err != nil {
+		if err = a.connectDIDComm(m); err != nil {
 			return fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
 		}
 
 		if err = a.subscribeData(topic, publisher, m); err != nil {
 			return fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
+		}
+
+		if err = a.connectZmq(topic, m); err != nil {
+			return fmt.Errorf(`settting up zmq socket connections failed - %v`, err)
 		}
 
 		// add as a member to be shared with another in future
@@ -200,18 +215,23 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		}
 
 		// todo improve (or can remove sending by sub msg to other peer)
-		pr, err := a.probr.Peer(m.Label)
-		if err != nil {
-			return fmt.Errorf(`getting peer info for %s failed - %v`, m.Label, err)
-		}
+		//pr, err := a.probr.Peer(m.Label)
+		//if err != nil {
+		//	return fmt.Errorf(`getting peer info for %s failed - %v`, m.Label, err)
+		//}
+		//
+		//var sk []byte
+		//for _, s := range pr.Services {
+		//	if s.Type == domain.ServcGroupJoin {
+		//		sk = s.PubKey
+		//	}
+		//}
 
-		var sk []byte
-		for _, s := range pr.Services {
-			if s.Type == domain.ServcGroupJoin {
-				sk = s.PubKey
-			}
+		s, _, err := a.serviceInfo(m.Label)
+		if err != nil {
+			return fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 		}
-		a.subs.add(topic, m.Label, sk)
+		a.subs.add(topic, m.Label, s.PubKey)
 	}
 
 	// publish status
@@ -227,21 +247,26 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 // via didcomm and if true, sends a didcomm group-join request using
 // fetched peer's information. Returns the group-join response if both
 // request is successful and requester is eligible.
-func (a *Agent) reqState(topic, acctpr, inv string) (*messages.ResGroupJoin, error) {
-	p, err := a.probr.Peer(acctpr)
-	if err != nil {
-		return nil, fmt.Errorf(`fetching acceptor failed - %v`, err)
-	}
+func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, error) {
+	//p, err := a.probr.Peer(accptr)
+	//if err != nil {
+	//	return nil, fmt.Errorf(`fetching acceptor failed - %v`, err)
+	//}
+	//
+	//// fetching group-join endpoint and public key of acceptor
+	//var srvcJoin models.Service
+	//var accptrKey []byte
+	//for _, s := range p.Services {
+	//	if s.Type == domain.ServcGroupJoin {
+	//		srvcJoin = s
+	//		accptrKey = s.PubKey
+	//		break
+	//	}
+	//}
 
-	// fetching group-join endpoint and public key of acceptor
-	var srvcJoin models.Service
-	var accptrKey []byte
-	for _, s := range p.Services {
-		if s.Type == domain.ServcGroupJoin {
-			srvcJoin = s
-			accptrKey = s.PubKey
-			break
-		}
+	srvcJoin, _, err := a.serviceInfo(accptr)
+	if err != nil {
+		return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, accptr, err)
 	}
 
 	if srvcJoin.Type == `` {
@@ -259,9 +284,9 @@ func (a *Agent) reqState(topic, acctpr, inv string) (*messages.ResGroupJoin, err
 		return nil, fmt.Errorf(`marshalling group-join request failed - %v`, err)
 	}
 
-	data, err := a.pack(acctpr, accptrKey, byts)
+	data, err := a.pack(accptr, srvcJoin.PubKey, byts)
 	if err != nil {
-		return nil, fmt.Errorf(`packing join-req for %s failed - %v`, acctpr, err)
+		return nil, fmt.Errorf(`packing join-req for %s failed - %v`, accptr, err)
 	}
 
 	res, err := a.client.Send(domain.MsgTypGroupJoin, data, srvcJoin.Endpoint)
@@ -306,7 +331,7 @@ func (a *Agent) Send(topic, msg string) error {
 	return nil
 }
 
-func (a *Agent) connect(m models.Member) error {
+func (a *Agent) connectDIDComm(m models.Member) error {
 	_, err := a.probr.Peer(m.Label)
 	if err != nil {
 		u, err := url.Parse(strings.TrimSpace(m.Inv))
@@ -324,14 +349,24 @@ func (a *Agent) connect(m models.Member) error {
 		}
 	}
 
+	return nil
+}
+
+func (a *Agent) connectZmq(topic string, m models.Member) error {
 	// B connects to member via SUB for statuses and msgs
-	if err = a.sktState.Connect(m.PubEndpoint); err != nil {
+	if err := a.sktState.Connect(m.PubEndpoint); err != nil {
 		return fmt.Errorf(`connecting to publisher (%s) state socket failed - %v`, m.PubEndpoint, err)
 	}
 
 	if m.Publisher {
-		if err = a.sktMsgs.Connect(m.PubEndpoint); err != nil {
+		if err := a.sktMsgs.Connect(m.PubEndpoint); err != nil {
 			return fmt.Errorf(`connecting to publisher message socket failed - %v`, err)
+		}
+
+		// B subscribes via zmq
+		it := a.internalTopic(topic, m.Label, a.myLabel)
+		if err := a.sktMsgs.SetSubscribe(it); err != nil {
+			return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, it, err)
 		}
 	}
 
@@ -342,6 +377,7 @@ func (a *Agent) subscribeStatus(topic string) error {
 	if err := a.sktState.SetSubscribe(a.stateTopic(topic)); err != nil {
 		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, a.stateTopic(topic), err)
 	}
+
 	return nil
 }
 
@@ -376,19 +412,32 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 		return fmt.Errorf(`marshalling subscribe message failed - %v`, err)
 	}
 
-	if err = a.probr.SendMessage(domain.MsgTypSubscribe, m.Label, string(byts)); err != nil {
-		return fmt.Errorf(`sending subscribe message failed for topic %s - %v`, topic, err)
+	//if err = a.probr.SendMessage(domain.MsgTypSubscribe, m.Label, string(byts)); err != nil {
+	//	return fmt.Errorf(`sending subscribe message failed for topic %s - %v`, topic, err)
+	//}
+
+	s, _, err := a.serviceInfo(m.Label)
+	if err != nil {
+		return fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
 
-	if !m.Publisher {
-		return nil
+	data, err := a.pack(m.Label, s.PubKey, byts)
+	if err != nil {
+		return fmt.Errorf(`packing subscribe request for %s failed - %v`, m.Label, err)
 	}
 
-	// B subscribes via zmq
-	it := a.internalTopic(topic, m.Label, a.myLabel)
-	if err = a.sktMsgs.SetSubscribe(it); err != nil {
-		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, it, err)
+	res, err := a.client.Send(domain.MsgTypSubscribe, data, s.Endpoint)
+	if err != nil {
+		return fmt.Errorf(`sending subscribe message failed - %v`, err)
 	}
+
+	fmt.Println()
+	fmt.Println("SUB MSG SENT: ", string(byts))
+	fmt.Println()
+
+	//if !m.Publisher {
+	//	return nil
+	//}
 
 	return nil
 }
@@ -443,6 +492,11 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 			a.log.Error(fmt.Sprintf(`unmarshalling subscribe message failed - %v`, err))
 			continue
 		}
+
+		fmt.Println("SUB MSG RECVD: ", sm)
+
+		// todo send response with pub key for transport
+		// todo may want to make sub handler sync
 
 		if !sm.Subscribe {
 			a.subs.delete(sm.Topic, sm.Member.Label)
@@ -576,6 +630,7 @@ func (a *Agent) notifyAll(topic string, active, publisher bool) error {
 	if err != nil {
 		return fmt.Errorf(`compress status failed - %v`, err)
 	}
+	a.log.Trace(fmt.Sprintf(`compressed status message (length=%d)`, len(comprsd)))
 
 	if _, err = a.sktPub.SendMessage(fmt.Sprintf(`%s %s`, a.stateTopic(topic), string(comprsd))); err != nil {
 		return fmt.Errorf(`publishing active status failed - %v`, err)
@@ -604,18 +659,23 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 			continue
 		}
 
-		pr, err := a.probr.Peer(m.Label)
+		//pr, err := a.probr.Peer(m.Label)
+		//if err != nil {
+		//	return nil, fmt.Errorf(`no peer found - %v`, err)
+		//}
+		//var sk []byte
+		//for _, s := range pr.Services {
+		//	if s.Type == domain.ServcGroupJoin {
+		//		sk = s.PubKey
+		//	}
+		//}
+
+		s, pr, err := a.serviceInfo(m.Label)
 		if err != nil {
-			return nil, fmt.Errorf(`no peer found - %v`, err)
-		}
-		var sk []byte
-		for _, s := range pr.Services {
-			if s.Type == domain.ServcGroupJoin {
-				sk = s.PubKey
-			}
+			return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 		}
 
-		data, err := a.pack(m.Label, sk, byts)
+		data, err := a.pack(m.Label, s.PubKey, byts)
 		if err != nil {
 			return nil, fmt.Errorf(`packing message for %s failed - %v`, m.Label, err)
 		}
@@ -629,6 +689,22 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 	}
 
 	return a.zEncodr.EncodeAll(encodedStatus, make([]byte, 0, len(encodedStatus))), nil
+}
+
+func (a *Agent) serviceInfo(peer string) (*models.Service, *models.Peer, error) {
+	pr, err := a.probr.Peer(peer)
+	if err != nil {
+		return nil, nil, fmt.Errorf(`no peer found - %v`, err)
+	}
+
+	var srvc *models.Service
+	for _, s := range pr.Services {
+		if s.Type == domain.ServcGroupJoin {
+			srvc = &s
+		}
+	}
+
+	return srvc, &pr, nil
 }
 
 func (a *Agent) extractStatus(msg string) (*messages.Status, error) {
