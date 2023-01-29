@@ -21,11 +21,10 @@ const (
 	zmqLatencyBufSec = 1
 )
 
-// todo remove skt from internal fields
 type sockets struct {
-	sktPub   *zmq.Socket
-	sktState *zmq.Socket
-	sktMsgs  *zmq.Socket
+	pub   *zmq.Socket
+	state *zmq.Socket
+	msgs  *zmq.Socket
 }
 
 type compactor struct {
@@ -43,12 +42,11 @@ type Agent struct {
 	packer      services.Packer
 	subs        *subStore
 	gs          *groupStore
+	skts        *sockets
+	auth        *auth
 	log         log.Logger
 	outChan     chan string
 	*compactor
-	*sockets
-
-	auth *auth
 }
 
 func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
@@ -61,12 +59,6 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 	if err != nil {
 		return nil, fmt.Errorf(`initializing authenticated zmq pub socket failed - %v`, err)
 	}
-
-	//// create PUB and SUB sockets for msgs and statuses
-	//sktPub, err := zmqCtx.NewSocket(zmq.PUB)
-	//if err != nil {
-	//	return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
-	//}
 
 	if err = sktPub.Bind(c.Cfg.PubEndpoint); err != nil {
 		return nil, fmt.Errorf(`binding zmq pub socket to %s failed - %v`, c.Cfg.PubEndpoint, err)
@@ -108,10 +100,10 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 			zEncodr: zstdEncoder,
 			zDecodr: zstdDecoder,
 		},
-		sockets: &sockets{
-			sktPub:   sktPub,
-			sktState: sktStates,
-			sktMsgs:  sktMsgs,
+		skts: &sockets{
+			pub:   sktPub,
+			state: sktStates,
+			msgs:  sktMsgs,
 		},
 		auth: authntcatr,
 	}
@@ -266,8 +258,13 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 	}
 	a.log.Debug(`group-join response received`, res)
 
+	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: domain.MsgTypGroupJoin, Data: []byte(res), Reply: nil})
+	if err != nil {
+		return nil, fmt.Errorf(`unpacking group-join response failed - %v`, err)
+	}
+
 	var resGroup messages.ResGroupJoin
-	if err = json.Unmarshal([]byte(res), &resGroup); err != nil {
+	if err = json.Unmarshal([]byte(unpackedMsg), &resGroup); err != nil {
 		return nil, fmt.Errorf(`unmarshalling group-join response failed - %v`, err)
 	}
 
@@ -288,7 +285,7 @@ func (a *Agent) Send(topic, msg string) error {
 		}
 
 		it := a.internalTopic(topic, a.myLabel, sub)
-		if _, err = a.sktPub.SendMessage(fmt.Sprintf(`%s %s`, it, string(data))); err != nil {
+		if _, err = a.skts.pub.SendMessage(fmt.Sprintf(`%s %s`, it, string(data))); err != nil {
 			return fmt.Errorf(`publishing message (%s) failed for %s - %v`, msg, sub, err)
 		}
 
@@ -325,18 +322,18 @@ func (a *Agent) connectDIDComm(m models.Member) error {
 
 func (a *Agent) connectZmq(topic string, m models.Member) error {
 	// B connects to member via SUB for statuses and msgs
-	if err := a.sktState.Connect(m.PubEndpoint); err != nil {
+	if err := a.skts.state.Connect(m.PubEndpoint); err != nil {
 		return fmt.Errorf(`connecting to publisher (%s) state socket failed - %v`, m.PubEndpoint, err)
 	}
 
 	if m.Publisher {
-		if err := a.sktMsgs.Connect(m.PubEndpoint); err != nil {
+		if err := a.skts.msgs.Connect(m.PubEndpoint); err != nil {
 			return fmt.Errorf(`connecting to publisher message socket failed - %v`, err)
 		}
 
 		// B subscribes via zmq
 		it := a.internalTopic(topic, m.Label, a.myLabel)
-		if err := a.sktMsgs.SetSubscribe(it); err != nil {
+		if err := a.skts.msgs.SetSubscribe(it); err != nil {
 			return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, it, err)
 		}
 	}
@@ -345,7 +342,7 @@ func (a *Agent) connectZmq(topic string, m models.Member) error {
 }
 
 func (a *Agent) subscribeStatus(topic string) error {
-	if err := a.sktState.SetSubscribe(a.stateTopic(topic)); err != nil {
+	if err := a.skts.state.SetSubscribe(a.stateTopic(topic)); err != nil {
 		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, a.stateTopic(topic), err)
 	}
 
@@ -378,7 +375,6 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 		},
 		Transport: messages.Transport{
 			ServrPubKey: a.auth.servr.pub,
-			PubEndpoint: a.pubEndpoint,
 		},
 	}
 
@@ -386,10 +382,6 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 	if err != nil {
 		return fmt.Errorf(`marshalling subscribe message failed - %v`, err)
 	}
-
-	//if err = a.probr.SendMessage(domain.MsgTypSubscribe, m.Label, string(byts)); err != nil {
-	//	return fmt.Errorf(`sending subscribe message failed for topic %s - %v`, topic, err)
-	//}
 
 	s, _, err := a.serviceInfo(m.Label)
 	if err != nil {
@@ -416,12 +408,12 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 		return fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
 	}
 
-	if err = a.auth.setAuthClient(a.sktState, resSm.Transport.ServrPubKey); err != nil {
+	if err = a.auth.setAuthClient(a.skts.state, resSm.Transport.ServrPubKey); err != nil {
 		return fmt.Errorf(`setting client authentication for state on subscribe response failed - %v`, err)
 	}
 
 	if resSm.Publisher {
-		if err = a.auth.setAuthClient(a.sktMsgs, resSm.Transport.ServrPubKey); err != nil {
+		if err = a.auth.setAuthClient(a.skts.msgs, resSm.Transport.ServrPubKey); err != nil {
 			return fmt.Errorf(`setting client authentication for data on subscribe response failed - %v`, err)
 		}
 	}
@@ -449,8 +441,6 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 			continue
 		}
 
-		// todo pack below message !!!
-
 		byts, err := json.Marshal(messages.ResGroupJoin{
 			Id:      uuid.New().String(),
 			Type:    messages.JoinResponseV1,
@@ -458,11 +448,18 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 		})
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`marshalling group-join response failed - %v`, err))
+			continue
 		}
-		a.log.Debug(fmt.Sprintf(`shared group state upon join request by %s`, req.Label), string(byts))
 
-		// a null response is sent if an error occurred
-		msg.Reply <- byts
+		packedMsg, err := a.pack(req.Label, nil, byts)
+		if err != nil {
+			a.log.Error(fmt.Sprintf(`packing group-join response failed - %v`, err))
+			continue
+		}
+
+		// no response is sent if process failed
+		msg.Reply <- packedMsg
+		a.log.Debug(fmt.Sprintf(`shared group state upon join request by %s`, req.Label), string(byts))
 	}
 }
 
@@ -482,12 +479,6 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 			continue
 		}
 
-		fmt.Println()
-		fmt.Println("SUB MSG RECVD: ", sm)
-
-		// todo send response with pub key for transport
-		// todo may want to make sub handler sync
-
 		if !sm.Subscribe {
 			a.subs.delete(sm.Topic, sm.Member.Label)
 			continue
@@ -499,7 +490,7 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 		}
 
 		// save zmq server key of subscriber for state socket
-		if err = a.auth.setAuthClient(a.sktState, sm.Transport.ServrPubKey); err != nil {
+		if err = a.auth.setAuthClient(a.skts.state, sm.Transport.ServrPubKey); err != nil {
 			a.log.Error(fmt.Sprintf(`setting zmq client authentication failed - %v`, err))
 			continue
 		}
@@ -518,7 +509,7 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 		sk := base58.Decode(sm.PubKey)
 		a.subs.add(sm.Topic, sm.Member.Label, sk)
 
-		if err = a.sktState.Connect(sm.Member.PubEndpoint); err != nil {
+		if err = a.skts.state.Connect(sm.Member.PubEndpoint); err != nil {
 			a.log.Error(fmt.Sprintf(`connecting to publisher state socket failed - %v`, err))
 			continue
 		}
@@ -532,18 +523,18 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 
 		if sm.Member.Publisher {
 			// save zmq server key of subscriber for data socket
-			if err = a.auth.setAuthClient(a.sktMsgs, sm.Transport.ServrPubKey); err != nil {
+			if err = a.auth.setAuthClient(a.skts.msgs, sm.Transport.ServrPubKey); err != nil {
 				a.log.Error(fmt.Sprintf(`setting zmq client authentication failed - %v`, err))
 				continue
 			}
 
-			if err = a.sktMsgs.Connect(sm.Member.PubEndpoint); err != nil {
+			if err = a.skts.msgs.Connect(sm.Member.PubEndpoint); err != nil {
 				a.log.Error(fmt.Sprintf(`connecting to publisher message socket failed - %v`, err))
 				continue
 			}
 
 			it := a.internalTopic(sm.Topic, sm.Member.Label, a.myLabel)
-			if err = a.sktMsgs.SetSubscribe(it); err != nil {
+			if err = a.skts.msgs.SetSubscribe(it); err != nil {
 				a.log.Error(fmt.Sprintf(`setting zmq subscription failed for topic %s - %v`, it, err))
 			}
 		}
@@ -553,7 +544,7 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 
 func (a *Agent) statusListnr() {
 	for {
-		msg, err := a.sktState.Recv(0)
+		msg, err := a.skts.state.Recv(0)
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`receiving zmq message for member status failed - %v`, err))
 			continue
@@ -611,7 +602,7 @@ func (a *Agent) statusListnr() {
 
 func (a *Agent) msgListnr() {
 	for {
-		msg, err := a.sktMsgs.Recv(0)
+		msg, err := a.skts.msgs.Recv(0)
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`receiving subscribed message failed - %v`, err))
 			continue
@@ -640,7 +631,7 @@ func (a *Agent) notifyAll(topic string, active, publisher bool) error {
 	}
 	a.log.Trace(fmt.Sprintf(`compressed status message (length=%d)`, len(comprsd)))
 
-	if _, err = a.sktPub.SendMessage(fmt.Sprintf(`%s %s`, a.stateTopic(topic), string(comprsd))); err != nil {
+	if _, err = a.skts.pub.SendMessage(fmt.Sprintf(`%s %s`, a.stateTopic(topic), string(comprsd))); err != nil {
 		return fmt.Errorf(`publishing active status failed - %v`, err)
 	}
 
@@ -658,7 +649,6 @@ func (a *Agent) sendSubscribeRes(topic string, m models.Member, msg *models.Mess
 	resByts, err := json.Marshal(messages.ResSubscribe{
 		Transport: messages.Transport{
 			ServrPubKey: a.auth.servr.pub,
-			PubEndpoint: a.pubEndpoint,
 		},
 		Publisher: curntMembr.Publisher,
 	})
@@ -693,17 +683,6 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 		if m.Label == a.myLabel {
 			continue
 		}
-
-		//pr, err := a.probr.Peer(m.Label)
-		//if err != nil {
-		//	return nil, fmt.Errorf(`no peer found - %v`, err)
-		//}
-		//var sk []byte
-		//for _, s := range pr.Services {
-		//	if s.Type == domain.ServcGroupJoin {
-		//		sk = s.PubKey
-		//	}
-		//}
 
 		s, pr, err := a.serviceInfo(m.Label)
 		if err != nil {
@@ -823,7 +802,7 @@ func (a *Agent) validJoiner(label string) bool {
 }
 
 func (a *Agent) Leave(topic string) error {
-	if err := a.sktState.SetUnsubscribe(a.stateTopic(topic)); err != nil {
+	if err := a.skts.state.SetUnsubscribe(a.stateTopic(topic)); err != nil {
 		return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, a.stateTopic(topic), err)
 	}
 

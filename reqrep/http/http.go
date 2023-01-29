@@ -1,4 +1,4 @@
-package reqrep
+package http
 
 import (
 	"bytes"

@@ -18,7 +18,6 @@ type ResSubscribe struct {
 }
 
 type Transport struct {
-	PubEndpoint string `json:"pub_endpoint"`
 	ServrPubKey string `json:"servr_pub_key"`
 }
 

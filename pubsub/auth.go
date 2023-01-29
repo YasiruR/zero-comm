@@ -25,12 +25,6 @@ type auth struct {
 
 func initAuthenticator(zmqCtx *zmq.Context, label string, verbose bool) (*auth, error) {
 	// check zmq version and return if curve is available
-	// zsys dir create - cert store
-	// create zauth
-	// set verbose if required
-	// zauth configure curve dir and store
-	// authstart
-
 	zmq.AuthSetVerbose(verbose)
 	if err := zmq.AuthStart(); err != nil {
 		return nil, fmt.Errorf(`starting zmq authenticator failed - %v`, err)
@@ -45,10 +39,6 @@ func initAuthenticator(zmqCtx *zmq.Context, label string, verbose bool) (*auth, 
 }
 
 func (a *auth) generateCerts(md models.Metadata) error {
-	// zcert new
-	// set metadata
-	// zcert save public
-
 	servPub, servPrvt, err := zmq.NewCurveKeypair()
 	if err != nil {
 		return fmt.Errorf(`generating curve key pair for server failed - %v`, err)
@@ -99,8 +89,6 @@ func (a *auth) setAuthClient(skt *zmq.Socket, servPubKey string) error {
 }
 
 func (a *auth) Close() error {
-	// destroy certs
-	// auth stop
 	zmq.AuthStop()
 	return nil
 }

@@ -38,5 +38,5 @@ type Member struct {
 	Publisher   bool   `json:"publisher"`
 	Label       string `json:"label"` // todo check if DID can be used
 	Inv         string `json:"inv"`
-	PubEndpoint string `json:"pubEndpoint"` // todo move into transport
+	PubEndpoint string `json:"pubEndpoint"`
 }
