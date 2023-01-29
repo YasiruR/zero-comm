@@ -47,24 +47,26 @@ type Agent struct {
 	outChan     chan string
 	*compactor
 	*sockets
+
+	auth *auth
 }
 
 func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
-	//authntcatr, err := initAuthenticator(zmqCtx, c.Cfg.Verbose)
-	//if err != nil {
-	//	return nil, fmt.Errorf(`initializing zmq authenticator failed - %v`, err)
-	//}
-	//
-	//sktPub, err := authntcatr.pubSkt()
-	//if err != nil {
-	//	return nil, fmt.Errorf(`initializing authenticated zmq pub socket failed - %v`, err)
-	//}
-
-	// create PUB and SUB sockets for msgs and statuses
-	sktPub, err := zmqCtx.NewSocket(zmq.PUB)
+	authntcatr, err := initAuthenticator(zmqCtx, c.Cfg.Name, c.Cfg.Verbose)
 	if err != nil {
-		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
+		return nil, fmt.Errorf(`initializing zmq authenticator failed - %v`, err)
 	}
+
+	sktPub, err := authntcatr.pubSkt()
+	if err != nil {
+		return nil, fmt.Errorf(`initializing authenticated zmq pub socket failed - %v`, err)
+	}
+
+	//// create PUB and SUB sockets for msgs and statuses
+	//sktPub, err := zmqCtx.NewSocket(zmq.PUB)
+	//if err != nil {
+	//	return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
+	//}
 
 	if err = sktPub.Bind(c.Cfg.PubEndpoint); err != nil {
 		return nil, fmt.Errorf(`binding zmq pub socket to %s failed - %v`, c.Cfg.PubEndpoint, err)
@@ -91,7 +93,7 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 	}
 
 	a := &Agent{
-		myLabel:     c.Cfg.Args.Name,
+		myLabel:     c.Cfg.Name,
 		pubEndpoint: c.Cfg.PubEndpoint,
 		invs:        make(map[string]string),
 		probr:       c.Prober,
@@ -111,6 +113,7 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 			sktState: sktStates,
 			sktMsgs:  sktMsgs,
 		},
+		auth: authntcatr,
 	}
 
 	a.init(c.Server)
@@ -123,7 +126,7 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 func (a *Agent) init(s services.Server) {
 	// add handler for subscribe messages
 	subChan := make(chan models.Message)
-	s.AddHandler(domain.MsgTypSubscribe, subChan, true)
+	s.AddHandler(domain.MsgTypSubscribe, subChan, false)
 
 	// sync handler for join-requests as requester expects
 	// the group-info in return
@@ -215,18 +218,6 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		}
 
 		// todo improve (or can remove sending by sub msg to other peer)
-		//pr, err := a.probr.Peer(m.Label)
-		//if err != nil {
-		//	return fmt.Errorf(`getting peer info for %s failed - %v`, m.Label, err)
-		//}
-		//
-		//var sk []byte
-		//for _, s := range pr.Services {
-		//	if s.Type == domain.ServcGroupJoin {
-		//		sk = s.PubKey
-		//	}
-		//}
-
 		s, _, err := a.serviceInfo(m.Label)
 		if err != nil {
 			return fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
@@ -248,29 +239,9 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 // fetched peer's information. Returns the group-join response if both
 // request is successful and requester is eligible.
 func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, error) {
-	//p, err := a.probr.Peer(accptr)
-	//if err != nil {
-	//	return nil, fmt.Errorf(`fetching acceptor failed - %v`, err)
-	//}
-	//
-	//// fetching group-join endpoint and public key of acceptor
-	//var srvcJoin models.Service
-	//var accptrKey []byte
-	//for _, s := range p.Services {
-	//	if s.Type == domain.ServcGroupJoin {
-	//		srvcJoin = s
-	//		accptrKey = s.PubKey
-	//		break
-	//	}
-	//}
-
-	srvcJoin, _, err := a.serviceInfo(accptr)
+	s, _, err := a.serviceInfo(accptr)
 	if err != nil {
 		return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, accptr, err)
-	}
-
-	if srvcJoin.Type == `` {
-		return nil, fmt.Errorf(`acceptor does not provide group-join service`)
 	}
 
 	byts, err := json.Marshal(messages.ReqGroupJoin{
@@ -284,12 +255,12 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 		return nil, fmt.Errorf(`marshalling group-join request failed - %v`, err)
 	}
 
-	data, err := a.pack(accptr, srvcJoin.PubKey, byts)
+	data, err := a.pack(accptr, s.PubKey, byts)
 	if err != nil {
 		return nil, fmt.Errorf(`packing join-req for %s failed - %v`, accptr, err)
 	}
 
-	res, err := a.client.Send(domain.MsgTypGroupJoin, data, srvcJoin.Endpoint)
+	res, err := a.client.Send(domain.MsgTypGroupJoin, data, s.Endpoint)
 	if err != nil {
 		return nil, fmt.Errorf(`group-join request failed - %v`, err)
 	}
@@ -391,7 +362,7 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 		return fmt.Errorf(`fetching public key for the connection failed - %v`, err)
 	}
 
-	// B sends agent subscribe msg to pub
+	// B sends agent subscribe msg to member
 	sm := messages.Subscribe{
 		Id:        uuid.New().String(),
 		Type:      messages.SubscribeV1,
@@ -403,6 +374,10 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 			Publisher:   publisher,
 			Label:       a.myLabel,
 			Inv:         a.invs[topic],
+			PubEndpoint: a.pubEndpoint,
+		},
+		Transport: messages.Transport{
+			ServrPubKey: a.auth.servr.pub,
 			PubEndpoint: a.pubEndpoint,
 		},
 	}
@@ -431,13 +406,25 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 		return fmt.Errorf(`sending subscribe message failed - %v`, err)
 	}
 
-	fmt.Println()
-	fmt.Println("SUB MSG SENT: ", string(byts))
-	fmt.Println()
+	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: domain.MsgTypSubscribe, Data: []byte(res), Reply: nil})
+	if err != nil {
+		return fmt.Errorf(`reading subscribe didcomm response failed - %v`, err)
+	}
 
-	//if !m.Publisher {
-	//	return nil
-	//}
+	var resSm messages.ResSubscribe
+	if err = json.Unmarshal([]byte(unpackedMsg), &resSm); err != nil {
+		return fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
+	}
+
+	if err = a.auth.setAuthClient(a.sktState, resSm.Transport.ServrPubKey); err != nil {
+		return fmt.Errorf(`setting client authentication for state on subscribe response failed - %v`, err)
+	}
+
+	if resSm.Publisher {
+		if err = a.auth.setAuthClient(a.sktMsgs, resSm.Transport.ServrPubKey); err != nil {
+			return fmt.Errorf(`setting client authentication for data on subscribe response failed - %v`, err)
+		}
+	}
 
 	return nil
 }
@@ -461,6 +448,8 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 			a.log.Error(fmt.Sprintf(`group-join request denied to member (%s)`, req.Label))
 			continue
 		}
+
+		// todo pack below message !!!
 
 		byts, err := json.Marshal(messages.ResGroupJoin{
 			Id:      uuid.New().String(),
@@ -493,6 +482,7 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 			continue
 		}
 
+		fmt.Println()
 		fmt.Println("SUB MSG RECVD: ", sm)
 
 		// todo send response with pub key for transport
@@ -505,6 +495,18 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 
 		if !a.validJoiner(sm.Member.Label) {
 			a.log.Error(fmt.Sprintf(`requester (%s) is not eligible`, sm.Member.Label))
+			continue
+		}
+
+		// save zmq server key of subscriber for state socket
+		if err = a.auth.setAuthClient(a.sktState, sm.Transport.ServrPubKey); err != nil {
+			a.log.Error(fmt.Sprintf(`setting zmq client authentication failed - %v`, err))
+			continue
+		}
+
+		// send response back to subscriber along with zmq server pub-key of this node
+		if err = a.sendSubscribeRes(sm.Topic, sm.Member, &msg); err != nil {
+			a.log.Error(fmt.Sprintf(`sending subscribe response failed - %v`, err))
 			continue
 		}
 
@@ -529,6 +531,12 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 		}
 
 		if sm.Member.Publisher {
+			// save zmq server key of subscriber for data socket
+			if err = a.auth.setAuthClient(a.sktMsgs, sm.Transport.ServrPubKey); err != nil {
+				a.log.Error(fmt.Sprintf(`setting zmq client authentication failed - %v`, err))
+				continue
+			}
+
 			if err = a.sktMsgs.Connect(sm.Member.PubEndpoint); err != nil {
 				a.log.Error(fmt.Sprintf(`connecting to publisher message socket failed - %v`, err))
 				continue
@@ -640,6 +648,33 @@ func (a *Agent) notifyAll(topic string, active, publisher bool) error {
 	return nil
 }
 
+func (a *Agent) sendSubscribeRes(topic string, m models.Member, msg *models.Message) error {
+	// to fetch if current node is a publisher of the topic
+	curntMembr := a.gs.membr(topic, a.myLabel)
+	if curntMembr == nil {
+		return fmt.Errorf(`current member or topic does not exist in group store`)
+	}
+
+	resByts, err := json.Marshal(messages.ResSubscribe{
+		Transport: messages.Transport{
+			ServrPubKey: a.auth.servr.pub,
+			PubEndpoint: a.pubEndpoint,
+		},
+		Publisher: curntMembr.Publisher,
+	})
+	if err != nil {
+		return fmt.Errorf(`marshalling subscribe response failed - %v`, err)
+	}
+
+	packedMsg, err := a.pack(m.Label, nil, resByts)
+	if err != nil {
+		return fmt.Errorf(`packing subscribe response failed - %v`, err)
+	}
+
+	msg.Reply <- packedMsg
+	return nil
+}
+
 func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, error) {
 	sm := messages.Status{Id: uuid.New().String(), Type: messages.MemberStatusV1, Topic: topic, AuthMsgs: map[string]string{}}
 	byts, err := json.Marshal(models.Member{
@@ -701,7 +736,12 @@ func (a *Agent) serviceInfo(peer string) (*models.Service, *models.Peer, error) 
 	for _, s := range pr.Services {
 		if s.Type == domain.ServcGroupJoin {
 			srvc = &s
+			break
 		}
+	}
+
+	if srvc.Type == `` {
+		return nil, nil, fmt.Errorf(`requested service (%s) is not by the peer`, domain.ServcGroupJoin)
 	}
 
 	return srvc, &pr, nil
@@ -723,6 +763,14 @@ func (a *Agent) extractStatus(msg string) (*messages.Status, error) {
 
 // pack constructs and encodes an authcrypt message to the given receiver
 func (a *Agent) pack(receiver string, recPubKey []byte, msg []byte) ([]byte, error) {
+	if recPubKey == nil {
+		s, _, err := a.serviceInfo(receiver)
+		if err != nil {
+			return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, receiver, err)
+		}
+		recPubKey = s.PubKey
+	}
+
 	ownPubKey, err := a.km.PublicKey(receiver)
 	if err != nil {
 		return nil, fmt.Errorf(`getting public key for connection with %s failed - %v`, receiver, err)

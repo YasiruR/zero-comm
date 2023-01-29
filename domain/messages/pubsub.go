@@ -9,6 +9,17 @@ type Subscribe struct {
 	PubKey    string        `json:"pubKey"` // base58 encoding of public key
 	Topic     string        `json:"topic"`
 	Member    models.Member `json:"member"`
+	Transport Transport     `json:"transport"`
+}
+
+type ResSubscribe struct {
+	Publisher bool      `json:"publisher"`
+	Transport Transport `json:"transport"`
+}
+
+type Transport struct {
+	PubEndpoint string `json:"pub_endpoint"`
+	ServrPubKey string `json:"servr_pub_key"`
 }
 
 type Status struct {

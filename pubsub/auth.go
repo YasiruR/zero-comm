@@ -23,7 +23,7 @@ type auth struct {
 	}
 }
 
-func initAuthenticator(zmqCtx *zmq.Context, verbose bool) (*auth, error) {
+func initAuthenticator(zmqCtx *zmq.Context, label string, verbose bool) (*auth, error) {
 	// check zmq version and return if curve is available
 	// zsys dir create - cert store
 	// create zauth
@@ -36,7 +36,7 @@ func initAuthenticator(zmqCtx *zmq.Context, verbose bool) (*auth, error) {
 		return nil, fmt.Errorf(`starting zmq authenticator failed - %v`, err)
 	}
 
-	a := &auth{ctx: zmqCtx}
+	a := &auth{ctx: zmqCtx, id: label}
 	if err := a.generateCerts(models.Metadata{}); err != nil {
 		return nil, fmt.Errorf(`initializing certficates failed - %v`, err)
 	}

@@ -118,3 +118,18 @@ func (g *groupStore) membrs(topic string) (m []models.Member) {
 	}
 	return m
 }
+
+func (g *groupStore) membr(topic, label string) *models.Member {
+	g.RLock()
+	defer g.RUnlock()
+	if g.states[topic] == nil {
+		return nil
+	}
+
+	for _, mem := range g.states[topic] {
+		if mem.Label == label {
+			return &mem
+		}
+	}
+	return nil
+}
