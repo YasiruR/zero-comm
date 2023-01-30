@@ -16,15 +16,16 @@ const (
 	typMsgSkt   sktType = `msg-skt`
 )
 
+// todo remove group store
 type zmq struct {
 	pub   *zmqLib.Socket
 	state *zmqLib.Socket
 	msgs  *zmqLib.Socket
-	subs  *subStore
+	gs    *groupStore
 	log   log.Logger
 }
 
-func newTransport(zmqCtx *zmqLib.Context) (*zmq, error) {
+func newZmqTransport(zmqCtx *zmqLib.Context, gs *groupStore, l log.Logger) (*zmq, error) {
 	pubSkt, err := zmqCtx.NewSocket(zmqLib.PUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
@@ -40,12 +41,25 @@ func newTransport(zmqCtx *zmqLib.Context) (*zmq, error) {
 		return nil, fmt.Errorf(`creating sub socket for data topics failed - %v`, err)
 	}
 
-	return &zmq{pub: pubSkt, state: sktStates, msgs: sktMsgs}, nil
+	return &zmq{
+		pub:   pubSkt,
+		state: sktStates,
+		msgs:  sktMsgs,
+		gs:    gs,
+		log:   l,
+	}, nil
+}
+
+func (z *zmq) start(pubEndpoint string) error {
+	if err := z.pub.Bind(pubEndpoint); err != nil {
+		return fmt.Errorf(`binding zmq pub socket to %s failed - %v`, pubEndpoint, err)
+	}
+	return nil
 }
 
 func (z *zmq) connect(initRole domain.Role, initLabel, topic string, m models.Member) error {
 	var newTopic bool
-	if _, err := z.subs.queryByTopic(topic); err != nil {
+	if len(z.gs.membrs(topic)) < 2 {
 		newTopic = true
 	}
 

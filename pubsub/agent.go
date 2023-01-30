@@ -51,18 +51,23 @@ type Agent struct {
 }
 
 func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
-	authntcatr, err := initAuthenticator(c.Cfg.Name, c.Cfg.Verbose)
+	gs := newGroupStore()
+	transport, err := newZmqTransport(zmqCtx, gs, c.Log)
+	if err != nil {
+		return nil, fmt.Errorf(`zmq transport init for group agent failed - %v`, err)
+	}
+
+	authn, err := authenticator(c.Cfg.Name, c.Cfg.Verbose)
 	if err != nil {
 		return nil, fmt.Errorf(`initializing zmq authenticator failed - %v`, err)
 	}
 
-	// todo transport
-	skts, err := authntcatr.initSkts(zmqCtx)
-	if err != nil {
-		return nil, fmt.Errorf(`initializing authenticated zmq pub socket failed - %v`, err)
+	if err = authn.setPubAuthn(transport.pub); err != nil {
+		return nil, fmt.Errorf(`setting authentication on pub socket failed - %v`, err)
 	}
-	if err = skts.pub.Bind(c.Cfg.PubEndpoint); err != nil {
-		return nil, fmt.Errorf(`binding zmq pub socket to %s failed - %v`, c.Cfg.PubEndpoint, err)
+
+	if err = transport.start(c.Cfg.PubEndpoint); err != nil {
+		return nil, fmt.Errorf(`starting zmq transport failed - %v`, err)
 	}
 
 	zstdEncoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
@@ -86,12 +91,13 @@ func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
 		log:         c.Log,
 		outChan:     c.OutChan,
 		subs:        newSubStore(),
-		gs:          newGroupStore(),
+		gs:          gs,
+		auth:        authn,
+		zmq:         transport,
 		compactor: &compactor{
 			zEncodr: zstdEncoder,
 			zDecodr: zstdDecoder,
 		},
-		auth: authntcatr,
 	}
 
 	a.init(c.Server)
@@ -159,11 +165,6 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`requesting group state from %s failed - %v`, acceptor, err)
 	}
 
-	//// todo check if should be used after connect
-	//if err = a.zmq.subscribeStatus(topic); err != nil {
-	//	return fmt.Errorf(`subscribing to status topic of %s failed - %v`, topic, err)
-	//}
-
 	// adding this node as a member
 	a.gs.addMembr(topic, models.Member{
 		Active:      true,
@@ -186,10 +187,6 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		if err = a.subscribeData(topic, publisher, m); err != nil {
 			return fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
 		}
-
-		//if err = a.connectZmq(topic, m); err != nil {
-		//	return fmt.Errorf(`settting up zmq socket connections failed - %v`, err)
-		//}
 
 		if err = a.zmq.connect(domain.RoleSubscriber, a.myLabel, topic, m); err != nil {
 			return fmt.Errorf(`transport connection failed - %v`, err)
@@ -372,54 +369,17 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 		return fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
 	}
 
-	if err = a.auth.setAuthn(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, resSm.Publisher); err != nil {
+	var sktMsgs *zmqLib.Socket = nil
+	if resSm.Publisher {
+		sktMsgs = a.zmq.msgs
+	}
+
+	if err = a.auth.setPeerAuthn(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, a.zmq.state, sktMsgs); err != nil {
 		return fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
 	}
 
 	return nil
 }
-
-//func (a *Agent) joinReqListnr(joinChan chan models.Message) {
-//	for {
-//		msg := <-joinChan
-//		body, err := a.probr.ReadMessage(msg)
-//		if err != nil {
-//			a.log.Error(fmt.Sprintf(`reading group-join authcrypt request failed - %v`, err))
-//			continue
-//		}
-//
-//		var req messages.ReqGroupJoin
-//		if err = json.Unmarshal([]byte(body), &req); err != nil {
-//			a.log.Error(fmt.Sprintf(`unmarshalling group-join request failed - %v`, err))
-//			continue
-//		}
-//
-//		if !a.validJoiner(req.Label) {
-//			a.log.Error(fmt.Sprintf(`group-join request denied to member (%s)`, req.Label))
-//			continue
-//		}
-//
-//		byts, err := json.Marshal(messages.ResGroupJoin{
-//			Id:      uuid.New().String(),
-//			Type:    messages.JoinResponseV1,
-//			Members: a.gs.membrs(req.Topic),
-//		})
-//		if err != nil {
-//			a.log.Error(fmt.Sprintf(`marshalling group-join response failed - %v`, err))
-//			continue
-//		}
-//
-//		packedMsg, err := a.pack(req.Label, nil, byts)
-//		if err != nil {
-//			a.log.Error(fmt.Sprintf(`packing group-join response failed - %v`, err))
-//			continue
-//		}
-//
-//		// no response is sent if process failed
-//		msg.Reply <- packedMsg
-//		a.log.Debug(fmt.Sprintf(`shared group state upon join request by %s`, req.Label), string(byts))
-//	}
-//}
 
 func (a *Agent) handler(inChan chan models.Message, handlerFunc func(msg *models.Message) error) {
 	go func() {
@@ -453,7 +413,12 @@ func (a *Agent) handleSubscription(msg *models.Message) error {
 		return fmt.Errorf(`requester (%s) is not eligible`, sm.Member.Label)
 	}
 
-	if err = a.auth.setAuthn(sm.Member.Label, sm.Transport.ServrPubKey, sm.Transport.ClientPubKey, sm.Member.Publisher); err != nil {
+	var sktMsgs *zmqLib.Socket = nil
+	if sm.Member.Publisher {
+		sktMsgs = a.zmq.msgs
+	}
+
+	if err = a.auth.setPeerAuthn(sm.Member.Label, sm.Transport.ServrPubKey, sm.Transport.ClientPubKey, a.zmq.state, sktMsgs); err != nil {
 		return fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
 	}
 
@@ -560,68 +525,6 @@ func (a *Agent) handleState(msg string) error {
 	return nil
 }
 
-//func (a *Agent) statusListnr() {
-//	for {
-//		msg, err := a.skts.state.Recv(0)
-//		if err != nil {
-//			a.log.Error(fmt.Sprintf(`receiving zmq message for member status failed - %v`, err))
-//			continue
-//		}
-//
-//		frames := strings.SplitN(msg, ` `, 2)
-//		if len(frames) != 2 {
-//			a.log.Error(fmt.Sprintf(`received an invalid status message (length=%v) - %v`, len(frames), err))
-//			continue
-//		}
-//
-//		sm, err := a.extractStatus(frames[1])
-//		if err != nil {
-//			a.log.Error(fmt.Sprintf(`extracting status message failed - %v`, err))
-//			continue
-//		}
-//
-//		var validMsg string
-//		for exchId, encMsg := range sm.AuthMsgs {
-//			ok, _ := a.probr.ValidConn(exchId)
-//			if ok {
-//				validMsg = encMsg
-//				break
-//			}
-//		}
-//
-//		if validMsg == `` {
-//			a.log.Error(fmt.Sprintf(`status update is not intended to this member`))
-//			continue
-//		}
-//
-//		strAuthMsg, err := a.probr.ReadMessage(models.Message{Type: domain.MsgTypGroupStatus, Data: []byte(validMsg)})
-//		if err != nil {
-//			a.log.Error(fmt.Sprintf(`reading status didcomm message failed - %v`, err))
-//			continue
-//		}
-//
-//		var member models.Member
-//		if err = json.Unmarshal([]byte(strAuthMsg), &member); err != nil {
-//			a.log.Error(fmt.Sprintf(`unmarshalling member message failed - %v`, err))
-//			continue
-//		}
-//
-//		if !member.Active {
-//			a.subs.delete(sm.Topic, member.Label)
-//			a.gs.deleteMembr(sm.Topic, member.Label)
-//			if err = a.auth.remvKeys(member.Label); err != nil {
-//				a.log.Error(fmt.Sprintf(`removing zmq transport keys failed - %v`, err))
-//				continue
-//			}
-//			a.outChan <- member.Label + ` left group ` + sm.Topic
-//			continue
-//		}
-//
-//		a.gs.addMembr(sm.Topic, member)
-//		a.log.Debug(fmt.Sprintf(`group state updated for member %s in topic %s`, member.Label, sm.Topic))
-//	}
-//}
-
 func (a *Agent) handleData(msg string) error {
 	frames := strings.Split(msg, ` `)
 	if len(frames) != 2 {
@@ -635,27 +538,6 @@ func (a *Agent) handleData(msg string) error {
 
 	return nil
 }
-
-//func (a *Agent) msgListnr() {
-//	for {
-//		msg, err := a.skts.msgs.Recv(0)
-//		if err != nil {
-//			a.log.Error(fmt.Sprintf(`receiving subscribed message failed - %v`, err))
-//			continue
-//		}
-//
-//		frames := strings.Split(msg, ` `)
-//		if len(frames) != 2 {
-//			a.log.Error(fmt.Sprintf(`received an invalid subscribed message (%v) - %v`, frames, err))
-//			continue
-//		}
-//
-//		_, err = a.probr.ReadMessage(models.Message{Type: domain.MsgTypData, Data: []byte(frames[1])})
-//		if err != nil {
-//			a.log.Error(fmt.Sprintf(`reading subscribed message failed - %v`, err))
-//		}
-//	}
-//}
 
 // notifyAll constructs a single status message with different didcomm
 // messages packed per each member of the group and includes in a map with

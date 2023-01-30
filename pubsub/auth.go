@@ -3,7 +3,7 @@ package pubsub
 import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain/models"
-	zmq "github.com/pebbe/zmq4"
+	zmqLib "github.com/pebbe/zmq4"
 	"sync"
 )
 
@@ -17,10 +17,8 @@ type zmqPeerKeys struct {
 }
 
 type auth struct {
-	id       string
-	sktMsgs  *zmq.Socket
-	sktState *zmq.Socket
-	servr    struct {
+	id    string
+	servr struct {
 		pub  string
 		prvt string
 	}
@@ -32,14 +30,14 @@ type auth struct {
 	*sync.RWMutex
 }
 
-func initAuthenticator(label string, verbose bool) (*auth, error) {
+func authenticator(label string, verbose bool) (*auth, error) {
 	// check zmq version and return if curve is available
-	zmq.AuthSetVerbose(verbose)
-	if err := zmq.AuthStart(); err != nil {
+	zmqLib.AuthSetVerbose(verbose)
+	if err := zmqLib.AuthStart(); err != nil {
 		return nil, fmt.Errorf(`starting zmq authenticator failed - %v`, err)
 	}
 
-	a := &auth{id: label}
+	a := &auth{id: label, keys: &sync.Map{}, RWMutex: &sync.RWMutex{}}
 	if err := a.generateCerts(models.Metadata{}); err != nil {
 		return nil, fmt.Errorf(`initializing certficates failed - %v`, err)
 	}
@@ -48,12 +46,12 @@ func initAuthenticator(label string, verbose bool) (*auth, error) {
 }
 
 func (a *auth) generateCerts(md models.Metadata) error {
-	servPub, servPrvt, err := zmq.NewCurveKeypair()
+	servPub, servPrvt, err := zmqLib.NewCurveKeypair()
 	if err != nil {
 		return fmt.Errorf(`generating curve key pair for server failed - %v`, err)
 	}
 
-	clientPub, clientPrvt, err := zmq.NewCurveKeypair()
+	clientPub, clientPrvt, err := zmqLib.NewCurveKeypair()
 	if err != nil {
 		return fmt.Errorf(`generating curve key pair for client failed - %v`, err)
 	}
@@ -64,44 +62,26 @@ func (a *auth) generateCerts(md models.Metadata) error {
 	return nil
 }
 
-func (a *auth) initSkts(zmqCtx *zmq.Context) (*wsockets, error) {
-	pubSkt, err := zmqCtx.NewSocket(zmq.PUB)
-	if err != nil {
-		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
+func (a *auth) setPubAuthn(skt *zmqLib.Socket) error {
+	if err := skt.SetIdentity(a.id); err != nil {
+		return fmt.Errorf(`setting socket identity failed - %v`, err)
 	}
 
-	if err = pubSkt.SetIdentity(a.id); err != nil {
-		return nil, fmt.Errorf(`setting socket identity failed - %v`, err)
+	if err := skt.ServerAuthCurve(domainGlobal, a.servr.prvt); err != nil {
+		return fmt.Errorf(`setting curve authentication to zmq server socket failed - %v`, err)
 	}
 
-	if err = pubSkt.ServerAuthCurve(domainGlobal, a.servr.prvt); err != nil {
-		return nil, fmt.Errorf(`setting curve authentication to zmq server socket failed - %v`, err)
-	}
-
-	sktStates, err := zmqCtx.NewSocket(zmq.SUB)
-	if err != nil {
-		return nil, fmt.Errorf(`creating sub socket for status topic failed - %v`, err)
-	}
-
-	sktMsgs, err := zmqCtx.NewSocket(zmq.SUB)
-	if err != nil {
-		return nil, fmt.Errorf(`creating sub socket for data topics failed - %v`, err)
-	}
-
-	a.sktState = sktStates
-	a.sktMsgs = sktMsgs
-
-	return &wsockets{pub: pubSkt, state: sktStates, msgs: sktMsgs}, nil
+	return nil
 }
 
-func (a *auth) setAuthn(peer, servPubKey, clientPubKey string, publisher bool) error {
-	zmq.AuthCurveAdd(domainGlobal, clientPubKey)
-	if err := a.sktState.ClientAuthCurve(servPubKey, a.client.pub, a.client.prvt); err != nil {
+func (a *auth) setPeerAuthn(peer, servPubKey, clientPubKey string, sktState, sktMsgs *zmqLib.Socket) error {
+	zmqLib.AuthCurveAdd(domainGlobal, clientPubKey)
+	if err := sktState.ClientAuthCurve(servPubKey, a.client.pub, a.client.prvt); err != nil {
 		return fmt.Errorf(`setting curve client authentication to zmq state socket failed - %v`, err)
 	}
 
-	if publisher {
-		if err := a.sktMsgs.ClientAuthCurve(servPubKey, a.client.pub, a.client.prvt); err != nil {
+	if sktMsgs != nil {
+		if err := sktMsgs.ClientAuthCurve(servPubKey, a.client.pub, a.client.prvt); err != nil {
 			return fmt.Errorf(`setting curve client authentication to zmq data socket failed - %v`, err)
 		}
 	}
@@ -126,13 +106,13 @@ func (a *auth) remvKeys(peer string) error {
 		return fmt.Errorf(`incomaptible type found for transport keys (%v)`, val)
 	}
 
-	zmq.AuthCurveRemove(domainGlobal, ks.client)
+	zmqLib.AuthCurveRemove(domainGlobal, ks.client)
 	a.keys.Delete(peer)
 
 	return nil
 }
 
 func (a *auth) Close() error {
-	zmq.AuthStop()
+	zmqLib.AuthStop()
 	return nil
 }
