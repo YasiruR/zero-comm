@@ -64,15 +64,7 @@ func (a *auth) generateCerts(md models.Metadata) error {
 	return nil
 }
 
-func (a *auth) Allow(ip string) {
-	zmq.AuthAllow(domainGlobal, ip) // todo move this to add member (might cause problems for further didexchanges)
-}
-
-func (a *auth) Deny() {
-	// blacklist address
-}
-
-func (a *auth) initSkts(zmqCtx *zmq.Context) (*sockets, error) {
+func (a *auth) initSkts(zmqCtx *zmq.Context) (*wsockets, error) {
 	pubSkt, err := zmqCtx.NewSocket(zmq.PUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
@@ -99,7 +91,7 @@ func (a *auth) initSkts(zmqCtx *zmq.Context) (*sockets, error) {
 	a.sktState = sktStates
 	a.sktMsgs = sktMsgs
 
-	return &sockets{pub: pubSkt, state: sktStates, msgs: sktMsgs}, nil
+	return &wsockets{pub: pubSkt, state: sktStates, msgs: sktMsgs}, nil
 }
 
 func (a *auth) setAuthn(peer, servPubKey, clientPubKey string, publisher bool) error {

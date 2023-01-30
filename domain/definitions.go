@@ -21,3 +21,10 @@ const (
 	InvitationEndpoint = ``
 	ExchangeEndpoint   = `/did-exchange/`
 )
+
+type Role string
+
+const (
+	RolePublisher  Role = `publisher`
+	RoleSubscriber Role = `subscriber`
+)
