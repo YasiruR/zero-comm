@@ -50,28 +50,18 @@ type Agent struct {
 }
 
 func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
-	authntcatr, err := initAuthenticator(zmqCtx, c.Cfg.Name, c.Cfg.Verbose)
+	authntcatr, err := initAuthenticator(c.Cfg.Name, c.Cfg.Verbose)
 	if err != nil {
 		return nil, fmt.Errorf(`initializing zmq authenticator failed - %v`, err)
 	}
 
-	sktPub, err := authntcatr.pubSkt()
+	skts, err := authntcatr.initSkts(zmqCtx)
 	if err != nil {
 		return nil, fmt.Errorf(`initializing authenticated zmq pub socket failed - %v`, err)
 	}
 
-	if err = sktPub.Bind(c.Cfg.PubEndpoint); err != nil {
+	if err = skts.pub.Bind(c.Cfg.PubEndpoint); err != nil {
 		return nil, fmt.Errorf(`binding zmq pub socket to %s failed - %v`, c.Cfg.PubEndpoint, err)
-	}
-
-	sktStates, err := zmqCtx.NewSocket(zmq.SUB)
-	if err != nil {
-		return nil, fmt.Errorf(`creating sub socket for status topic failed - %v`, err)
-	}
-
-	sktMsgs, err := zmqCtx.NewSocket(zmq.SUB)
-	if err != nil {
-		return nil, fmt.Errorf(`creating sub socket for data topics failed - %v`, err)
 	}
 
 	zstdEncoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
@@ -100,12 +90,8 @@ func NewAgent(zmqCtx *zmq.Context, c *domain.Container) (*Agent, error) {
 			zEncodr: zstdEncoder,
 			zDecodr: zstdDecoder,
 		},
-		skts: &sockets{
-			pub:   sktPub,
-			state: sktStates,
-			msgs:  sktMsgs,
-		},
 		auth: authntcatr,
+		skts: skts,
 	}
 
 	a.init(c.Server)
@@ -126,7 +112,7 @@ func (a *Agent) init(s services.Server) {
 	s.AddHandler(domain.MsgTypGroupJoin, joinChan, false)
 
 	go a.joinReqListnr(joinChan)
-	go a.subscrptionLisntr(subChan)
+	go a.subscrptLisntr(subChan)
 	go a.statusListnr()
 	go a.msgListnr()
 }
@@ -374,7 +360,8 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 			PubEndpoint: a.pubEndpoint,
 		},
 		Transport: messages.Transport{
-			ServrPubKey: a.auth.servr.pub,
+			ServrPubKey:  a.auth.servr.pub,
+			ClientPubKey: a.auth.client.pub,
 		},
 	}
 
@@ -408,14 +395,8 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 		return fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
 	}
 
-	if err = a.auth.setAuthClient(a.skts.state, resSm.Transport.ServrPubKey); err != nil {
-		return fmt.Errorf(`setting client authentication for state on subscribe response failed - %v`, err)
-	}
-
-	if resSm.Publisher {
-		if err = a.auth.setAuthClient(a.skts.msgs, resSm.Transport.ServrPubKey); err != nil {
-			return fmt.Errorf(`setting client authentication for data on subscribe response failed - %v`, err)
-		}
+	if err = a.auth.setAuthn(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, resSm.Publisher); err != nil {
+		return fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
 	}
 
 	return nil
@@ -464,7 +445,7 @@ func (a *Agent) joinReqListnr(joinChan chan models.Message) {
 }
 
 // todo check if subscription can be done with active status
-func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
+func (a *Agent) subscrptLisntr(subChan chan models.Message) {
 	for {
 		msg := <-subChan
 		unpackedMsg, err := a.probr.ReadMessage(msg)
@@ -489,9 +470,8 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 			continue
 		}
 
-		// save zmq server key of subscriber for state socket
-		if err = a.auth.setAuthClient(a.skts.state, sm.Transport.ServrPubKey); err != nil {
-			a.log.Error(fmt.Sprintf(`setting zmq client authentication failed - %v`, err))
+		if err = a.auth.setAuthn(sm.Member.Label, sm.Transport.ServrPubKey, sm.Transport.ClientPubKey, sm.Member.Publisher); err != nil {
+			a.log.Error(fmt.Sprintf(`setting zmq transport authentication failed - %v`, err))
 			continue
 		}
 
@@ -522,12 +502,6 @@ func (a *Agent) subscrptionLisntr(subChan chan models.Message) {
 		}
 
 		if sm.Member.Publisher {
-			// save zmq server key of subscriber for data socket
-			if err = a.auth.setAuthClient(a.skts.msgs, sm.Transport.ServrPubKey); err != nil {
-				a.log.Error(fmt.Sprintf(`setting zmq client authentication failed - %v`, err))
-				continue
-			}
-
 			if err = a.skts.msgs.Connect(sm.Member.PubEndpoint); err != nil {
 				a.log.Error(fmt.Sprintf(`connecting to publisher message socket failed - %v`, err))
 				continue
@@ -591,6 +565,10 @@ func (a *Agent) statusListnr() {
 		if !member.Active {
 			a.subs.delete(sm.Topic, member.Label)
 			a.gs.deleteMembr(sm.Topic, member.Label)
+			if err = a.auth.remvKeys(member.Label); err != nil {
+				a.log.Error(fmt.Sprintf(`removing zmq transport keys failed - %v`, err))
+				continue
+			}
 			a.outChan <- member.Label + ` left group ` + sm.Topic
 			continue
 		}
@@ -648,7 +626,8 @@ func (a *Agent) sendSubscribeRes(topic string, m models.Member, msg *models.Mess
 
 	resByts, err := json.Marshal(messages.ResSubscribe{
 		Transport: messages.Transport{
-			ServrPubKey: a.auth.servr.pub,
+			ServrPubKey:  a.auth.servr.pub,
+			ClientPubKey: a.auth.client.pub,
 		},
 		Publisher: curntMembr.Publisher,
 	})
