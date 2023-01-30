@@ -8,12 +8,11 @@ import (
 	"github.com/tryfix/log"
 )
 
-type sktType string
+type sktType int
 
-// todo use iota
 const (
-	typStateSkt sktType = `state-skt`
-	typMsgSkt   sktType = `msg-skt`
+	typStateSkt sktType = iota
+	typMsgSkt
 )
 
 // todo remove group store
@@ -113,10 +112,20 @@ func (z *zmq) subscribeStatus(topic string) error {
 	return nil
 }
 
-func (z *zmq) unsubscribe(topic string) error {
-	// todo set unsubscribe msgs too
+func (z *zmq) unsubscribe(label, topic string) error {
 	if err := z.state.SetUnsubscribe(z.stateTopic(topic)); err != nil {
 		return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, z.stateTopic(topic), err)
+	}
+
+	for _, m := range z.gs.membrs(topic) {
+		if !m.Publisher || m.Label == label {
+			continue
+		}
+
+		it := z.internalTopic(topic, m.Label, label)
+		if err := z.msgs.SetUnsubscribe(it); err != nil {
+			return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, it, err)
+		}
 	}
 
 	return nil

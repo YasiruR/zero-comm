@@ -1,5 +1,6 @@
 package domain
 
+// todo can use iota
 const (
 	MsgTypConnReq     = `conn-req`
 	MsgTypConnRes     = `conn-res`
@@ -22,9 +23,9 @@ const (
 	ExchangeEndpoint   = `/did-exchange/`
 )
 
-type Role string
+type Role int
 
 const (
-	RolePublisher  Role = `publisher`
-	RoleSubscriber Role = `subscriber`
+	RolePublisher Role = iota
+	RoleSubscriber
 )

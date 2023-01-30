@@ -14,18 +14,13 @@ import (
 	"github.com/tryfix/log"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
 	zmqLatencyBufSec = 1
 )
-
-type wsockets struct {
-	pub   *zmqLib.Socket
-	state *zmqLib.Socket
-	msgs  *zmqLib.Socket
-}
 
 type compactor struct {
 	zEncodr *zstd.Encoder
@@ -45,9 +40,8 @@ type Agent struct {
 	auth        *auth
 	log         log.Logger
 	outChan     chan string
+	zmq         *zmq
 	*compactor
-
-	zmq *zmq
 }
 
 func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
@@ -174,45 +168,57 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		PubEndpoint: a.pubEndpoint,
 	})
 
+	wg := &sync.WaitGroup{}
 	for _, m := range group.Members {
-		// todo can do in parallel?
 		if !m.Active {
 			continue
 		}
 
-		if err = a.connectDIDComm(m); err != nil {
-			return fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
-		}
-
-		if err = a.subscribeData(topic, publisher, m); err != nil {
-			return fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
-		}
-
-		if err = a.zmq.connect(domain.RoleSubscriber, a.myLabel, topic, m); err != nil {
-			return fmt.Errorf(`transport connection failed - %v`, err)
-		}
-
-		// add as a member to be shared with another in future
-		a.gs.addMembr(topic, m)
-
-		if !publisher {
-			continue
-		}
-
-		// todo improve (or can remove sending by sub msg to other peer)
-		s, _, err := a.serviceInfo(m.Label)
-		if err != nil {
-			return fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
-		}
-		a.subs.add(topic, m.Label, s.PubKey)
+		wg.Add(1)
+		go func(m models.Member, wg *sync.WaitGroup) {
+			if err = a.addMember(topic, publisher, m); err != nil {
+				a.log.Error(fmt.Sprintf(`adding %s as a member failed - %v`, m.Label, err))
+			}
+			wg.Done()
+		}(m, wg)
 	}
 
+	wg.Wait()
 	// publish status
 	time.Sleep(zmqLatencyBufSec * time.Second) // buffer for zmq subscription latency
 	if err = a.notifyAll(topic, true, publisher); err != nil {
 		return fmt.Errorf(`publishing status active failed - %v`, err)
 	}
 
+	return nil
+}
+
+func (a *Agent) addMember(topic string, publisher bool, m models.Member) error {
+	if err := a.connectDIDComm(m); err != nil {
+		return fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
+	}
+
+	if err := a.subscribeData(topic, publisher, m); err != nil {
+		return fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
+	}
+
+	if err := a.zmq.connect(domain.RoleSubscriber, a.myLabel, topic, m); err != nil {
+		return fmt.Errorf(`transport connection failed - %v`, err)
+	}
+
+	// add as a member to be shared with another in future
+	a.gs.addMembr(topic, m)
+
+	if !publisher {
+		return nil
+	}
+
+	// todo improve (or can remove sending by sub msg to other peer)
+	s, _, err := a.serviceInfo(m.Label)
+	if err != nil {
+		return fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
+	}
+	a.subs.add(topic, m.Label, s.PubKey)
 	return nil
 }
 
@@ -281,6 +287,8 @@ func (a *Agent) Send(topic, msg string) error {
 		published = true
 		a.log.Trace(fmt.Sprintf(`published %s to %s of %s`, msg, topic, sub))
 	}
+
+	// todo subscriber should not be able to publish
 
 	if published {
 		a.outChan <- `Published '` + msg + `' to '` + topic + `'`
@@ -431,12 +439,10 @@ func (a *Agent) handleSubscription(msg *models.Message) error {
 		return fmt.Errorf(`zmq connection failed - %v`, err)
 	}
 
-	// todo check if this should happen before connecting
 	sk := base58.Decode(sm.PubKey)
 	a.subs.add(sm.Topic, sm.Member.Label, sk)
 	a.log.Debug(`processed subscription request`, sm)
 
-	// todo reply to channel if required
 	return nil
 }
 
@@ -547,7 +553,6 @@ func (a *Agent) notifyAll(topic string, active, publisher bool) error {
 	if err != nil {
 		return fmt.Errorf(`compress status failed - %v`, err)
 	}
-	a.log.Trace(fmt.Sprintf(`compressed status message (length=%d)`, len(comprsd)))
 
 	if err = a.zmq.publish(a.zmq.stateTopic(topic), comprsd); err != nil {
 		return fmt.Errorf(`zmq transport error for status - %v`, err)
@@ -621,7 +626,9 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 		return nil, fmt.Errorf(`marshalling status message failed - %v`, err)
 	}
 
-	return a.zEncodr.EncodeAll(encodedStatus, make([]byte, 0, len(encodedStatus))), nil
+	cmprsd := a.zEncodr.EncodeAll(encodedStatus, make([]byte, 0, len(encodedStatus)))
+	a.log.Trace(fmt.Sprintf(`compressed status message (from %d to %d #bytes)`, len(encodedStatus), len(cmprsd)))
+	return cmprsd, nil
 }
 
 func (a *Agent) serviceInfo(peer string) (*models.Service, *models.Peer, error) {
@@ -712,7 +719,7 @@ func (a *Agent) validJoiner(label string) bool {
 }
 
 func (a *Agent) Leave(topic string) error {
-	if err := a.zmq.unsubscribe(topic); err != nil {
+	if err := a.zmq.unsubscribe(a.myLabel, topic); err != nil {
 		return fmt.Errorf(`zmw unsubsription failed - %v`, err)
 	}
 
