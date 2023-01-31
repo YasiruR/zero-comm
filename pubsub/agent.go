@@ -457,6 +457,10 @@ func (a *Agent) handleJoins(msg *models.Message) error {
 		return fmt.Errorf(`unmarshalling group-join request failed - %v`, err)
 	}
 
+	if len(a.gs.membrs(req.Topic)) == 0 {
+		return fmt.Errorf(`acceptor is not a member of the requested group (%s)`, req.Topic)
+	}
+
 	if !a.validJoiner(req.Label) {
 		return fmt.Errorf(`group-join request denied to member (%s)`, req.Label)
 	}

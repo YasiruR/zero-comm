@@ -57,20 +57,13 @@ func (z *zmq) start(pubEndpoint string) error {
 }
 
 func (z *zmq) connect(initRole domain.Role, initLabel, topic string, m models.Member) error {
-	var newTopic bool
-	if len(z.gs.membrs(topic)) < 2 {
-		newTopic = true
-	}
-
 	// B connects to member via SUB for statuses and msgs
 	if err := z.state.Connect(m.PubEndpoint); err != nil {
 		return fmt.Errorf(`connecting to publisher (%s) state socket failed - %v`, m.PubEndpoint, err)
 	}
 
-	if newTopic {
-		if err := z.subscribeStatus(topic); err != nil {
-			return fmt.Errorf(`subscribing to status topic of %s failed - %v`, topic, err)
-		}
+	if err := z.subscribeStatus(topic); err != nil {
+		return fmt.Errorf(`subscribing to status topic of %s failed - %v`, topic, err)
 	}
 
 	if m.Publisher {
@@ -105,6 +98,16 @@ func (z *zmq) publish(topic string, data []byte) error {
 }
 
 func (z *zmq) subscribeStatus(topic string) error {
+	var newTopic bool
+	if len(z.gs.membrs(topic)) < 2 {
+		newTopic = true
+	}
+
+	if !newTopic {
+		z.log.Debug(fmt.Sprintf(`subscribed to topic %s for states already`, topic))
+		return nil
+	}
+
 	if err := z.state.SetSubscribe(z.stateTopic(topic)); err != nil {
 		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, z.stateTopic(topic), err)
 	}
