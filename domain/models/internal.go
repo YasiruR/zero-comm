@@ -1,5 +1,7 @@
 package models
 
+type Metadata map[string]string
+
 type Message struct {
 	Type  string
 	Data  []byte
