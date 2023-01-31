@@ -1,13 +1,14 @@
 package domain
 
+// todo can use iota
 const (
-	MsgTypConnReq   = `conn-req`
-	MsgTypConnRes   = `conn-res`
-	MsgTypData      = `data`
-	MsgTypSubscribe = `subscribe`
-	MsgTypQuery     = `query`
-
-	MsgTypGroupJoin = `group-join`
+	MsgTypConnReq     = `conn-req`
+	MsgTypConnRes     = `conn-res`
+	MsgTypData        = `data`
+	MsgTypSubscribe   = `subscribe`
+	MsgTypQuery       = `query`
+	MsgTypGroupJoin   = `group-join`
+	MsgTypGroupStatus = `group-status`
 )
 
 const (
@@ -20,4 +21,11 @@ const (
 const (
 	InvitationEndpoint = ``
 	ExchangeEndpoint   = `/did-exchange/`
+)
+
+type Role int
+
+const (
+	RolePublisher Role = iota
+	RoleSubscriber
 )

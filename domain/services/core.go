@@ -14,6 +14,7 @@ type Agent interface {
 	SendMessage(typ, to, text string) error
 	ReadMessage(msg models.Message) (text string, err error)
 	Peer(label string) (models.Peer, error)
+	ValidConn(exchId string) (ok bool, pr models.Peer)
 }
 
 type DIDUtils interface {
@@ -24,9 +25,9 @@ type DIDUtils interface {
 
 type Connector interface {
 	CreateConnReq(label, pthid, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnReq, error)
-	ParseConnReq(data []byte) (label, pthId, peerDid string, encDocBytes []byte, err error)
+	ParseConnReq(data []byte) (label, exchThId, peerDid string, encDocBytes []byte, err error)
 	CreateConnRes(pthId, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnRes, error)
-	ParseConnRes(data []byte) (pthId string, encDocBytes []byte, err error)
+	ParseConnRes(data []byte) (exchThId string, encDocBytes []byte, err error)
 }
 
 type OutOfBand interface {

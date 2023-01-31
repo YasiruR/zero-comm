@@ -167,13 +167,13 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 		return ``, fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
-	p.peers[inv.Label] = models.Peer{DID: inv.From, ExchangeThId: inv.Id}
+	p.peers[inv.Label] = models.Peer{DID: inv.From, ExchangeThId: connReq.Thread.ThId}
 	return inv.Label, nil
 }
 
 // processConnReq parses the connection request, creates a connection response and sends it to did endpoint
 func (p *Prober) processConnReq(msg models.Message) error {
-	peerLabel, pthId, peerDid, peerEncDocBytes, err := p.conn.ParseConnReq(msg.Data)
+	peerLabel, exchId, peerDid, peerEncDocBytes, err := p.conn.ParseConnReq(msg.Data)
 	if err != nil {
 		return fmt.Errorf(`parsing connection request failed - %v`, err)
 	}
@@ -207,7 +207,7 @@ func (p *Prober) processConnReq(msg models.Message) error {
 		return fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
-	connRes, err := p.conn.CreateConnRes(pthId, p.dids[peerLabel], encDidDoc)
+	connRes, err := p.conn.CreateConnRes(exchId, p.dids[peerLabel], encDidDoc)
 	if err != nil {
 		return fmt.Errorf(`creating connection response failed - %v`, err)
 	}
@@ -221,7 +221,7 @@ func (p *Prober) processConnReq(msg models.Message) error {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
-	p.peers[peerLabel] = models.Peer{DID: peerDid, Services: svcs, ExchangeThId: pthId}
+	p.peers[peerLabel] = models.Peer{DID: peerDid, Services: svcs, ExchangeThId: exchId}
 	p.outChan <- `Connection established with ` + peerLabel
 
 	return nil
@@ -445,4 +445,13 @@ func (p *Prober) Peer(label string) (models.Peer, error) {
 		return models.Peer{}, fmt.Errorf(`no peer found for the label (%s)`, label)
 	}
 	return pr, nil
+}
+
+func (p *Prober) ValidConn(exchId string) (ok bool, pr models.Peer) {
+	for _, connPr := range p.peers {
+		if connPr.ExchangeThId == exchId {
+			return true, connPr
+		}
+	}
+	return false, models.Peer{}
 }

@@ -149,7 +149,7 @@ func (r *runner) generateInvitation() {
 }
 
 func (r *runner) connectWithInv() {
-	u, err := url.Parse(strings.TrimSpace(r.input(`Invitation (in URL form)`)))
+	u, err := url.Parse(strings.TrimSpace(r.input(`Provide invitation in URL form`)))
 	if err != nil {
 		r.error(`invalid url format, please try again`, err)
 		return
@@ -187,7 +187,7 @@ func (r *runner) discover() {
 
 	var list []string
 	for _, f := range features {
-		list = append(list, fmt.Sprintf(`feature: "%s", roles: %v`, f.Id, f.Roles))
+		list = append(list, fmt.Sprintf(`Protocol: "%s", Roles: %v`, f.Id, f.Roles))
 	}
 	r.outputList(`Supported features`, list)
 }
@@ -206,7 +206,7 @@ func (r *runner) createGroup() {
 		r.error(`create group failed`, err)
 		return
 	}
-	r.output(`group created`)
+	r.output(`Group created`)
 }
 
 func (r *runner) joinGroup() {
@@ -224,7 +224,7 @@ func (r *runner) joinGroup() {
 		r.error(`group join failed`, err)
 		return
 	}
-	r.output(`joined group ` + topic)
+	r.output(`Joined group ` + topic)
 }
 
 func (r *runner) groupMsg() {

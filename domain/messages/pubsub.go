@@ -9,13 +9,24 @@ type Subscribe struct {
 	PubKey    string        `json:"pubKey"` // base58 encoding of public key
 	Topic     string        `json:"topic"`
 	Member    models.Member `json:"member"`
+	Transport Transport     `json:"transport"`
+}
+
+type ResSubscribe struct {
+	Publisher bool      `json:"publisher"`
+	Transport Transport `json:"transport"`
+}
+
+type Transport struct {
+	ServrPubKey  string `json:"servr_pub_key"`
+	ClientPubKey string `json:"client_pub_key"`
 }
 
 type Status struct {
-	Id     string        `json:"@id"`
-	Type   string        `json:"@type"`
-	Topic  string        `json:"topic"` // might be a redundant info in general mq systems
-	Member models.Member `json:"member"`
+	Id       string            `json:"@id"`
+	Type     string            `json:"@type"`
+	Topic    string            `json:"topic"` // might be a redundant info in general mq systems
+	AuthMsgs map[string]string `json:"auth_msgs"`
 }
 
 type ReqGroupJoin struct {

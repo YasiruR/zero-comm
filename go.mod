@@ -7,6 +7,7 @@ require (
 	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.3
+	github.com/klauspost/compress v1.15.14
 	github.com/pebbe/zmq4 v1.2.9
 	github.com/tryfix/log v1.2.1
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292

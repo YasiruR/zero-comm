@@ -41,7 +41,7 @@ func (c *Connector) CreateConnReq(label, pthid, did string, encDidDoc messages.A
 	return req, nil
 }
 
-func (c *Connector) ParseConnReq(data []byte) (label, pthId, peerDid string, encDocBytes []byte, err error) {
+func (c *Connector) ParseConnReq(data []byte) (label, exchThId, peerDid string, encDocBytes []byte, err error) {
 	var req messages.ConnReq
 	if err = json.Unmarshal(data, &req); err != nil {
 		return ``, ``, ``, nil, fmt.Errorf(`unmarshalling connection request failed - %v`, err)
@@ -52,7 +52,7 @@ func (c *Connector) ParseConnReq(data []byte) (label, pthId, peerDid string, enc
 		return ``, ``, ``, nil, fmt.Errorf(`decoding did doc failed - %v`, err)
 	}
 
-	return req.Label, req.Thread.PThId, req.DID, encDocBytes, nil
+	return req.Label, req.Thread.ThId, req.DID, encDocBytes, nil
 }
 
 func (c *Connector) CreateConnRes(pthId, did string, encDidDoc messages.AuthCryptMsg) (messages.ConnRes, error) {
@@ -78,7 +78,7 @@ func (c *Connector) CreateConnRes(pthId, did string, encDidDoc messages.AuthCryp
 	return res, nil
 }
 
-func (c *Connector) ParseConnRes(data []byte) (pthId string, encDocBytes []byte, err error) {
+func (c *Connector) ParseConnRes(data []byte) (exchThId string, encDocBytes []byte, err error) {
 	var res messages.ConnRes
 	if err = json.Unmarshal(data, &res); err != nil {
 		return ``, nil, fmt.Errorf(`unmarshalling connection response failed - %v`, err)
