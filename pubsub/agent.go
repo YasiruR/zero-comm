@@ -14,12 +14,11 @@ import (
 	"github.com/tryfix/log"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 )
 
 const (
-	zmqLatencyBufSec = 1
+	zmqLatencyBufMilliSec = 500
 )
 
 type compactor struct {
@@ -46,7 +45,7 @@ type Agent struct {
 
 func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
 	gs := newGroupStore()
-	transport, err := newZmqTransport(zmqCtx, gs, c.Log)
+	transport, err := newZmqTransport(zmqCtx, gs, c)
 	if err != nil {
 		return nil, fmt.Errorf(`zmq transport init for group agent failed - %v`, err)
 	}
@@ -168,24 +167,18 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		PubEndpoint: a.pubEndpoint,
 	})
 
-	wg := &sync.WaitGroup{}
 	for _, m := range group.Members {
 		if !m.Active {
 			continue
 		}
 
-		wg.Add(1)
-		go func(m models.Member, wg *sync.WaitGroup) {
-			if err = a.addMember(topic, publisher, m); err != nil {
-				a.log.Error(fmt.Sprintf(`adding %s as a member failed - %v`, m.Label, err))
-			}
-			wg.Done()
-		}(m, wg)
+		if err = a.addMember(topic, publisher, m); err != nil {
+			a.log.Error(fmt.Sprintf(`adding %s as a member failed - %v`, m.Label, err))
+		}
 	}
 
-	wg.Wait()
 	// publish status
-	time.Sleep(zmqLatencyBufSec * time.Second) // buffer for zmq subscription latency
+	time.Sleep(zmqLatencyBufMilliSec * time.Millisecond) // buffer for zmq subscription latency
 	if err = a.notifyAll(topic, true, publisher); err != nil {
 		return fmt.Errorf(`publishing status active failed - %v`, err)
 	}
@@ -267,6 +260,7 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 	return &resGroup, nil
 }
 
+// todo foden did not receive the message sent by bob in single queue
 func (a *Agent) Send(topic, msg string) error {
 	subs, err := a.subs.queryByTopic(topic)
 	if err != nil {
@@ -280,7 +274,7 @@ func (a *Agent) Send(topic, msg string) error {
 			return fmt.Errorf(`packing data message for %s failed - %v`, sub, err)
 		}
 
-		if err = a.zmq.publish(a.zmq.internalTopic(topic, a.myLabel, sub), data); err != nil {
+		if err = a.zmq.publish(a.zmq.dataTopic(topic, a.myLabel, sub), data); err != nil {
 			return fmt.Errorf(`zmq transport error - %v`, err)
 		}
 
@@ -521,6 +515,13 @@ func (a *Agent) handleState(msg string) error {
 	}
 
 	if !member.Active {
+		// todo unsubscribe to data topic
+		if member.Publisher {
+			if err = a.zmq.unsubscribeData(a.myLabel, sm.Topic, member.Label); err != nil {
+				return fmt.Errorf(`unsubscribing data topic failed - %v`, err)
+			}
+		}
+
 		a.subs.delete(sm.Topic, member.Label)
 		a.gs.deleteMembr(sm.Topic, member.Label)
 		if err = a.auth.remvKeys(member.Label); err != nil {
@@ -723,7 +724,7 @@ func (a *Agent) validJoiner(label string) bool {
 }
 
 func (a *Agent) Leave(topic string) error {
-	if err := a.zmq.unsubscribe(a.myLabel, topic); err != nil {
+	if err := a.zmq.unsubscribeAll(a.myLabel, topic); err != nil {
 		return fmt.Errorf(`zmw unsubsription failed - %v`, err)
 	}
 
@@ -749,8 +750,14 @@ func (a *Agent) Leave(topic string) error {
 	return nil
 }
 
-func (a *Agent) Info(topic string) []models.Member {
-	return a.gs.membrs(topic)
+func (a *Agent) Info(topic string) (mems []models.Member) {
+	// removing invitation for more clarity
+	for _, m := range a.gs.membrs(topic) {
+		m.Inv = ``
+		mems = append(mems, m)
+	}
+
+	return mems
 }
 
 func (a *Agent) Close() error {

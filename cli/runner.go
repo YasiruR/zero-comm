@@ -31,9 +31,10 @@ func ParseArgs() *domain.Args {
 	p := flag.Int(`port`, 0, `agent's port'`)
 	pub := flag.Int(`pub`, 0, `agent's publishing port'`)
 	v := flag.Bool(`v`, false, `logging`)
+	singleQ := flag.Bool(`single`, false, `enables single-queue mode for data messages`)
 	flag.Parse()
 
-	return &domain.Args{Name: *n, Port: *p, PubPort: *pub, Verbose: *v}
+	return &domain.Args{Name: *n, Port: *p, PubPort: *pub, SingleQ: *singleQ, Verbose: *v}
 }
 
 func Init(c *domain.Container) {
