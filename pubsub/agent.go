@@ -262,6 +262,15 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 
 // todo foden did not receive the message sent by bob in single queue
 func (a *Agent) Send(topic, msg string) error {
+	curntMembr := a.gs.membr(topic, a.myLabel)
+	if curntMembr == nil {
+		return fmt.Errorf(`member information does not exist for the current member`)
+	}
+
+	if !curntMembr.Publisher {
+		return fmt.Errorf(`current member is not registered as a publisher`)
+	}
+
 	subs, err := a.subs.queryByTopic(topic)
 	if err != nil {
 		return fmt.Errorf(`fetching subscribers for topic %s failed - %v`, topic, err)
