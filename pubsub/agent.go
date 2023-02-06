@@ -141,6 +141,11 @@ func (a *Agent) Create(topic string, publisher bool) error {
 	return nil
 }
 
+// todo check group state from few members to see if they are consistent and valid
+// todo additionally a group token as well
+
+// todo other validations if required - eg: check for multiple groups with same name
+
 func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	// check if already joined to the topic
 	if a.gs.joined(topic) {

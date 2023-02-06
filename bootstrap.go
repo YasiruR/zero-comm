@@ -13,17 +13,34 @@ import (
 	"github.com/YasiruR/didcomm-prober/pubsub"
 	reqRepZmq "github.com/YasiruR/didcomm-prober/reqrep/zmq"
 	zmq "github.com/pebbe/zmq4"
+	log2 "log"
+	"net"
+	"os"
 	"strconv"
 )
 
 func setConfigs(args *domain.Args) *domain.Config {
-	//hostname := `http://localhost:`
-	hostname := `tcp://127.0.0.1:`
+	//hostname := `tcp://127.0.0.1:`
+	hn, err := os.Hostname()
+	if err != nil {
+		log2.Fatal(fmt.Sprintf(`fetching hostname failed - %v`, err))
+	}
+
+	ips, err := net.LookupIP(hn)
+	if err != nil {
+		log2.Fatal(fmt.Sprintf(`fetching ip address failed - %v`, err))
+	}
+
+	if len(ips) == 0 {
+		log2.Fatal(fmt.Sprintf(`could not find an ip address within the kernel`))
+	}
+	ip := `tcp://` + ips[0].String() + `:`
+
 	return &domain.Config{
 		Args:        args,
-		Hostname:    hostname,
-		InvEndpoint: hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
-		PubEndpoint: hostname + strconv.Itoa(args.PubPort),
+		Hostname:    ip,
+		InvEndpoint: ip + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
+		PubEndpoint: ip + strconv.Itoa(args.PubPort),
 		LogLevel:    "DEBUG",
 	}
 }
