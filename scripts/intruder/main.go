@@ -13,6 +13,8 @@ const (
 	sktPub = `pub`
 )
 
+// todo fake acceptor/member (with an intruder in the group state)
+
 func main() {
 	output(`>_< Intruder logging in...`)
 	//sktTyp := input(`Socket`)

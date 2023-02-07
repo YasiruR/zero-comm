@@ -41,6 +41,8 @@ type Agent struct {
 	outChan     chan string
 	zmq         *zmq
 	*compactor
+
+	valdtr *validator
 }
 
 func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
@@ -172,14 +174,22 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		PubEndpoint: a.pubEndpoint,
 	})
 
+	hashes := make(map[string]string)
 	for _, m := range group.Members {
 		if !m.Active {
 			continue
 		}
 
-		if err = a.addMember(topic, publisher, m); err != nil {
+		checksum, err := a.addMember(topic, publisher, m);
+		if err != nil {
 			a.log.Error(fmt.Sprintf(`adding %s as a member failed - %v`, m.Label, err))
+			continue
 		}
+		hashes[m.Label] = checksum
+	}
+
+	if err = a.verifyJoin(acceptor, group.Members, hashes); err != nil {
+		return fmt.Errorf(`group-join verification failed - %v`, err)
 	}
 
 	// publish status
@@ -191,32 +201,50 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	return nil
 }
 
-func (a *Agent) addMember(topic string, publisher bool, m models.Member) error {
-	if err := a.connectDIDComm(m); err != nil {
-		return fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
+func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checksum string, err error) {
+	if err = a.connectDIDComm(m); err != nil {
+		return ``, fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
 	}
 
-	if err := a.subscribeData(topic, publisher, m); err != nil {
-		return fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
+	checksum, err = a.subscribeData(topic, publisher, m);
+	if err != nil {
+		return ``, fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
 	}
 
-	if err := a.zmq.connect(domain.RoleSubscriber, a.myLabel, topic, m); err != nil {
-		return fmt.Errorf(`transport connection failed - %v`, err)
+	if err = a.zmq.connect(domain.RoleSubscriber, a.myLabel, topic, m); err != nil {
+		return ``, fmt.Errorf(`transport connection failed - %v`, err)
 	}
 
 	// add as a member to be shared with another in future
 	a.gs.addMembr(topic, m)
 
 	if !publisher {
-		return nil
+		return checksum, nil
 	}
 
-	// todo improve (or can remove sending by sub msg to other peer)
 	s, _, err := a.serviceInfo(m.Label)
 	if err != nil {
-		return fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
+		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
 	a.subs.add(topic, m.Label, s.PubKey)
+	return checksum, nil
+}
+
+// verifyJoin checks if the initial member set returned by the acceptor is consistent
+// across other members thus eliminating intruders in the initial state of the joiner.
+// memHashs is a map with hash values indexed by the member label.
+func (a *Agent) verifyJoin(accptr string, joinSet []models.Member, memHashs map[string]string) error {
+	joinedChecksm, err := a.valdtr.calculate(joinSet)
+	if err != nil {
+		return fmt.Errorf(`calculating checksum of initial member set failed - %v`, err)
+	}
+	memHashs[accptr] = joinedChecksm
+
+	invalidMems, ok := a.valdtr.verify(memHashs)
+	if !ok {
+		return fmt.Errorf(`at least one inconsistent member set found (%v)`, invalidMems)
+	}
+
 	return nil
 }
 
@@ -265,7 +293,6 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 	return &resGroup, nil
 }
 
-// todo foden did not receive the message sent by bob in single queue
 func (a *Agent) Send(topic, msg string) error {
 	curntMembr := a.gs.membr(topic, a.myLabel)
 	if curntMembr == nil {
@@ -296,8 +323,6 @@ func (a *Agent) Send(topic, msg string) error {
 		a.log.Trace(fmt.Sprintf(`published %s to %s of %s`, msg, topic, sub))
 	}
 
-	// todo subscriber should not be able to publish
-
 	if published {
 		a.outChan <- `Published '` + msg + `' to '` + topic + `'`
 	}
@@ -325,14 +350,15 @@ func (a *Agent) connectDIDComm(m models.Member) error {
 	return nil
 }
 
-// subscribe sets subscriptions via zmq for status topic of the member.
+// subscribeData sets subscriptions via zmq for status topic of the member.
 // If the member is a publisher, it proceeds with sending a subscription
-// didcomm message and subscribing to message topic via zmqLib.
-func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) error {
+// didcomm message and subscribing to message topic via zmqLib. A checksum
+// of the group maintained by the added group member is returned.
+func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (checksum string, err error) {
 	// get my public key corresponding to this member
 	subPublcKey, err := a.km.PublicKey(m.Label)
 	if err != nil {
-		return fmt.Errorf(`fetching public key for the connection failed - %v`, err)
+		return ``, fmt.Errorf(`fetching public key for the connection failed - %v`, err)
 	}
 
 	// B sends agent subscribe msg to member
@@ -357,32 +383,32 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 
 	byts, err := json.Marshal(sm)
 	if err != nil {
-		return fmt.Errorf(`marshalling subscribe message failed - %v`, err)
+		return ``, fmt.Errorf(`marshalling subscribe message failed - %v`, err)
 	}
 
 	s, _, err := a.serviceInfo(m.Label)
 	if err != nil {
-		return fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
+		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
 
 	data, err := a.pack(m.Label, s.PubKey, byts)
 	if err != nil {
-		return fmt.Errorf(`packing subscribe request for %s failed - %v`, m.Label, err)
+		return ``, fmt.Errorf(`packing subscribe request for %s failed - %v`, m.Label, err)
 	}
 
 	res, err := a.client.Send(domain.MsgTypSubscribe, data, s.Endpoint)
 	if err != nil {
-		return fmt.Errorf(`sending subscribe message failed - %v`, err)
+		return ``, fmt.Errorf(`sending subscribe message failed - %v`, err)
 	}
 
 	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: domain.MsgTypSubscribe, Data: []byte(res), Reply: nil})
 	if err != nil {
-		return fmt.Errorf(`reading subscribe didcomm response failed - %v`, err)
+		return ``, fmt.Errorf(`reading subscribe didcomm response failed - %v`, err)
 	}
 
 	var resSm messages.ResSubscribe
 	if err = json.Unmarshal([]byte(unpackedMsg), &resSm); err != nil {
-		return fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
+		return ``, fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
 	}
 
 	var sktMsgs *zmqLib.Socket = nil
@@ -391,10 +417,10 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) err
 	}
 
 	if err = a.auth.setPeerAuthn(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, a.zmq.state, sktMsgs); err != nil {
-		return fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
+		return ``, fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
 	}
 
-	return nil
+	return resSm.Checksum, nil
 }
 
 func (a *Agent) handler(inChan chan models.Message, handlerFunc func(msg *models.Message) error) {
@@ -408,7 +434,6 @@ func (a *Agent) handler(inChan chan models.Message, handlerFunc func(msg *models
 	}()
 }
 
-// todo check if subscription can be done with active status
 func (a *Agent) handleSubscription(msg *models.Message) error {
 	unpackedMsg, err := a.probr.ReadMessage(*msg)
 	if err != nil {
@@ -529,7 +554,6 @@ func (a *Agent) handleState(msg string) error {
 	}
 
 	if !member.Active {
-		// todo unsubscribe to data topic
 		if member.Publisher {
 			if err = a.zmq.unsubscribeData(a.myLabel, sm.Topic, member.Label); err != nil {
 				return fmt.Errorf(`unsubscribing data topic failed - %v`, err)
@@ -588,12 +612,18 @@ func (a *Agent) sendSubscribeRes(topic string, m models.Member, msg *models.Mess
 		return fmt.Errorf(`current member or topic does not exist in group store`)
 	}
 
+	checksum, err := a.valdtr.hash(topic)
+	if err != nil {
+		return fmt.Errorf(`fetching group checksum failed - %v`, err)
+	}
+
 	resByts, err := json.Marshal(messages.ResSubscribe{
 		Transport: messages.Transport{
 			ServrPubKey:  a.auth.servr.pub,
 			ClientPubKey: a.auth.client.pub,
 		},
 		Publisher: curntMembr.Publisher,
+		Checksum:  checksum,
 	})
 	if err != nil {
 		return fmt.Errorf(`marshalling subscribe response failed - %v`, err)

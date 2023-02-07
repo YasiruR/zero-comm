@@ -15,6 +15,7 @@ type Subscribe struct {
 type ResSubscribe struct {
 	Publisher bool      `json:"publisher"`
 	Transport Transport `json:"transport"`
+	Checksum  string    `json:"checksum"`
 }
 
 type Transport struct {
@@ -41,4 +42,5 @@ type ResGroupJoin struct {
 	Id      string          `json:"@id"`
 	Type    string          `json:"@type"`
 	Members []models.Member `json:"members"` // includes acceptor
+	//Checksum string          `json:"checksum"`
 }
