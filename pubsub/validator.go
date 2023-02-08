@@ -7,17 +7,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain/models"
+	"github.com/tryfix/log"
 	"sort"
 	"sync"
 )
 
 type validator struct {
 	hashes *sync.Map
+	log    log.Logger
 }
 
-func newValidator() *validator {
+func newValidator(l log.Logger) *validator {
 	return &validator{
 		hashes: &sync.Map{},
+		log:    l,
 	}
 }
 
@@ -31,6 +34,7 @@ func (v *validator) updateHash(topic string, grp []models.Member) error {
 	}
 
 	v.hashes.Store(topic, val)
+	v.log.Trace(fmt.Sprintf(`group checksum updated to %s`, val))
 	return nil
 }
 
@@ -85,6 +89,7 @@ func (v *validator) verify(states map[string]string) (invalidMems []string, ok b
 	}
 
 	if deviated == len(states) {
+		v.log.Info(`checksum verification completed successfully`)
 		return nil, true
 	}
 

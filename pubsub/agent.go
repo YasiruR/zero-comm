@@ -40,9 +40,8 @@ type Agent struct {
 	log         log.Logger
 	outChan     chan string
 	zmq         *zmq
+	valdtr      *validator
 	*compactor
-
-	valdtr *validator
 }
 
 func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
@@ -89,7 +88,7 @@ func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
 		gs:          gs,
 		auth:        authn,
 		zmq:         transport,
-		valdtr:      newValidator(),
+		valdtr:      newValidator(c.Log),
 		compactor: &compactor{
 			zEncodr: zstdEncoder,
 			zDecodr: zstdDecoder,
@@ -147,11 +146,6 @@ func (a *Agent) Create(topic string, publisher bool) error {
 	return nil
 }
 
-// todo check group state from few members to see if they are consistent and valid
-// todo additionally a group token as well
-
-// todo other validations if required - eg: check for multiple groups with same name
-
 func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	// check if already joined to the topic
 	if a.gs.joined(topic) {
@@ -195,7 +189,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 
 	if len(group.Members) > 1 {
 		if err = a.verifyJoin(acceptor, group.Members, hashes); err != nil {
-			return fmt.Errorf(`group-join verification failed - %v`, err)
+			a.log.Warn(fmt.Sprintf(`group verification failed but proceeded with registration - %v`, err))
 		}
 	}
 
@@ -513,6 +507,7 @@ func (a *Agent) handleJoins(msg *models.Message) error {
 		Id:      uuid.New().String(),
 		Type:    messages.JoinResponseV1,
 		Members: a.gs.membrs(req.Topic),
+		//Members: a.addIntruder(req.Topic),
 	})
 	if err != nil {
 		return fmt.Errorf(`marshalling group-join response failed - %v`, err)
@@ -825,3 +820,16 @@ func (a *Agent) Close() error {
 	// close all sockets
 	return nil
 }
+
+// todo remove
+//func (a *Agent) addIntruder(topic string) []models.Member {
+//	return append(a.gs.membrs(topic),
+//		models.Member{
+//			Active:      true,
+//			Publisher:   true,
+//			Label:       "zack",
+//			Inv:         "tcp://127.0.1.1:?oob=eyJpZCI6ImEwNWZlY2M1LTI0MWItNDcxMy1iMGIwLTM4MjllNDQxNDgxNyIsInR5cGUiOiJodHRwczovL2RpZGNvbW0ub3JnL291dC1vZi1iYW5kLzEuMC9pbnZpdGF0aW9uIiwiZnJvbSI6IiIsImxhYmVsIjoiemFjayIsImJvZHkiOnsiZ29hbF9jb2RlIjoiIiwiZ29hbCI6IiIsImFjY2VwdCI6bnVsbH0sIkF0dGFjaG1lbnRzIjpudWxsLCJzZXJ2aWNlcyI6W3siaWQiOiJjNTM5ODkzYS04ODBlLTQ3NzUtOTBmZS00MzVhZWZkMmNhNjYiLCJ0eXBlIjoiZGlkLWV4Y2hhbmdlLXNlcnZpY2UiLCJyZWNpcGllbnRLZXlzIjpbIlBkbnpGa2VjbysvcUxic0Nrd3JOQ2tJRlJoSnRSK3RmaVYzWGl5RFViblU9Il0sInJvdXRpbmdLZXlzIjpudWxsLCJzZXJ2aWNlRW5kcG9pbnQiOiJ0Y3A6Ly8xMjcuMC4xLjE6OTA5MCIsImFjY2VwdCI6bnVsbH1dfQ==",
+//			PubEndpoint: "tcp://127.0.1.1:9091",
+//		},
+//	)
+//}
