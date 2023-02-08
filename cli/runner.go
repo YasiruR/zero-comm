@@ -100,7 +100,7 @@ basicCmds:
 	case "9":
 		r.discover()
 	case "b":
-		return
+
 	case "e":
 		fmt.Println(`program exited`)
 		os.Exit(0)

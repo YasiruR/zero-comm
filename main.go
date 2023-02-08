@@ -14,6 +14,8 @@ func main() {
 			c.Log.Fatal(`failed to start the server`, err)
 		}
 	}()
+
+	// todo check os signal
 	defer shutdown(c)
 	cli.Init(c)
 }

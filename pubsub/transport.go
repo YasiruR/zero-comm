@@ -64,13 +64,9 @@ func (z *zmq) connect(initRole domain.Role, initLabel, topic string, m models.Me
 		return fmt.Errorf(`connecting to publisher (%s) state socket failed - %v`, m.PubEndpoint, err)
 	}
 
-	fmt.Println(`----CONNECTED VIA ZMQ TO`, m.PubEndpoint)
-
 	if err := z.subscribeStatus(topic); err != nil {
 		return fmt.Errorf(`subscribing to status topic of %s failed - %v`, topic, err)
 	}
-
-	fmt.Println(`------SUBSCRIBED VIA ZMQ TO`, topic)
 
 	if m.Publisher {
 		if err := z.msgs.Connect(m.PubEndpoint); err != nil {
@@ -90,8 +86,6 @@ func (z *zmq) connect(initRole domain.Role, initLabel, topic string, m models.Me
 		if err := z.subscribeData(topic, pub, sub); err != nil {
 			return fmt.Errorf(`subscribing data failed - %v`, err)
 		}
-
-		fmt.Println(`-----SUBSCRIBED VIA ZMQ TO PEER `, m.Label)
 	}
 
 	return nil

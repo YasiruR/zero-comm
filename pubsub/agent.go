@@ -245,16 +245,11 @@ func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checks
 // across other members thus eliminating intruders in the initial state of the joiner.
 // memHashs is a map with hash values indexed by the member label.
 func (a *Agent) verifyJoin(accptr string, joinSet []models.Member, memHashs map[string]string) error {
-	fmt.Println()
-	fmt.Println("JOIN SET: ", joinSet)
 	joinedChecksm, err := a.valdtr.calculate(joinSet)
 	if err != nil {
 		return fmt.Errorf(`calculating checksum of initial member set failed - %v`, err)
 	}
 	memHashs[accptr] = joinedChecksm
-
-	fmt.Println("JOINED CHECKSUM: ", joinedChecksm)
-	fmt.Println("MEM HASHES: ", memHashs)
 
 	invalidMems, ok := a.valdtr.verify(memHashs)
 	if !ok {
@@ -361,7 +356,6 @@ func (a *Agent) connectDIDComm(m models.Member) error {
 		if err = a.probr.SyncAccept(inv[0]); err != nil {
 			return fmt.Errorf(`accepting group-member invitation failed - %v`, err)
 		}
-		fmt.Println("----CONNECTED DIDCOMM WITH ", m.Label)
 	}
 
 	return nil
@@ -437,8 +431,6 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
 	}
 
-	fmt.Println(`-----SUBSCRIBED DATA TO `, m.Label)
-
 	return resSm.Checksum, nil
 }
 
@@ -463,8 +455,6 @@ func (a *Agent) handleSubscription(msg *models.Message) error {
 	if err = json.Unmarshal([]byte(unpackedMsg), &sm); err != nil {
 		return fmt.Errorf(`unmarshalling subscribe message failed - %v`, err)
 	}
-
-	fmt.Println(`-----RECEIVED SUB MSG BY`, sm.Member.Label)
 
 	if !sm.Subscribe {
 		a.subs.delete(sm.Topic, sm.Member.Label)
@@ -519,9 +509,6 @@ func (a *Agent) handleJoins(msg *models.Message) error {
 		return fmt.Errorf(`group-join request denied to member (%s)`, req.Label)
 	}
 
-	fmt.Println()
-	fmt.Println("MEMBERSS SENT: ", a.gs.membrs(req.Topic))
-
 	byts, err := json.Marshal(messages.ResGroupJoin{
 		Id:      uuid.New().String(),
 		Type:    messages.JoinResponseV1,
@@ -554,8 +541,6 @@ func (a *Agent) handleState(msg string) error {
 		return fmt.Errorf(`extracting status message failed - %v`, err)
 	}
 
-	fmt.Println(`------STATUS RECEIVED FOR`, sm.Topic)
-
 	var validMsg string
 	for exchId, encMsg := range sm.AuthMsgs {
 		ok, _ := a.probr.ValidConn(exchId)
@@ -584,8 +569,6 @@ func (a *Agent) handleState(msg string) error {
 	if err = json.Unmarshal([]byte(strAuthMsg), &member); err != nil {
 		return fmt.Errorf(`unmarshalling member message failed - %v`, err)
 	}
-
-	fmt.Println(`-----STATUS BY`, member.Label)
 
 	if !member.Active {
 		if member.Publisher {

@@ -31,8 +31,6 @@ func (v *validator) updateHash(topic string, grp []models.Member) error {
 	}
 
 	v.hashes.Store(topic, val)
-	fmt.Println()
-	fmt.Println("UPDATED HASH: ", val)
 	return nil
 }
 
@@ -89,8 +87,6 @@ func (v *validator) verify(states map[string]string) (invalidMems []string, ok b
 	if deviated == len(states) {
 		return nil, true
 	}
-
-	fmt.Println("VERIFY STATES: ", states)
 
 	return invalidMems, false
 }
