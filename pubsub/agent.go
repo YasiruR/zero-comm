@@ -89,6 +89,7 @@ func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
 		gs:          gs,
 		auth:        authn,
 		zmq:         transport,
+		valdtr:      newValidator(),
 		compactor: &compactor{
 			zEncodr: zstdEncoder,
 			zDecodr: zstdDecoder,
@@ -102,19 +103,19 @@ func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
 // init initializes handlers for subscribe and join requests (async),
 // and listeners for all incoming messages eg: join requests,
 // subscriptions, state changes (active/inactive) and data messages.
-func (a *Agent) init(s services.Server) {
+func (a *Agent) init(srvr services.Server) {
 	// add handler for subscribe messages
 	subChan := make(chan models.Message)
-	s.AddHandler(domain.MsgTypSubscribe, subChan, false)
+	srvr.AddHandler(domain.MsgTypSubscribe, subChan, false)
 
 	// sync handler for join-requests as requester expects
 	// the group-info in return
 	joinChan := make(chan models.Message)
-	s.AddHandler(domain.MsgTypGroupJoin, joinChan, false)
+	srvr.AddHandler(domain.MsgTypGroupJoin, joinChan, false)
 
 	// initialize internal handlers for zmq requests
-	a.handler(joinChan, a.handleJoins)
-	a.handler(subChan, a.handleSubscription)
+	a.listener(joinChan, a.handleJoins)
+	a.listener(subChan, a.handleSubscription)
 
 	// initialize listening on subscriptions
 	a.zmq.listen(typStateSkt, a.handleState)
@@ -139,6 +140,9 @@ func (a *Agent) Create(topic string, publisher bool) error {
 
 	a.invs[topic] = inv
 	a.gs.addMembr(topic, m)
+	if err = a.valdtr.updateHash(topic, []models.Member{m}); err != nil {
+		return fmt.Errorf(`updating checksum on group-create failed - %v`, err)
+	}
 
 	return nil
 }
@@ -166,13 +170,14 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	// adding this node as a member
-	a.gs.addMembr(topic, models.Member{
+	joiner := models.Member{
 		Active:      true,
 		Publisher:   publisher,
 		Label:       a.myLabel,
 		Inv:         inv,
 		PubEndpoint: a.pubEndpoint,
-	})
+	}
+	a.gs.addMembr(topic, joiner)
 
 	hashes := make(map[string]string)
 	for _, m := range group.Members {
@@ -180,7 +185,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 			continue
 		}
 
-		checksum, err := a.addMember(topic, publisher, m);
+		checksum, err := a.addMember(topic, publisher, m)
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`adding %s as a member failed - %v`, m.Label, err))
 			continue
@@ -188,14 +193,20 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		hashes[m.Label] = checksum
 	}
 
-	if err = a.verifyJoin(acceptor, group.Members, hashes); err != nil {
-		return fmt.Errorf(`group-join verification failed - %v`, err)
+	if len(group.Members) > 1 {
+		if err = a.verifyJoin(acceptor, group.Members, hashes); err != nil {
+			return fmt.Errorf(`group-join verification failed - %v`, err)
+		}
 	}
 
 	// publish status
 	time.Sleep(zmqLatencyBufMilliSec * time.Millisecond) // buffer for zmq subscription latency
 	if err = a.notifyAll(topic, true, publisher); err != nil {
 		return fmt.Errorf(`publishing status active failed - %v`, err)
+	}
+
+	if err = a.valdtr.updateHash(topic, append(group.Members, joiner)); err != nil {
+		return fmt.Errorf(`updating checksum on group-join failed - %v`, err)
 	}
 
 	return nil
@@ -206,7 +217,7 @@ func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checks
 		return ``, fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
 	}
 
-	checksum, err = a.subscribeData(topic, publisher, m);
+	checksum, err = a.subscribeData(topic, publisher, m)
 	if err != nil {
 		return ``, fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
 	}
@@ -234,11 +245,16 @@ func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checks
 // across other members thus eliminating intruders in the initial state of the joiner.
 // memHashs is a map with hash values indexed by the member label.
 func (a *Agent) verifyJoin(accptr string, joinSet []models.Member, memHashs map[string]string) error {
+	fmt.Println()
+	fmt.Println("JOIN SET: ", joinSet)
 	joinedChecksm, err := a.valdtr.calculate(joinSet)
 	if err != nil {
 		return fmt.Errorf(`calculating checksum of initial member set failed - %v`, err)
 	}
 	memHashs[accptr] = joinedChecksm
+
+	fmt.Println("JOINED CHECKSUM: ", joinedChecksm)
+	fmt.Println("MEM HASHES: ", memHashs)
 
 	invalidMems, ok := a.valdtr.verify(memHashs)
 	if !ok {
@@ -345,6 +361,7 @@ func (a *Agent) connectDIDComm(m models.Member) error {
 		if err = a.probr.SyncAccept(inv[0]); err != nil {
 			return fmt.Errorf(`accepting group-member invitation failed - %v`, err)
 		}
+		fmt.Println("----CONNECTED DIDCOMM WITH ", m.Label)
 	}
 
 	return nil
@@ -420,10 +437,12 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
 	}
 
+	fmt.Println(`-----SUBSCRIBED DATA TO `, m.Label)
+
 	return resSm.Checksum, nil
 }
 
-func (a *Agent) handler(inChan chan models.Message, handlerFunc func(msg *models.Message) error) {
+func (a *Agent) listener(inChan chan models.Message, handlerFunc func(msg *models.Message) error) {
 	go func() {
 		for {
 			msg := <-inChan
@@ -444,6 +463,8 @@ func (a *Agent) handleSubscription(msg *models.Message) error {
 	if err = json.Unmarshal([]byte(unpackedMsg), &sm); err != nil {
 		return fmt.Errorf(`unmarshalling subscribe message failed - %v`, err)
 	}
+
+	fmt.Println(`-----RECEIVED SUB MSG BY`, sm.Member.Label)
 
 	if !sm.Subscribe {
 		a.subs.delete(sm.Topic, sm.Member.Label)
@@ -498,6 +519,9 @@ func (a *Agent) handleJoins(msg *models.Message) error {
 		return fmt.Errorf(`group-join request denied to member (%s)`, req.Label)
 	}
 
+	fmt.Println()
+	fmt.Println("MEMBERSS SENT: ", a.gs.membrs(req.Topic))
+
 	byts, err := json.Marshal(messages.ResGroupJoin{
 		Id:      uuid.New().String(),
 		Type:    messages.JoinResponseV1,
@@ -530,6 +554,8 @@ func (a *Agent) handleState(msg string) error {
 		return fmt.Errorf(`extracting status message failed - %v`, err)
 	}
 
+	fmt.Println(`------STATUS RECEIVED FOR`, sm.Topic)
+
 	var validMsg string
 	for exchId, encMsg := range sm.AuthMsgs {
 		ok, _ := a.probr.ValidConn(exchId)
@@ -543,6 +569,12 @@ func (a *Agent) handleState(msg string) error {
 		return fmt.Errorf(`status update is not intended to this member`)
 	}
 
+	defer func(topic string) {
+		if err = a.valdtr.updateHash(topic, a.gs.membrs(topic)); err != nil {
+			a.log.Error(fmt.Sprintf(`updating checksum for the group failed - %v`, err))
+		}
+	}(sm.Topic)
+
 	strAuthMsg, err := a.probr.ReadMessage(models.Message{Type: domain.MsgTypGroupStatus, Data: []byte(validMsg)})
 	if err != nil {
 		return fmt.Errorf(`reading status didcomm message failed - %v`, err)
@@ -552,6 +584,8 @@ func (a *Agent) handleState(msg string) error {
 	if err = json.Unmarshal([]byte(strAuthMsg), &member); err != nil {
 		return fmt.Errorf(`unmarshalling member message failed - %v`, err)
 	}
+
+	fmt.Println(`-----STATUS BY`, member.Label)
 
 	if !member.Active {
 		if member.Publisher {

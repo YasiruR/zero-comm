@@ -1,10 +1,13 @@
 package pubsub
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain/models"
+	"sort"
 	"sync"
 )
 
@@ -28,18 +31,23 @@ func (v *validator) updateHash(topic string, grp []models.Member) error {
 	}
 
 	v.hashes.Store(topic, val)
+	fmt.Println()
+	fmt.Println("UPDATED HASH: ", val)
 	return nil
 }
 
 func (v *validator) calculate(grp []models.Member) (string, error) {
-	byts, err := json.Marshal(grp)
+	byts, err := json.Marshal(v.order(grp))
 	if err != nil {
 		return ``, fmt.Errorf(`marshalling group members failed - %v`, err)
 	}
 
 	h := sha256.New()
 	h.Write(byts)
-	return string(h.Sum(nil)), nil
+	val := make([]byte, len(byts))
+	base64.StdEncoding.Encode(val, h.Sum(nil))
+
+	return string(bytes.Trim(val, "\x00")), nil
 }
 
 func (v *validator) hash(topic string) (string, error) {
@@ -79,8 +87,32 @@ func (v *validator) verify(states map[string]string) (invalidMems []string, ok b
 	}
 
 	if deviated == len(states) {
-		return nil, ok
+		return nil, true
 	}
 
+	fmt.Println("VERIFY STATES: ", states)
+
 	return invalidMems, false
+}
+
+// order can be used to maintain a consistent order in the member list for
+// computation of group checksum values.
+// NOTE: test the functionality and performance (multiple iterations of a map)
+func (v *validator) order(grp []models.Member) (sorted []models.Member) {
+	var labels []string
+	for _, m := range grp {
+		labels = append(labels, m.Label)
+	}
+
+	sort.Strings(labels)
+	for _, l := range labels {
+		for _, m := range grp {
+			if m.Label == l {
+				sorted = append(sorted, m)
+				break
+			}
+		}
+	}
+
+	return sorted
 }

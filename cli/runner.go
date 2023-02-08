@@ -70,7 +70,8 @@ basicCmds:
 		"[7] Leave group\n\t" +
 		"[8] Group Info\n\t" +
 		"[9] Discover Features\n\t" +
-		"[0] Exit\n   Command: ")
+		"[b] Back\n\t" +
+		"[e] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
 	cmd, err := r.reader.ReadString('\n')
@@ -98,7 +99,9 @@ basicCmds:
 		r.groupInfo()
 	case "9":
 		r.discover()
-	case "0":
+	case "b":
+		return
+	case "e":
 		fmt.Println(`program exited`)
 		os.Exit(0)
 	default:
