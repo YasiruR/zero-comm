@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/models"
-	servicesLib "github.com/YasiruR/didcomm-prober/domain/services"
+	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -31,7 +31,7 @@ func newCompactor() (*compactor, error) {
 // packer is an internal wrapper for the packing process of didcomm messages
 type packer struct {
 	*services
-	pckr servicesLib.Packer
+	pckr servicesPkg.Packer
 }
 
 func newPacker(c *domain.Container) *packer {
@@ -77,7 +77,6 @@ func (p *packer) pack(receiver string, recPubKey []byte, msg []byte) ([]byte, er
 	return data, nil
 }
 
-// todo think about this
 func (p *packer) serviceInfo(peer string) (*models.Service, *models.Peer, error) {
 	pr, err := p.probr.Peer(peer)
 	if err != nil {

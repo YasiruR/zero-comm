@@ -87,14 +87,24 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	c.Log.Info(fmt.Sprintf(`didcomm agent initialized with messaging port (%d) and publishing port (%d)`, c.Cfg.Port, c.Cfg.PubPort))
 
 	if c.Cfg.SingleQ {
-		c.Log.Info(`Agent operates in single-queue mode for data messages`)
+		c.Log.Info(`agent operates in single-queue mode for data messages`)
 	} else {
-		c.Log.Info(`Agent operates with multiple-queues for data messages`)
+		c.Log.Info(`agent operates with multiple-queues for data messages`)
 	}
 
 	return c
 }
 
-func shutdown(c *domain.Container) {
-	c.Server.Stop()
+func shutdown(c *domain.Container) error {
+	if err := c.Server.Stop(); err != nil {
+		return fmt.Errorf(`server shutdown failed - %v`, err)
+	}
+
+	if err := c.PubSub.Close(); err != nil {
+		return fmt.Errorf(`group-agent shutdown failed - %v`, err)
+	}
+
+	c.Log.Info(`graceful shutdown of agent completed successfully`)
+	os.Exit(0)
+	return nil
 }

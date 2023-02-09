@@ -6,10 +6,10 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
-	servicesLib "github.com/YasiruR/didcomm-prober/domain/services"
+	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
-	zmqLib "github.com/pebbe/zmq4"
+	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 	"net/url"
 	"strings"
@@ -27,9 +27,9 @@ type state struct {
 }
 
 type services struct {
-	km     servicesLib.KeyManager
-	probr  servicesLib.Agent
-	client servicesLib.Client
+	km     servicesPkg.KeyManager
+	probr  servicesPkg.Agent
+	client servicesPkg.Client
 	log    log.Logger
 }
 
@@ -51,7 +51,7 @@ type Agent struct {
 	outChan chan string
 }
 
-func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
+func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
 	in, err := initInternals(zmqCtx, c)
 	if err != nil {
 		return nil, fmt.Errorf(`initializing internal services of group agent failed - %v`, err)
@@ -85,7 +85,7 @@ func NewAgent(zmqCtx *zmqLib.Context, c *domain.Container) (*Agent, error) {
 }
 
 // initInternals initializes the internal components required by the group agent
-func initInternals(zmqCtx *zmqLib.Context, c *domain.Container) (*internals, error) {
+func initInternals(zmqCtx *zmqPkg.Context, c *domain.Container) (*internals, error) {
 	gs := newGroupStore()
 	transport, err := newZmqTransport(zmqCtx, gs, c)
 	if err != nil {
@@ -118,7 +118,7 @@ func initInternals(zmqCtx *zmqLib.Context, c *domain.Container) (*internals, err
 // start initializes handlers for subscribe and join requests (async),
 // and listeners for all incoming messages eg: join requests,
 // subscriptions, state changes (active/inactive) and data messages.
-func (a *Agent) start(srvr servicesLib.Server) {
+func (a *Agent) start(srvr servicesPkg.Server) {
 	// add handler for subscribe messages
 	subChan := make(chan models.Message)
 	srvr.AddHandler(domain.MsgTypSubscribe, subChan, false)
@@ -129,12 +129,12 @@ func (a *Agent) start(srvr servicesLib.Server) {
 	srvr.AddHandler(domain.MsgTypGroupJoin, joinChan, false)
 
 	// initialize internal handlers for zmq requests
-	a.listener(joinChan, a.proc.handleJoins)
-	a.listener(subChan, a.proc.handleSubscription)
+	a.process(joinChan, a.proc.joinReqs)
+	a.process(subChan, a.proc.subscriptions)
 
 	// initialize listening on subscriptions
-	a.zmq.listen(typStateSkt, a.proc.handleState)
-	a.zmq.listen(typMsgSkt, a.proc.handleData)
+	a.zmq.listen(typStateSkt, a.proc.states)
+	a.zmq.listen(typMsgSkt, a.proc.data)
 }
 
 // Create constructs a group including creator's invitation
@@ -243,7 +243,7 @@ func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checks
 		return checksum, nil
 	}
 
-	s, _, err := a.serviceInfo(m.Label)
+	s, _, err := a.packr.serviceInfo(m.Label)
 	if err != nil {
 		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
@@ -274,7 +274,7 @@ func (a *Agent) verifyJoin(accptr string, joinSet []models.Member, memHashs map[
 // fetched peer's information. Returns the group-join response if both
 // request is successful and requester is eligible.
 func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, error) {
-	s, _, err := a.serviceInfo(accptr)
+	s, _, err := a.packr.serviceInfo(accptr)
 	if err != nil {
 		return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, accptr, err)
 	}
@@ -373,7 +373,7 @@ func (a *Agent) connectDIDComm(m models.Member) error {
 
 // subscribeData sets subscriptions via zmq for status topic of the member.
 // If the member is a publisher, it proceeds with sending a subscription
-// didcomm message and subscribing to message topic via zmqLib. A checksum
+// didcomm message and subscribing to message topic via zmqPkg. A checksum
 // of the group maintained by the added group member is returned.
 func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (checksum string, err error) {
 	// get my public key corresponding to this member
@@ -407,7 +407,7 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`marshalling subscribe message failed - %v`, err)
 	}
 
-	s, _, err := a.serviceInfo(m.Label)
+	s, _, err := a.packr.serviceInfo(m.Label)
 	if err != nil {
 		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
@@ -432,7 +432,7 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
 	}
 
-	var sktMsgs *zmqLib.Socket = nil
+	var sktMsgs *zmqPkg.Socket = nil
 	if resSm.Publisher {
 		sktMsgs = a.zmq.msgs
 	}
@@ -444,7 +444,7 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 	return resSm.Checksum, nil
 }
 
-func (a *Agent) listener(inChan chan models.Message, handlerFunc func(msg *models.Message) error) {
+func (a *Agent) process(inChan chan models.Message, handlerFunc func(msg *models.Message) error) {
 	go func() {
 		for {
 			msg := <-inChan
@@ -454,167 +454,6 @@ func (a *Agent) listener(inChan chan models.Message, handlerFunc func(msg *model
 		}
 	}()
 }
-
-//func (a *Agent) handleSubscription(msg *models.Message) error {
-//	unpackedMsg, err := a.probr.ReadMessage(*msg)
-//	if err != nil {
-//		return fmt.Errorf(`reading subscribe message failed - %v`, err)
-//	}
-//
-//	var sm messages.Subscribe
-//	if err = json.Unmarshal([]byte(unpackedMsg), &sm); err != nil {
-//		return fmt.Errorf(`unmarshalling subscribe message failed - %v`, err)
-//	}
-//
-//	if !sm.Subscribe {
-//		a.subs.delete(sm.Topic, sm.Member.Label)
-//		return nil
-//	}
-//
-//	if !a.validJoiner(sm.Member.Label) {
-//		return fmt.Errorf(`requester (%s) is not eligible`, sm.Member.Label)
-//	}
-//
-//	var sktMsgs *zmqLib.Socket = nil
-//	if sm.Member.Publisher {
-//		sktMsgs = a.zmq.msgs
-//	}
-//
-//	if err = a.auth.setPeerAuthn(sm.Member.Label, sm.Transport.ServrPubKey, sm.Transport.ClientPubKey, a.zmq.state, sktMsgs); err != nil {
-//		return fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
-//	}
-//
-//	// send response back to subscriber along with zmq server pub-key of this node
-//	if err = a.sendSubscribeRes(sm.Topic, sm.Member, msg); err != nil {
-//		return fmt.Errorf(`sending subscribe response failed - %v`, err)
-//	}
-//
-//	if err = a.zmq.connect(domain.RoleSubscriber, a.myLabel, sm.Topic, sm.Member); err != nil {
-//		return fmt.Errorf(`zmq connection failed - %v`, err)
-//	}
-//
-//	sk := base58.Decode(sm.PubKey)
-//	a.subs.add(sm.Topic, sm.Member.Label, sk)
-//	a.log.Debug(`processed subscription request`, sm)
-//
-//	return nil
-//}
-
-//func (a *Agent) handleJoins(msg *models.Message) error {
-//	body, err := a.probr.ReadMessage(*msg)
-//	if err != nil {
-//		return fmt.Errorf(`reading group-join authcrypt request failed - %v`, err)
-//	}
-//
-//	var req messages.ReqGroupJoin
-//	if err = json.Unmarshal([]byte(body), &req); err != nil {
-//		return fmt.Errorf(`unmarshalling group-join request failed - %v`, err)
-//	}
-//
-//	if len(a.gs.membrs(req.Topic)) == 0 {
-//		return fmt.Errorf(`acceptor is not a member of the requested group (%s)`, req.Topic)
-//	}
-//
-//	if !a.validJoiner(req.Label) {
-//		return fmt.Errorf(`group-join request denied to member (%s)`, req.Label)
-//	}
-//
-//	byts, err := json.Marshal(messages.ResGroupJoin{
-//		Id:      uuid.New().String(),
-//		Type:    messages.JoinResponseV1,
-//		Members: a.gs.membrs(req.Topic),
-//		//Members: a.addIntruder(req.Topic),
-//	})
-//	if err != nil {
-//		return fmt.Errorf(`marshalling group-join response failed - %v`, err)
-//	}
-//
-//	packedMsg, err := a.pack(req.Label, nil, byts)
-//	if err != nil {
-//		return fmt.Errorf(`packing group-join response failed - %v`, err)
-//	}
-//
-//	// no response is sent if process failed
-//	msg.Reply <- packedMsg
-//	a.log.Debug(fmt.Sprintf(`shared group state upon join request by %s`, req.Label), string(byts))
-//
-//	return nil
-//}
-
-//func (a *Agent) handleState(msg string) error {
-//	frames := strings.SplitN(msg, ` `, 2)
-//	if len(frames) != 2 {
-//		return fmt.Errorf(`received an invalid status message (length=%v)`, len(frames))
-//	}
-//
-//	sm, err := a.extractStatus(frames[1])
-//	if err != nil {
-//		return fmt.Errorf(`extracting status message failed - %v`, err)
-//	}
-//
-//	var validMsg string
-//	for exchId, encMsg := range sm.AuthMsgs {
-//		ok, _ := a.probr.ValidConn(exchId)
-//		if ok {
-//			validMsg = encMsg
-//			break
-//		}
-//	}
-//
-//	if validMsg == `` {
-//		return fmt.Errorf(`status update is not intended to this member`)
-//	}
-//
-//	defer func(topic string) {
-//		if err = a.valdtr.updateHash(topic, a.gs.membrs(topic)); err != nil {
-//			a.log.Error(fmt.Sprintf(`updating checksum for the group failed - %v`, err))
-//		}
-//	}(sm.Topic)
-//
-//	strAuthMsg, err := a.probr.ReadMessage(models.Message{Type: domain.MsgTypGroupStatus, Data: []byte(validMsg)})
-//	if err != nil {
-//		return fmt.Errorf(`reading status didcomm message failed - %v`, err)
-//	}
-//
-//	var member models.Member
-//	if err = json.Unmarshal([]byte(strAuthMsg), &member); err != nil {
-//		return fmt.Errorf(`unmarshalling member message failed - %v`, err)
-//	}
-//
-//	if !member.Active {
-//		if member.Publisher {
-//			if err = a.zmq.unsubscribeData(a.myLabel, sm.Topic, member.Label); err != nil {
-//				return fmt.Errorf(`unsubscribing data topic failed - %v`, err)
-//			}
-//		}
-//
-//		a.subs.delete(sm.Topic, member.Label)
-//		a.gs.deleteMembr(sm.Topic, member.Label)
-//		if err = a.auth.remvKeys(member.Label); err != nil {
-//			return fmt.Errorf(`removing zmq transport keys failed - %v`, err)
-//		}
-//		a.outChan <- member.Label + ` left group ` + sm.Topic
-//		return nil
-//	}
-//
-//	a.gs.addMembr(sm.Topic, member)
-//	a.log.Debug(fmt.Sprintf(`group state updated for member %s in topic %s`, member.Label, sm.Topic))
-//	return nil
-//}
-
-//func (a *Agent) handleData(msg string) error {
-//	frames := strings.Split(msg, ` `)
-//	if len(frames) != 2 {
-//		return fmt.Errorf(`received an invalid subscribed message (%v)`, frames)
-//	}
-//
-//	_, err := a.probr.ReadMessage(models.Message{Type: domain.MsgTypData, Data: []byte(frames[1])})
-//	if err != nil {
-//		return fmt.Errorf(`reading subscribed message failed - %v`, err)
-//	}
-//
-//	return nil
-//}
 
 // notifyAll constructs a single status message with different didcomm
 // messages packed per each member of the group and includes in a map with
@@ -632,39 +471,6 @@ func (a *Agent) notifyAll(topic string, active, publisher bool) error {
 	a.log.Debug(fmt.Sprintf(`published status (topic: %s, active: %t, publisher: %t)`, topic, active, publisher))
 	return nil
 }
-
-//func (a *Agent) sendSubscribeRes(topic string, m models.Member, msg *models.Message) error {
-//	// to fetch if current node is a publisher of the topic
-//	curntMembr := a.gs.membr(topic, a.myLabel)
-//	if curntMembr == nil {
-//		return fmt.Errorf(`current member or topic does not exist in group store`)
-//	}
-//
-//	checksum, err := a.valdtr.hash(topic)
-//	if err != nil {
-//		return fmt.Errorf(`fetching group checksum failed - %v`, err)
-//	}
-//
-//	resByts, err := json.Marshal(messages.ResSubscribe{
-//		Transport: messages.Transport{
-//			ServrPubKey:  a.auth.servr.pub,
-//			ClientPubKey: a.auth.client.pub,
-//		},
-//		Publisher: curntMembr.Publisher,
-//		Checksum:  checksum,
-//	})
-//	if err != nil {
-//		return fmt.Errorf(`marshalling subscribe response failed - %v`, err)
-//	}
-//
-//	packedMsg, err := a.pack(m.Label, nil, resByts)
-//	if err != nil {
-//		return fmt.Errorf(`packing subscribe response failed - %v`, err)
-//	}
-//
-//	msg.Reply <- packedMsg
-//	return nil
-//}
 
 func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, error) {
 	sm := messages.Status{Id: uuid.New().String(), Type: messages.MemberStatusV1, Topic: topic, AuthMsgs: map[string]string{}}
@@ -685,7 +491,7 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 			continue
 		}
 
-		s, pr, err := a.serviceInfo(m.Label)
+		s, pr, err := a.packr.serviceInfo(m.Label)
 		if err != nil {
 			return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 		}
@@ -708,74 +514,6 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 	return cmprsd, nil
 }
 
-func (a *Agent) serviceInfo(peer string) (*models.Service, *models.Peer, error) {
-	pr, err := a.probr.Peer(peer)
-	if err != nil {
-		return nil, nil, fmt.Errorf(`no peer found - %v`, err)
-	}
-
-	var srvc *models.Service
-	for _, s := range pr.Services {
-		if s.Type == domain.ServcGroupJoin {
-			srvc = &s
-			break
-		}
-	}
-
-	if srvc.Type == `` {
-		return nil, nil, fmt.Errorf(`requested service (%s) is not by the peer`, domain.ServcGroupJoin)
-	}
-
-	return srvc, &pr, nil
-}
-
-//func (a *Agent) extractStatus(msg string) (*messages.Status, error) {
-//	out, err := a.zDecodr.DecodeAll([]byte(msg), nil)
-//	if err != nil {
-//		return nil, fmt.Errorf(`decode error - %v`, err)
-//	}
-//
-//	var sm messages.Status
-//	if err = json.Unmarshal(out, &sm); err != nil {
-//		return nil, fmt.Errorf(`unmarshal error - %v`, err)
-//	}
-//
-//	return &sm, nil
-//}
-
-//// pack constructs and encodes an authcrypt message to the given receiver
-//func (a *Agent) pack(receiver string, recPubKey []byte, msg []byte) ([]byte, error) {
-//	if recPubKey == nil {
-//		s, _, err := a.serviceInfo(receiver)
-//		if err != nil {
-//			return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, receiver, err)
-//		}
-//		recPubKey = s.PubKey
-//	}
-//
-//	ownPubKey, err := a.km.PublicKey(receiver)
-//	if err != nil {
-//		return nil, fmt.Errorf(`getting public key for connection with %s failed - %v`, receiver, err)
-//	}
-//
-//	ownPrvKey, err := a.km.PrivateKey(receiver)
-//	if err != nil {
-//		return nil, fmt.Errorf(`getting private key for connection with %s failed - %v`, receiver, err)
-//	}
-//
-//	encryptdMsg, err := a.packer.Pack(msg, recPubKey, ownPubKey, ownPrvKey)
-//	if err != nil {
-//		return nil, fmt.Errorf(`packing error - %v`, err)
-//	}
-//
-//	data, err := json.Marshal(encryptdMsg)
-//	if err != nil {
-//		return nil, fmt.Errorf(`marshalling packed message failed - %v`, err)
-//	}
-//
-//	return data, nil
-//}
-
 func (a *Agent) parseMembrStatus(msg string) (*messages.Status, error) {
 	frames := strings.Split(msg, " ")
 	if len(frames) != 2 {
@@ -789,11 +527,6 @@ func (a *Agent) parseMembrStatus(msg string) (*messages.Status, error) {
 
 	return &ms, nil
 }
-
-// dummy validation for PoC
-//func (a *Agent) validJoiner(label string) bool {
-//	return true
-//}
 
 func (a *Agent) Leave(topic string) error {
 	if err := a.zmq.unsubscribeAll(a.myLabel, topic); err != nil {
@@ -833,19 +566,9 @@ func (a *Agent) Info(topic string) (mems []models.Member) {
 }
 
 func (a *Agent) Close() error {
-	// close all sockets
-	return nil
-}
+	if err := a.auth.close(); err != nil {
+		return fmt.Errorf(`closing authenticator failed - %v`, err)
+	}
 
-// todo remove
-//func (a *Agent) addIntruder(topic string) []models.Member {
-//	return append(a.gs.membrs(topic),
-//		models.Member{
-//			Active:      true,
-//			Publisher:   true,
-//			Label:       "zack",
-//			Inv:         "tcp://127.0.1.1:?oob=eyJpZCI6ImEwNWZlY2M1LTI0MWItNDcxMy1iMGIwLTM4MjllNDQxNDgxNyIsInR5cGUiOiJodHRwczovL2RpZGNvbW0ub3JnL291dC1vZi1iYW5kLzEuMC9pbnZpdGF0aW9uIiwiZnJvbSI6IiIsImxhYmVsIjoiemFjayIsImJvZHkiOnsiZ29hbF9jb2RlIjoiIiwiZ29hbCI6IiIsImFjY2VwdCI6bnVsbH0sIkF0dGFjaG1lbnRzIjpudWxsLCJzZXJ2aWNlcyI6W3siaWQiOiJjNTM5ODkzYS04ODBlLTQ3NzUtOTBmZS00MzVhZWZkMmNhNjYiLCJ0eXBlIjoiZGlkLWV4Y2hhbmdlLXNlcnZpY2UiLCJyZWNpcGllbnRLZXlzIjpbIlBkbnpGa2VjbysvcUxic0Nrd3JOQ2tJRlJoSnRSK3RmaVYzWGl5RFViblU9Il0sInJvdXRpbmdLZXlzIjpudWxsLCJzZXJ2aWNlRW5kcG9pbnQiOiJ0Y3A6Ly8xMjcuMC4xLjE6OTA5MCIsImFjY2VwdCI6bnVsbH1dfQ==",
-//			PubEndpoint: "tcp://127.0.1.1:9091",
-//		},
-//	)
-//}
+	return a.zmq.close()
+}

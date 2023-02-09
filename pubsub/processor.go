@@ -6,18 +6,18 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
-	servicesLib "github.com/YasiruR/didcomm-prober/domain/services"
+	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
-	zmqLib "github.com/pebbe/zmq4"
+	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 	"strings"
 )
 
-// processor implements the handlers for incoming messages
+// processor implements the handlers functions for incoming messages
 type processor struct {
 	myLabel string
-	probr   servicesLib.Agent
+	probr   servicesPkg.Agent
 	log     log.Logger
 	outChan chan string
 	*internals
@@ -35,7 +35,7 @@ func newProcessor(label string, c *domain.Container, in *internals, cmpctr *comp
 	}
 }
 
-func (p *processor) handleJoins(msg *models.Message) error {
+func (p *processor) joinReqs(msg *models.Message) error {
 	body, err := p.probr.ReadMessage(*msg)
 	if err != nil {
 		return fmt.Errorf(`reading group-join authcrypt request failed - %v`, err)
@@ -76,7 +76,7 @@ func (p *processor) handleJoins(msg *models.Message) error {
 	return nil
 }
 
-func (p *processor) handleSubscription(msg *models.Message) error {
+func (p *processor) subscriptions(msg *models.Message) error {
 	unpackedMsg, err := p.probr.ReadMessage(*msg)
 	if err != nil {
 		return fmt.Errorf(`reading subscribe message failed - %v`, err)
@@ -96,7 +96,7 @@ func (p *processor) handleSubscription(msg *models.Message) error {
 		return fmt.Errorf(`requester (%s) is not eligible`, sm.Member.Label)
 	}
 
-	var sktMsgs *zmqLib.Socket = nil
+	var sktMsgs *zmqPkg.Socket = nil
 	if sm.Member.Publisher {
 		sktMsgs = p.zmq.msgs
 	}
@@ -121,7 +121,7 @@ func (p *processor) handleSubscription(msg *models.Message) error {
 	return nil
 }
 
-func (p *processor) handleState(msg string) error {
+func (p *processor) states(msg string) error {
 	frames := strings.SplitN(msg, ` `, 2)
 	if len(frames) != 2 {
 		return fmt.Errorf(`received an invalid status message (length=%v)`, len(frames))
@@ -182,7 +182,7 @@ func (p *processor) handleState(msg string) error {
 	return nil
 }
 
-func (p *processor) handleData(msg string) error {
+func (p *processor) data(msg string) error {
 	frames := strings.Split(msg, ` `)
 	if len(frames) != 2 {
 		return fmt.Errorf(`received an invalid subscribed message (%v)`, frames)
@@ -247,3 +247,15 @@ func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.
 func (p *processor) validJoiner(label string) bool {
 	return true
 }
+
+//func (p *processor) addIntruder(topic string) []models.Member {
+//	return append(a.gs.membrs(topic),
+//		models.Member{
+//			Active:      true,
+//			Publisher:   true,
+//			Label:       "zack",
+//			Inv:         "tcp://127.0.1.1:?oob=eyJpZCI6ImEwNWZlY2M1LTI0MWItNDcxMy1iMGIwLTM4MjllNDQxNDgxNyIsInR5cGUiOiJodHRwczovL2RpZGNvbW0ub3JnL291dC1vZi1iYW5kLzEuMC9pbnZpdGF0aW9uIiwiZnJvbSI6IiIsImxhYmVsIjoiemFjayIsImJvZHkiOnsiZ29hbF9jb2RlIjoiIiwiZ29hbCI6IiIsImFjY2VwdCI6bnVsbH0sIkF0dGFjaG1lbnRzIjpudWxsLCJzZXJ2aWNlcyI6W3siaWQiOiJjNTM5ODkzYS04ODBlLTQ3NzUtOTBmZS00MzVhZWZkMmNhNjYiLCJ0eXBlIjoiZGlkLWV4Y2hhbmdlLXNlcnZpY2UiLCJyZWNpcGllbnRLZXlzIjpbIlBkbnpGa2VjbysvcUxic0Nrd3JOQ2tJRlJoSnRSK3RmaVYzWGl5RFViblU9Il0sInJvdXRpbmdLZXlzIjpudWxsLCJzZXJ2aWNlRW5kcG9pbnQiOiJ0Y3A6Ly8xMjcuMC4xLjE6OTA5MCIsImFjY2VwdCI6bnVsbH1dfQ==",
+//			PubEndpoint: "tcp://127.0.1.1:9091",
+//		},
+//	)
+//}

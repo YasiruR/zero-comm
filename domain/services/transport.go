@@ -12,7 +12,7 @@ type Transporter interface {
 type Client interface {
 	// Send transmits the message but marshalling should be independent of the
 	// transport layer to support multiple encoding mechanisms
-	Send(typ string, data []byte, endpoint string) (res string, err error) // todo remove res
+	Send(typ string, data []byte, endpoint string) (res string, err error)
 }
 
 type Server interface {
@@ -34,13 +34,5 @@ type GroupAgent interface {
 	Send(topic, msg string) error
 	Leave(topic string) error
 	Info(topic string) []models.Member
-}
-
-/* Transport authentication */
-
-type Authenticator interface {
-	GenerateCert(md models.Metadata)
-	Allow()
-	Deny()
 	Close() error
 }

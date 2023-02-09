@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/models"
-	zmqLib "github.com/pebbe/zmq4"
+	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 )
 
@@ -15,28 +15,27 @@ const (
 	typMsgSkt
 )
 
-// todo remove group store
 type zmq struct {
 	singlQ bool
-	pub    *zmqLib.Socket
-	state  *zmqLib.Socket
-	msgs   *zmqLib.Socket
+	pub    *zmqPkg.Socket
+	state  *zmqPkg.Socket
+	msgs   *zmqPkg.Socket
 	gs     *groupStore
 	log    log.Logger
 }
 
-func newZmqTransport(zmqCtx *zmqLib.Context, gs *groupStore, c *domain.Container) (*zmq, error) {
-	pubSkt, err := zmqCtx.NewSocket(zmqLib.PUB)
+func newZmqTransport(zmqCtx *zmqPkg.Context, gs *groupStore, c *domain.Container) (*zmq, error) {
+	pubSkt, err := zmqCtx.NewSocket(zmqPkg.PUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
 	}
 
-	sktStates, err := zmqCtx.NewSocket(zmqLib.SUB)
+	sktStates, err := zmqCtx.NewSocket(zmqPkg.SUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating sub socket for status topic failed - %v`, err)
 	}
 
-	sktMsgs, err := zmqCtx.NewSocket(zmqLib.SUB)
+	sktMsgs, err := zmqCtx.NewSocket(zmqPkg.SUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating sub socket for data topics failed - %v`, err)
 	}
@@ -170,7 +169,7 @@ func (z *zmq) stateTopic(topic string) string {
 }
 
 func (z *zmq) listen(st sktType, handlerFunc func(msg string) error) {
-	var skt *zmqLib.Socket
+	var skt *zmqPkg.Socket
 	switch st {
 	case typStateSkt:
 		skt = z.state
@@ -195,4 +194,20 @@ func (z *zmq) listen(st sktType, handlerFunc func(msg string) error) {
 			}
 		}
 	}()
+}
+
+func (z *zmq) close() error {
+	if err := z.pub.Close(); err != nil {
+		return fmt.Errorf(`closing publisher socket failed - %v`, err)
+	}
+
+	if err := z.state.Close(); err != nil {
+		return fmt.Errorf(`closing state socket failed - %v`, err)
+	}
+
+	if err := z.msgs.Close(); err != nil {
+		return fmt.Errorf(`closing data socket failed - %v`, err)
+	}
+
+	return nil
 }
