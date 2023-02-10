@@ -447,6 +447,27 @@ func (p *Prober) Peer(label string) (models.Peer, error) {
 	return pr, nil
 }
 
+func (p *Prober) Service(name, peer string) (*models.Service, error) {
+	pr, err := p.Peer(peer)
+	if err != nil {
+		return nil, fmt.Errorf(`no peer found - %v`, err)
+	}
+
+	var srvc *models.Service
+	for _, s := range pr.Services {
+		if s.Type == name {
+			srvc = &s
+			break
+		}
+	}
+
+	if srvc.Type == `` {
+		return nil, fmt.Errorf(`requested service (%s) is not found for peer (%s)`, name, peer)
+	}
+
+	return srvc, nil
+}
+
 func (p *Prober) ValidConn(exchId string) (ok bool, pr models.Peer) {
 	for _, connPr := range p.peers {
 		if connPr.ExchangeThId == exchId {

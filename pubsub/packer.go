@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
-	"github.com/YasiruR/didcomm-prober/domain/models"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/klauspost/compress/zstd"
 )
@@ -47,7 +46,7 @@ func newPacker(c *domain.Container) *packer {
 // pack constructs and encodes an authcrypt message to the given receiver
 func (p *packer) pack(receiver string, recPubKey []byte, msg []byte) ([]byte, error) {
 	if recPubKey == nil {
-		s, _, err := p.serviceInfo(receiver)
+		s, err := p.probr.Service(domain.ServcGroupJoin, receiver)
 		if err != nil {
 			return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, receiver, err)
 		}
@@ -75,25 +74,4 @@ func (p *packer) pack(receiver string, recPubKey []byte, msg []byte) ([]byte, er
 	}
 
 	return data, nil
-}
-
-func (p *packer) serviceInfo(peer string) (*models.Service, *models.Peer, error) {
-	pr, err := p.probr.Peer(peer)
-	if err != nil {
-		return nil, nil, fmt.Errorf(`no peer found - %v`, err)
-	}
-
-	var srvc *models.Service
-	for _, s := range pr.Services {
-		if s.Type == domain.ServcGroupJoin {
-			srvc = &s
-			break
-		}
-	}
-
-	if srvc.Type == `` {
-		return nil, nil, fmt.Errorf(`requested service (%s) is not by the peer`, domain.ServcGroupJoin)
-	}
-
-	return srvc, &pr, nil
 }

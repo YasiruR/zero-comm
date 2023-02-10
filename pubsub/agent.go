@@ -243,7 +243,7 @@ func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checks
 		return checksum, nil
 	}
 
-	s, _, err := a.packr.serviceInfo(m.Label)
+	s, err := a.probr.Service(domain.ServcGroupJoin, m.Label)
 	if err != nil {
 		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
@@ -274,7 +274,7 @@ func (a *Agent) verifyJoin(accptr string, joinSet []models.Member, memHashs map[
 // fetched peer's information. Returns the group-join response if both
 // request is successful and requester is eligible.
 func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, error) {
-	s, _, err := a.packr.serviceInfo(accptr)
+	s, err := a.probr.Service(domain.ServcGroupJoin, accptr)
 	if err != nil {
 		return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, accptr, err)
 	}
@@ -407,7 +407,7 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`marshalling subscribe message failed - %v`, err)
 	}
 
-	s, _, err := a.packr.serviceInfo(m.Label)
+	s, err := a.probr.Service(domain.ServcGroupJoin, m.Label)
 	if err != nil {
 		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
@@ -491,7 +491,12 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 			continue
 		}
 
-		s, pr, err := a.packr.serviceInfo(m.Label)
+		pr, err := a.probr.Peer(m.Label)
+		if err != nil {
+			return nil, fmt.Errorf(`fetching peer failed - %v`, err)
+		}
+
+		s, err := a.probr.Service(domain.ServcGroupJoin, m.Label)
 		if err != nil {
 			return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 		}
