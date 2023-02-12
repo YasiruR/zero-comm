@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/core/discovery"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/domain/services"
 	internalLog "github.com/YasiruR/didcomm-prober/log"
 	"github.com/tryfix/log"
@@ -31,9 +32,10 @@ func ParseArgs() *domain.Args {
 	p := flag.Int(`port`, 0, `agent's port'`)
 	pub := flag.Int(`pub`, 0, `agent's publishing port'`)
 	v := flag.Bool(`v`, false, `logging`)
+	singleQ := flag.Bool(`single`, false, `enables single-queue mode for data messages`)
 	flag.Parse()
 
-	return &domain.Args{Name: *n, Port: *p, PubPort: *pub, Verbose: *v}
+	return &domain.Args{Name: *n, Port: *p, PubPort: *pub, SingleQ: *singleQ, Verbose: *v}
 }
 
 func Init(c *domain.Container) {
@@ -69,7 +71,8 @@ basicCmds:
 		"[7] Leave group\n\t" +
 		"[8] Group Info\n\t" +
 		"[9] Discover Features\n\t" +
-		"[0] Exit\n   Command: ")
+		"[b] Back\n\t" +
+		"[e] Exit\n   Command: ")
 	atomic.AddUint64(&r.disCmds, 1)
 
 	cmd, err := r.reader.ReadString('\n')
@@ -97,7 +100,9 @@ basicCmds:
 		r.groupInfo()
 	case "9":
 		r.discover()
-	case "0":
+	case "b":
+
+	case "e":
 		fmt.Println(`program exited`)
 		os.Exit(0)
 	default:
@@ -170,7 +175,7 @@ func (r *runner) sendMsg() {
 	peer := strings.TrimSpace(r.input(`Recipient`))
 	msg := strings.TrimSpace(r.input(`Message`))
 
-	if err := r.prober.SendMessage(domain.MsgTypData, peer, msg); err != nil {
+	if err := r.prober.SendMessage(models.TypData, peer, msg); err != nil {
 		r.error(`sending message failed`, err)
 	}
 }
