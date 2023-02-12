@@ -11,6 +11,7 @@ type Args struct {
 	Port    int
 	Verbose bool
 	PubPort int
+	SingleQ bool
 }
 
 type Config struct {

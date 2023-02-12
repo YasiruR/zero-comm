@@ -15,6 +15,7 @@ type Subscribe struct {
 type ResSubscribe struct {
 	Publisher bool      `json:"publisher"`
 	Transport Transport `json:"transport"`
+	Checksum  string    `json:"checksum"`
 }
 
 type Transport struct {
