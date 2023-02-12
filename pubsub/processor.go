@@ -151,7 +151,7 @@ func (p *processor) states(msg string) error {
 		}
 	}(sm.Topic)
 
-	strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: domain.MsgTypGroupStatus, Data: []byte(validMsg)})
+	strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
 	if err != nil {
 		return fmt.Errorf(`reading status didcomm message failed - %v`, err)
 	}
@@ -188,7 +188,7 @@ func (p *processor) data(msg string) error {
 		return fmt.Errorf(`received an invalid subscribed message (%v)`, frames)
 	}
 
-	_, err := p.probr.ReadMessage(models.Message{Type: domain.MsgTypData, Data: []byte(frames[1])})
+	_, err := p.probr.ReadMessage(models.Message{Type: models.TypData, Data: []byte(frames[1])})
 	if err != nil {
 		return fmt.Errorf(`reading subscribed message failed - %v`, err)
 	}

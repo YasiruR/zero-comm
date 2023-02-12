@@ -1,21 +1,7 @@
 package models
 
-type Metadata map[string]string
-
-type Message struct {
-	Type  string
-	Data  []byte
-	Reply chan []byte
-}
-
-type Connection struct {
-	Peer     string
-	Endpoint string
-	PubKey   []byte
-}
-
 type Peer struct {
-	Active       bool // todo (currently all stored peers are active since no disconnect is implemented)
+	Active       bool // currently all stored peers are active since no disconnect is implemented
 	DID          string
 	ExchangeThId string // thread id used in did-exchange (to correlate any message to the peer)
 	Services     []Service

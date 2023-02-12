@@ -42,5 +42,4 @@ type ResGroupJoin struct {
 	Id      string          `json:"@id"`
 	Type    string          `json:"@type"`
 	Members []models.Member `json:"members"` // includes acceptor
-	//Checksum string          `json:"checksum"`
 }

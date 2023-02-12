@@ -1,6 +1,8 @@
 package services
 
-import "github.com/YasiruR/didcomm-prober/domain/models"
+import (
+	"github.com/YasiruR/didcomm-prober/domain/models"
+)
 
 /* client-server interfaces */
 
@@ -12,7 +14,7 @@ type Transporter interface {
 type Client interface {
 	// Send transmits the message but marshalling should be independent of the
 	// transport layer to support multiple encoding mechanisms
-	Send(typ string, data []byte, endpoint string) (res string, err error)
+	Send(typ models.MsgType, data []byte, endpoint string) (res string, err error)
 }
 
 type Server interface {
@@ -21,7 +23,7 @@ type Server interface {
 	// AddHandler creates a stream with a notifier for incoming messages.
 	// Handlers with synchronous responses can be added by setting async
 	// flag to false and handling reply channel in models.Message
-	AddHandler(msgType string, notifier chan models.Message, async bool)
+	AddHandler(mt models.MsgType, notifier chan models.Message, async bool)
 	RemoveHandler(msgType string)
 	Stop() error
 }

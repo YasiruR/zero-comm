@@ -68,9 +68,9 @@ func (p *Prober) initHandlers(serv services.Server) {
 		data:    make(chan models.Message),
 	}
 
-	serv.AddHandler(domain.MsgTypConnReq, s.connReq, true)
-	serv.AddHandler(domain.MsgTypConnRes, s.connRes, true)
-	serv.AddHandler(domain.MsgTypData, s.data, true)
+	serv.AddHandler(models.TypConnReq, s.connReq, true)
+	serv.AddHandler(models.TypConnRes, s.connRes, true)
+	serv.AddHandler(models.TypData, s.data, true)
 	go p.listen(s)
 }
 
@@ -163,7 +163,7 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 		return ``, fmt.Errorf(`marshalling connection request failed - %v`, err)
 	}
 
-	if _, err = p.client.Send(domain.MsgTypConnReq, connReqBytes, invEndpoint); err != nil {
+	if _, err = p.client.Send(models.TypConnReq, connReqBytes, invEndpoint); err != nil {
 		return ``, fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
@@ -217,7 +217,7 @@ func (p *Prober) processConnReq(msg models.Message) error {
 		return fmt.Errorf(`marshalling connection response failed - %v`, err)
 	}
 
-	if _, err = p.client.Send(domain.MsgTypConnRes, connResBytes, prMsgEndpnt); err != nil {
+	if _, err = p.client.Send(models.TypConnRes, connResBytes, prMsgEndpnt); err != nil {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
@@ -303,7 +303,7 @@ func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (svcs []m
 	return svcs, nil
 }
 
-func (p *Prober) SendMessage(typ, to, text string) error {
+func (p *Prober) SendMessage(mt models.MsgType, to, text string) error {
 	peer, ok := p.peers[to]
 	if !ok {
 		return fmt.Errorf(`no didcomm connection found for the recipient %s`, to)
@@ -334,14 +334,14 @@ func (p *Prober) SendMessage(typ, to, text string) error {
 		return fmt.Errorf(`marshalling didcomm message failed - %v`, err)
 	}
 
-	if _, err = p.client.Send(typ, data, prMsgEndpnt); err != nil {
+	if _, err = p.client.Send(mt, data, prMsgEndpnt); err != nil {
 		return fmt.Errorf(`sending siscomm message failed - %v`, err)
 	}
 
-	if typ == domain.MsgTypData {
+	if mt == models.TypData {
 		p.outChan <- `Message sent`
 	} else {
-		p.log.Trace(fmt.Sprintf(`'%s' message sent to %s`, typ, to))
+		p.log.Trace(fmt.Sprintf(`'%s' message sent to %s`, mt.String(), to))
 	}
 
 	return nil
@@ -369,7 +369,7 @@ func (p *Prober) ReadMessage(msg models.Message) (text string, err error) {
 		return ``, fmt.Errorf(`unpacking message failed - %v`, err)
 	}
 
-	if msg.Type == domain.MsgTypData {
+	if msg.Type == models.TypData {
 		p.outChan <- `Message received: '` + string(textBytes) + `'`
 	} else {
 		p.log.Trace(fmt.Sprintf(`message received for type '%s' - %s`, msg.Type, string(textBytes)))

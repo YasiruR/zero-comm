@@ -38,8 +38,8 @@ func NewServer(zmqCtx *zmq.Context, c *domain.Container) (*Server, error) {
 	}, nil
 }
 
-func (s *Server) AddHandler(msgType string, notifier chan models.Message, async bool) {
-	s.handlrs.Store(msgType, &handler{async: async, notifier: notifier})
+func (s *Server) AddHandler(mt models.MsgType, notifier chan models.Message, async bool) {
+	s.handlrs.Store(mt, &handler{async: async, notifier: notifier})
 }
 
 func (s *Server) RemoveHandler(msgType string) {
@@ -68,7 +68,7 @@ func (s *Server) Start() error {
 			continue
 		}
 
-		m := models.Message{Type: md.Type, Data: []byte(msg[1])}
+		m := models.Message{Type: models.MsgType(md.Type), Data: []byte(msg[1])}
 		h, err := s.handlrByTyp(m.Type)
 		if err != nil {
 			s.sendAck(fmt.Errorf(`fetching handler failed - %v`, err))
@@ -105,7 +105,7 @@ func (s *Server) sendRes(data []byte) {
 	}
 }
 
-func (s *Server) handlrByTyp(msgTyp string) (*handler, error) {
+func (s *Server) handlrByTyp(msgTyp models.MsgType) (*handler, error) {
 	val, ok := s.handlrs.Load(msgTyp)
 	if !ok {
 		return nil, fmt.Errorf(`no handler found for message type %s`, msgTyp)

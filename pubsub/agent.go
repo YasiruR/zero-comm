@@ -121,12 +121,12 @@ func initInternals(zmqCtx *zmqPkg.Context, c *domain.Container) (*internals, err
 func (a *Agent) start(srvr servicesPkg.Server) {
 	// add handler for subscribe messages
 	subChan := make(chan models.Message)
-	srvr.AddHandler(domain.MsgTypSubscribe, subChan, false)
+	srvr.AddHandler(models.TypSubscribe, subChan, false)
 
 	// sync handler for join-requests as requester expects
 	// the group-info in return
 	joinChan := make(chan models.Message)
-	srvr.AddHandler(domain.MsgTypGroupJoin, joinChan, false)
+	srvr.AddHandler(models.TypGroupJoin, joinChan, false)
 
 	// initialize internal handlers for zmq requests
 	a.process(joinChan, a.proc.joinReqs)
@@ -295,13 +295,13 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 		return nil, fmt.Errorf(`packing join-req for %s failed - %v`, accptr, err)
 	}
 
-	res, err := a.client.Send(domain.MsgTypGroupJoin, data, s.Endpoint)
+	res, err := a.client.Send(models.TypGroupJoin, data, s.Endpoint)
 	if err != nil {
 		return nil, fmt.Errorf(`group-join request failed - %v`, err)
 	}
 	a.log.Debug(`group-join response received`, res)
 
-	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: domain.MsgTypGroupJoin, Data: []byte(res), Reply: nil})
+	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypGroupJoin, Data: []byte(res), Reply: nil})
 	if err != nil {
 		return nil, fmt.Errorf(`unpacking group-join response failed - %v`, err)
 	}
@@ -417,12 +417,12 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`packing subscribe request for %s failed - %v`, m.Label, err)
 	}
 
-	res, err := a.client.Send(domain.MsgTypSubscribe, data, s.Endpoint)
+	res, err := a.client.Send(models.TypSubscribe, data, s.Endpoint)
 	if err != nil {
 		return ``, fmt.Errorf(`sending subscribe message failed - %v`, err)
 	}
 
-	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: domain.MsgTypSubscribe, Data: []byte(res), Reply: nil})
+	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypSubscribe, Data: []byte(res), Reply: nil})
 	if err != nil {
 		return ``, fmt.Errorf(`reading subscribe didcomm response failed - %v`, err)
 	}

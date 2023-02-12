@@ -8,6 +8,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
+// compactor is an instance of zstandard compression algorithm
 type compactor struct {
 	zEncodr *zstd.Encoder
 	zDecodr *zstd.Decoder
@@ -27,7 +28,7 @@ func newCompactor() (*compactor, error) {
 	return &compactor{zEncodr: zstdEncoder, zDecodr: zstdDecoder}, nil
 }
 
-// packer is an internal wrapper for the packing process of didcomm messages
+// packer is an internal wrapper for the packing processes of group agent
 type packer struct {
 	*services
 	pckr servicesPkg.Packer

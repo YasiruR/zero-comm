@@ -2,7 +2,6 @@ package pubsub
 
 import (
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/domain/models"
 	zmqPkg "github.com/pebbe/zmq4"
 	"sync"
 )
@@ -10,6 +9,8 @@ import (
 const (
 	domainGlobal = `global`
 )
+
+type metadata map[string]string
 
 type zmqPeerKeys struct {
 	servr  string
@@ -40,14 +41,14 @@ func authenticator(label string, verbose bool) (*auth, error) {
 	}
 
 	a := &auth{id: label, keys: &sync.Map{}, RWMutex: &sync.RWMutex{}}
-	if err := a.generateCerts(models.Metadata{}); err != nil {
+	if err := a.generateCerts(metadata{}); err != nil {
 		return nil, fmt.Errorf(`initializing certficates failed - %v`, err)
 	}
 
 	return a, nil
 }
 
-func (a *auth) generateCerts(md models.Metadata) error {
+func (a *auth) generateCerts(_ metadata) error {
 	servPub, servPrvt, err := zmqPkg.NewCurveKeypair()
 	if err != nil {
 		return fmt.Errorf(`generating curve key pair for server failed - %v`, err)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/core/discovery"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/domain/services"
 	internalLog "github.com/YasiruR/didcomm-prober/log"
 	"github.com/tryfix/log"
@@ -174,7 +175,7 @@ func (r *runner) sendMsg() {
 	peer := strings.TrimSpace(r.input(`Recipient`))
 	msg := strings.TrimSpace(r.input(`Message`))
 
-	if err := r.prober.SendMessage(domain.MsgTypData, peer, msg); err != nil {
+	if err := r.prober.SendMessage(models.TypData, peer, msg); err != nil {
 		r.error(`sending message failed`, err)
 	}
 }
