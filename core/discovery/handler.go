@@ -36,7 +36,7 @@ func NewDiscoverer(c *domain.Container) *Discoverer {
 		log: c.Log,
 	}
 
-	d.server.AddHandler(domain.MsgTypQuery, d.queryChan, false)
+	d.server.AddHandler(models.TypQuery, d.queryChan, false)
 	go d.listen()
 	return d
 }
@@ -79,7 +79,7 @@ func (d *Discoverer) Query(endpoint, query, comment string) (fs []models.Feature
 		return nil, fmt.Errorf(`marshalling query feature message failed - %v`, err)
 	}
 
-	res, err := d.client.Send(domain.MsgTypQuery, byts, endpoint)
+	res, err := d.client.Send(models.TypQuery, byts, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf(`sending query message failed - %v`, err)
 	}

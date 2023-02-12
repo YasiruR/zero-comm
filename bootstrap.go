@@ -13,17 +13,34 @@ import (
 	"github.com/YasiruR/didcomm-prober/pubsub"
 	reqRepZmq "github.com/YasiruR/didcomm-prober/reqrep/zmq"
 	zmq "github.com/pebbe/zmq4"
+	log2 "log"
+	"net"
+	"os"
 	"strconv"
 )
 
 func setConfigs(args *domain.Args) *domain.Config {
-	//hostname := `http://localhost:`
-	hostname := `tcp://127.0.0.1:`
+	//hostname := `tcp://127.0.0.1:`
+	hn, err := os.Hostname()
+	if err != nil {
+		log2.Fatal(fmt.Sprintf(`fetching hostname failed - %v`, err))
+	}
+
+	ips, err := net.LookupIP(hn)
+	if err != nil {
+		log2.Fatal(fmt.Sprintf(`fetching ip address failed - %v`, err))
+	}
+
+	if len(ips) == 0 {
+		log2.Fatal(fmt.Sprintf(`could not find an ip address within the kernel`))
+	}
+	ip := `tcp://` + ips[0].String() + `:`
+
 	return &domain.Config{
 		Args:        args,
-		Hostname:    hostname,
-		InvEndpoint: hostname + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
-		PubEndpoint: hostname + strconv.Itoa(args.PubPort),
+		Hostname:    ip,
+		InvEndpoint: ip + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
+		PubEndpoint: ip + strconv.Itoa(args.PubPort),
 		LogLevel:    "DEBUG",
 	}
 }
@@ -68,9 +85,26 @@ func initContainer(cfg *domain.Config) *domain.Container {
 	}
 
 	c.Log.Info(fmt.Sprintf(`didcomm agent initialized with messaging port (%d) and publishing port (%d)`, c.Cfg.Port, c.Cfg.PubPort))
+
+	if c.Cfg.SingleQ {
+		c.Log.Info(`agent operates in single-queue mode for data messages`)
+	} else {
+		c.Log.Info(`agent operates with multiple-queues for data messages`)
+	}
+
 	return c
 }
 
-func shutdown(c *domain.Container) {
-	c.Server.Stop()
+func shutdown(c *domain.Container) error {
+	if err := c.Server.Stop(); err != nil {
+		return fmt.Errorf(`server shutdown failed - %v`, err)
+	}
+
+	if err := c.PubSub.Close(); err != nil {
+		return fmt.Errorf(`group-agent shutdown failed - %v`, err)
+	}
+
+	c.Log.Info(`graceful shutdown of agent completed successfully`)
+	os.Exit(0)
+	return nil
 }

@@ -12,5 +12,5 @@ const (
 // metadata is sent in a separate frame to preserve
 // backward and forward compatibility
 type metadata struct {
-	Type string `json:"type"`
+	Type int `json:"type"`
 }
