@@ -59,11 +59,7 @@ func (m *mocker) handleOOBInv(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//fmt.Println("ABOUT TO CALL ACCEPT", inv[0])
-
 	if err = m.probr.SyncAccept(inv[0]); err != nil {
 		m.log.Error(`mocker`, `invitation may be invalid, please try again`, err)
 	}
-
-	fmt.Println("DONEEEEEEE")
 }
