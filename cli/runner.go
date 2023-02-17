@@ -33,9 +33,21 @@ func ParseArgs() *domain.Args {
 	pub := flag.Int(`pub`, 0, `agent's publishing port'`)
 	v := flag.Bool(`v`, false, `logging`)
 	singleQ := flag.Bool(`single`, false, `enables single-queue mode for data messages`)
+	bufLat := flag.Int(`buf`, 500, `latency buffer for zmq in milli-seconds`)
+	mocker := flag.Bool(`mock`, true, `enables mocking functions`)
+	mockPort := flag.Int(`mock_port`, 7878, `port for mocking functions`)
 	flag.Parse()
 
-	return &domain.Args{Name: *n, Port: *p, PubPort: *pub, SingleQ: *singleQ, Verbose: *v}
+	return &domain.Args{
+		Name:     *n,
+		Port:     *p,
+		PubPort:  *pub,
+		SingleQ:  *singleQ,
+		ZmqBufMs: *bufLat,
+		Mocker:   *mocker,
+		MockPort: *mockPort,
+		Verbose:  *v,
+	}
 }
 
 func Init(c *domain.Container) {

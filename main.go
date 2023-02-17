@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/YasiruR/didcomm-prober/cli"
+	"github.com/YasiruR/didcomm-prober/reqrep/mock"
 	"os"
 	"os/signal"
 	"syscall"
@@ -24,6 +25,10 @@ func main() {
 		<-sig
 		shutdown(c)
 	}()
+
+	if c.Cfg.Mocker {
+		mock.Start(c)
+	}
 
 	cli.Init(c)
 }

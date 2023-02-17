@@ -7,11 +7,14 @@ import (
 )
 
 type Args struct {
-	Name    string
-	Port    int
-	Verbose bool
-	PubPort int
-	SingleQ bool
+	Name     string
+	Port     int
+	Verbose  bool
+	PubPort  int
+	SingleQ  bool
+	ZmqBufMs int
+	Mocker   bool
+	MockPort int
 }
 
 type Config struct {

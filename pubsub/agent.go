@@ -47,8 +47,9 @@ type Agent struct {
 	*internals
 	*compactor
 	*services
-	proc    *processor
-	outChan chan string
+	proc     *processor
+	outChan  chan string
+	zmqBufms int
 }
 
 func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
@@ -78,6 +79,7 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
 		compactor: compctr,
 		proc:      newProcessor(c.Cfg.Name, c, in, compctr),
 		outChan:   c.OutChan,
+		zmqBufms:  c.Cfg.ZmqBufMs,
 	}
 
 	a.start(c.Server)
@@ -210,7 +212,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	// publish status
-	time.Sleep(zmqLatencyBufMilliSec * time.Millisecond) // buffer for zmq subscription latency
+	time.Sleep(time.Duration(a.zmqBufms) * time.Millisecond) // buffer for zmq subscription latency
 	if err = a.notifyAll(topic, true, publisher); err != nil {
 		return fmt.Errorf(`publishing status active failed - %v`, err)
 	}
