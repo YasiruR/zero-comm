@@ -99,7 +99,7 @@ func initContainer(cfg *domain.Config) *domain.Container {
 
 func listen(c *domain.Container) {
 	for {
-		text := <-c.OutChan
-		fmt.Printf("-> %s\n", text)
+		_ = <-c.OutChan
+		//fmt.Printf("-> %s\n", text)
 	}
 }

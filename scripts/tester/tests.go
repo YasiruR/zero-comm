@@ -18,7 +18,7 @@ func joinLatency(buf int, singleQ, pub bool) {
 	for i := 0; i < numTests; i++ {
 		// init agent
 		c := initAgent(fmt.Sprintf(`tester-%d`, i), 6140+i, 6240+i, buf, singleQ)
-		fmt.Printf("tester agent initialized (name: %s, port: %d, pub-endpoint: %s)\n", c.Cfg.Name, c.Cfg.Port, c.Cfg.PubEndpoint)
+		fmt.Printf("Tester agent initialized (name: %s, port: %d, pub-endpoint: %s)\n", c.Cfg.Name, c.Cfg.Port, c.Cfg.PubEndpoint)
 
 		go listen(c)
 		go func(c *domain.Container) {
@@ -46,15 +46,13 @@ func joinLatency(buf int, singleQ, pub bool) {
 			log.Fatal(`tester `, err)
 		}
 
-		total += time.Since(start).Milliseconds()
+		elapsed := time.Since(start).Milliseconds()
+		fmt.Printf("Attempt %d: %d ms\n", i, elapsed)
+		total += elapsed
 
 		if err = c.PubSub.Leave(group[0].topic); err != nil {
 			log.Fatalln(`tester `, err)
 		}
-
-		//if err = shutdown(c); err != nil {
-		//	log.Fatalln(err)
-		//}
 	}
 
 	fmt.Println(`Average join-latency (ms): `, float64(total)/numTests)

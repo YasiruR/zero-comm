@@ -35,8 +35,13 @@ func ParseArgs() *domain.Args {
 	singleQ := flag.Bool(`single`, false, `enables single-queue mode for data messages`)
 	bufLat := flag.Int(`buf`, 500, `latency buffer for zmq in milli-seconds`)
 	mocker := flag.Bool(`mock`, true, `enables mocking functions`)
-	mockPort := flag.Int(`mock_port`, 7878, `port for mocking functions`)
+	mockPort := flag.Int(`mock_port`, 0, `port for mocking functions`)
 	flag.Parse()
+
+	if *mocker == true && *mockPort == 0 {
+		fmt.Println("mock server port should be provided when enabled (see -h or --help for details)")
+		os.Exit(0)
+	}
 
 	return &domain.Args{
 		Name:     *n,
