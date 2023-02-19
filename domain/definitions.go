@@ -10,6 +10,7 @@ const (
 	InvitationEndpoint = `` // used in zmq for all endpoints
 	ExchangeEndpoint   = `/did-exchange/`
 	OOBEndpoint        = `/oob/`
+	KillEndpoint       = `/kill`
 )
 
 type Role int

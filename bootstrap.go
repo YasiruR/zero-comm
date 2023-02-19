@@ -94,17 +94,3 @@ func initContainer(cfg *domain.Config) *domain.Container {
 
 	return c
 }
-
-func shutdown(c *domain.Container) error {
-	if err := c.Server.Stop(); err != nil {
-		return fmt.Errorf(`server shutdown failed - %v`, err)
-	}
-
-	if err := c.PubSub.Close(); err != nil {
-		return fmt.Errorf(`group-agent shutdown failed - %v`, err)
-	}
-
-	c.Log.Info(`graceful shutdown of agent completed successfully`)
-	os.Exit(0)
-	return nil
-}

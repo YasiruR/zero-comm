@@ -1,9 +1,11 @@
 package domain
 
 import (
+	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/tryfix/log"
+	"os"
 )
 
 type Args struct {
@@ -39,4 +41,18 @@ type Container struct {
 	OutChan      chan string
 	Log          log.Logger
 	PubSub       services.GroupAgent
+}
+
+func (c *Container) Stop() error {
+	if err := c.Server.Stop(); err != nil {
+		return fmt.Errorf(`server shutdown failed - %v`, err)
+	}
+
+	if err := c.PubSub.Close(); err != nil {
+		return fmt.Errorf(`group-agent shutdown failed - %v`, err)
+	}
+
+	c.Log.Info(`graceful shutdown of agent completed successfully`)
+	os.Exit(0)
+	return nil
 }

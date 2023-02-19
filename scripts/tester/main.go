@@ -39,4 +39,6 @@ func main() {
 	case `join`:
 		joinLatency(int(buf), singleQ, true)
 	}
+
+	// todo throughput
 }

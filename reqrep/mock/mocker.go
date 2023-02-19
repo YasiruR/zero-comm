@@ -3,7 +3,6 @@ package mock
 import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
-	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/gorilla/mux"
 	"github.com/tryfix/log"
 	"io/ioutil"
@@ -14,20 +13,19 @@ import (
 )
 
 type mocker struct {
-	log    log.Logger
-	probr  services.Agent
-	pubSub services.GroupAgent
+	c   *domain.Container
+	log log.Logger
 }
 
 func Start(c *domain.Container) {
 	m := mocker{
-		log:    c.Log,
-		probr:  c.Prober,
-		pubSub: c.PubSub,
+		c:   c,
+		log: c.Log,
 	}
 
 	r := mux.NewRouter()
 	r.HandleFunc(domain.OOBEndpoint, m.handleOOBInv).Methods(http.MethodPost)
+	r.HandleFunc(domain.KillEndpoint, m.handleKill).Methods(http.MethodPost)
 
 	go func(mockPort int, r *mux.Router) {
 		if err := http.ListenAndServe(":"+strconv.Itoa(mockPort), r); err != nil {
@@ -59,7 +57,13 @@ func (m *mocker) handleOOBInv(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = m.probr.SyncAccept(inv[0]); err != nil {
+	if err = m.c.Prober.SyncAccept(inv[0]); err != nil {
 		m.log.Error(`mocker`, `invitation may be invalid, please try again`, err)
+	}
+}
+
+func (m *mocker) handleKill(_ http.ResponseWriter, _ *http.Request) {
+	if err := m.c.Stop(); err != nil {
+		m.log.Error(`mocker`, `terminating container failed`, err)
 	}
 }
