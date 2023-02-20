@@ -1,13 +1,8 @@
 #!/bin/bash
 
-for node in $(cat started_nodes.txt); do
-#    if [[ $counter == target ]]
-#    then
-#      break
-#    fi
+while IFS="," read -r label ip ; do
+  curl -X POST "http://${ip}/kill"
+  screen -S "$label" -X quit
+done < started_nodes.csv
 
-    curl -X POST "http://${node}/kill"
-#    counter=$((counter+1))
-done
-
-rm started_nodes.txt
+rm started_nodes.csv

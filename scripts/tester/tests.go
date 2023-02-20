@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/reqrep/mock"
 	"log"
 	"net/http"
 	"time"
@@ -34,7 +35,7 @@ func joinLatency(buf int, singleQ, pub bool) {
 		}
 
 		// send inv to oob endpoint - new
-		if _, err = http.DefaultClient.Post(group[0].mockEndpoint+domain.OOBEndpoint, `application/octet-stream`, bytes.NewBufferString(url)); err != nil {
+		if _, err = http.DefaultClient.Post(group[0].mockEndpoint+mock.ConnectEndpoint, `application/octet-stream`, bytes.NewBufferString(url)); err != nil {
 			log.Fatal(`tester `, err)
 		}
 
