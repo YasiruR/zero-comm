@@ -200,7 +200,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	a.gs.addMembr(topic, joiner)
-	if err = a.gs.setConsistency(topic, domain.ConsistencyLevel(group.Consistency)); err != nil {
+	if err = a.gs.setConsistency(topic, group.Consistency); err != nil {
 		return fmt.Errorf(`setting consistency failed - %v`, err)
 	}
 
@@ -219,8 +219,10 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	if len(group.Members) > 1 {
-		// todo set group consistency level (strict or weak) and return if strict
 		if err = a.verifyJoin(acceptor, group.Members, hashes); err != nil {
+			if a.gs.consistency(topic) == domain.StrictConsistent {
+				return fmt.Errorf(`join failed due to inconsistent view of the group - %v`, err)
+			}
 			a.log.Warn(fmt.Sprintf(`group verification failed but proceeded with registration - %v`, err))
 		}
 	}
@@ -264,6 +266,7 @@ func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checks
 		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
 	a.subs.add(topic, m.Label, s.PubKey)
+
 	return checksum, nil
 }
 
