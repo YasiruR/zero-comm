@@ -19,22 +19,16 @@ type processor struct {
 	probr   servicesPkg.Agent
 	log     log.Logger
 	outChan chan string
-
-	// todo internal services
 	*internals
-	*compactor
-	*syncer
 }
 
-func newProcessor(label string, c *domain.Container, in *internals, cmpctr *compactor, syncr *syncer) *processor {
+func newProcessor(label string, c *domain.Container, in *internals) *processor {
 	return &processor{
 		myLabel:   label,
 		probr:     c.Prober,
 		internals: in,
 		log:       c.Log,
 		outChan:   c.OutChan,
-		compactor: cmpctr,
-		syncer:    syncr,
 	}
 }
 
@@ -186,8 +180,8 @@ func (p *processor) data(topic, msg string) error {
 		return fmt.Errorf(`reading subscribed message failed - %v`, err)
 	}
 
-	if p.syncer != nil {
-		data, err = p.syncer.parse(data)
+	if p.syncr != nil {
+		data, err = p.syncr.parse(data)
 		if err != nil {
 			return fmt.Errorf(`parsing ordered data message failed - %v`, err)
 		}
@@ -198,7 +192,7 @@ func (p *processor) data(topic, msg string) error {
 }
 
 func (p *processor) extractStatus(msg string) (*messages.Status, error) {
-	out, err := p.zDecodr.DecodeAll([]byte(msg), nil)
+	out, err := p.compactr.zDecodr.DecodeAll([]byte(msg), nil)
 	if err != nil {
 		return nil, fmt.Errorf(`decode error - %v`, err)
 	}

@@ -30,19 +30,19 @@ type services struct {
 }
 
 type internals struct {
-	valdtr *validator
-	zmq    *zmq
-	gs     *groupStore
-	subs   *subStore
-	auth   *auth
-	packr  *packer
-	syncr  *syncer
+	valdtr   *validator
+	zmq      *zmq
+	gs       *groupStore
+	subs     *subStore
+	auth     *auth
+	packr    *packer
+	syncr    *syncer
+	compactr *compactor
 }
 
 type Agent struct {
 	*state
 	*internals
-	*compactor
 	*services
 	proc     *processor
 	outChan  chan string
@@ -53,11 +53,6 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
 	in, err := initInternals(zmqCtx, c)
 	if err != nil {
 		return nil, fmt.Errorf(`initializing internal services of group agent failed - %v`, err)
-	}
-
-	compctr, err := newCompactor()
-	if err != nil {
-		return nil, fmt.Errorf(`initializing compressor failed - %v`, err)
 	}
 
 	a := &Agent{
@@ -73,10 +68,9 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
 			client: c.Client,
 			log:    c.Log,
 		},
-		compactor: compctr,
-		proc:      newProcessor(c.Cfg.Name, c, in, compctr, in.syncr),
-		outChan:   c.OutChan,
-		zmqBufms:  c.Cfg.ZmqBufMs,
+		proc:     newProcessor(c.Cfg.Name, c, in),
+		outChan:  c.OutChan,
+		zmqBufms: c.Cfg.ZmqBufMs,
 	}
 
 	a.start(c.Server)
@@ -87,6 +81,11 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
 func initInternals(zmqCtx *zmqPkg.Context, c *domain.Container) (*internals, error) {
 	gs := newGroupStore()
 	syncr := newSyncer(c.Cfg.Sync)
+
+	compctr, err := newCompactor()
+	if err != nil {
+		return nil, fmt.Errorf(`initializing compressor failed - %v`, err)
+	}
 
 	transport, err := newZmqTransport(zmqCtx, gs, c)
 	if err != nil {
@@ -107,13 +106,14 @@ func initInternals(zmqCtx *zmqPkg.Context, c *domain.Container) (*internals, err
 	}
 
 	return &internals{
-		subs:   newSubStore(),
-		gs:     gs,
-		auth:   authn,
-		zmq:    transport,
-		syncr:  syncr,
-		valdtr: newValidator(c.Log),
-		packr:  newPacker(c, syncr),
+		subs:     newSubStore(),
+		gs:       gs,
+		auth:     authn,
+		zmq:      transport,
+		syncr:    syncr,
+		compactr: compctr,
+		valdtr:   newValidator(c.Log),
+		packr:    newPacker(c, syncr),
 	}, nil
 }
 
@@ -516,23 +516,9 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 		return nil, fmt.Errorf(`marshalling status message failed - %v`, err)
 	}
 
-	cmprsd := a.zEncodr.EncodeAll(encodedStatus, make([]byte, 0, len(encodedStatus)))
+	cmprsd := a.compactr.zEncodr.EncodeAll(encodedStatus, make([]byte, 0, len(encodedStatus)))
 	a.log.Trace(fmt.Sprintf(`compressed status message (from %d to %d #bytes)`, len(encodedStatus), len(cmprsd)))
 	return cmprsd, nil
-}
-
-func (a *Agent) parseMembrStatus(msg string) (*messages.Status, error) {
-	frames := strings.Split(msg, " ")
-	if len(frames) != 2 {
-		return nil, fmt.Errorf(`received a message (%v) with an invalid format - frame count should be 2`, msg)
-	}
-
-	var ms messages.Status
-	if err := json.Unmarshal([]byte(frames[1]), &ms); err != nil {
-		return nil, fmt.Errorf(`unmarshalling publisher status failed (msg: %s) - %v`, frames[1], err)
-	}
-
-	return &ms, nil
 }
 
 func (a *Agent) Leave(topic string) error {
