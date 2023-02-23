@@ -3,7 +3,7 @@ package discovery
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/domain/services"
@@ -22,7 +22,7 @@ type Discoverer struct {
 	log      log.Logger
 }
 
-func NewDiscoverer(c *domain.Container) *Discoverer {
+func NewDiscoverer(c *container.Container) *Discoverer {
 	d := &Discoverer{
 		queryChan: make(chan models.Message),
 		client:    c.Client,

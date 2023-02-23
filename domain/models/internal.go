@@ -26,3 +26,5 @@ type Member struct {
 	Inv         string `json:"inv"`
 	PubEndpoint string `json:"pubEndpoint"`
 }
+
+// todo check if group struct is required

@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"sync"
 )
@@ -61,12 +62,15 @@ type groupStore struct {
 	// nested map for group state where primary key is the topic
 	// and secondary is the member's label
 	states map[string]map[string]models.Member
+	// consistency levels for each group
+	consLevels map[string]domain.ConsistencyLevel // todo changing this maliciously is a threat?
 }
 
 func newGroupStore() *groupStore {
 	return &groupStore{
-		RWMutex: &sync.RWMutex{},
-		states:  map[string]map[string]models.Member{},
+		RWMutex:    &sync.RWMutex{},
+		states:     map[string]map[string]models.Member{},
+		consLevels: map[string]domain.ConsistencyLevel{},
 	}
 }
 
@@ -132,4 +136,24 @@ func (g *groupStore) membr(topic, label string) *models.Member {
 		}
 	}
 	return nil
+}
+
+func (g *groupStore) setConsistency(topic string, cl domain.ConsistencyLevel) error {
+	g.Lock()
+	defer g.Unlock()
+
+	if !cl.Valid() {
+		return fmt.Errorf(`invalid consistency level - %s`, cl)
+	}
+
+	g.consLevels[topic] = cl
+	fmt.Println("CONSISTENCY LEVEL SET", cl)
+
+	return nil
+}
+
+func (g *groupStore) consistency(topic string) domain.ConsistencyLevel {
+	g.RLock()
+	defer g.RUnlock()
+	return g.consLevels[topic]
 }

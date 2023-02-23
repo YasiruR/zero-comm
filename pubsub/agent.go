@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
@@ -49,7 +50,7 @@ type Agent struct {
 	zmqBufms int
 }
 
-func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
+func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
 	in, err := initInternals(zmqCtx, c)
 	if err != nil {
 		return nil, fmt.Errorf(`initializing internal services of group agent failed - %v`, err)
@@ -78,7 +79,7 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
 }
 
 // initInternals initializes the internal components required by the group agent
-func initInternals(zmqCtx *zmqPkg.Context, c *domain.Container) (*internals, error) {
+func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, error) {
 	gs := newGroupStore()
 	syncr := newSyncer(c.Cfg.Sync)
 
@@ -141,7 +142,11 @@ func (a *Agent) start(srvr servicesPkg.Server) {
 
 // Create constructs a group including creator's invitation
 // for the group and its models.Member
-func (a *Agent) Create(topic string, publisher bool) error {
+func (a *Agent) Create(topic string, publisher bool, cl domain.ConsistencyLevel) error {
+	if cl == `` {
+		cl = domain.NoConsistency
+	}
+
 	inv, err := a.probr.Invite()
 	if err != nil {
 		return fmt.Errorf(`generating invitation failed - %v`, err)
@@ -157,6 +162,10 @@ func (a *Agent) Create(topic string, publisher bool) error {
 
 	a.invs[topic] = inv
 	a.gs.addMembr(topic, m)
+	if err = a.gs.setConsistency(topic, cl); err != nil {
+		return fmt.Errorf(`updating consistency failed - %v`, err)
+	}
+
 	if err = a.valdtr.updateHash(topic, []models.Member{m}); err != nil {
 		return fmt.Errorf(`updating checksum on group-create failed - %v`, err)
 	}
@@ -189,7 +198,11 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		Inv:         inv,
 		PubEndpoint: a.pubEndpoint,
 	}
+
 	a.gs.addMembr(topic, joiner)
+	if err = a.gs.setConsistency(topic, domain.ConsistencyLevel(group.Consistency)); err != nil {
+		return fmt.Errorf(`setting consistency failed - %v`, err)
+	}
 
 	hashes := make(map[string]string)
 	for _, m := range group.Members {
@@ -206,6 +219,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	if len(group.Members) > 1 {
+		// todo set group consistency level (strict or weak) and return if strict
 		if err = a.verifyJoin(acceptor, group.Members, hashes); err != nil {
 			a.log.Warn(fmt.Sprintf(`group verification failed but proceeded with registration - %v`, err))
 		}

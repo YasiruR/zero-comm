@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/YasiruR/didcomm-prober/cli"
-	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/reqrep/mock"
 	"os"
 	"os/signal"
@@ -20,7 +20,7 @@ func main() {
 		}
 	}()
 
-	go func(c *domain.Container) {
+	go func(c *container.Container) {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGKILL)
 		<-sig

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
@@ -22,7 +23,7 @@ type processor struct {
 	*internals
 }
 
-func newProcessor(label string, c *domain.Container, in *internals) *processor {
+func newProcessor(label string, c *container.Container, in *internals) *processor {
 	return &processor{
 		myLabel:   label,
 		probr:     c.Prober,
@@ -52,9 +53,10 @@ func (p *processor) joinReqs(msg *models.Message) error {
 	}
 
 	byts, err := json.Marshal(messages.ResGroupJoin{
-		Id:      uuid.New().String(),
-		Type:    messages.JoinResponseV1,
-		Members: p.gs.membrs(req.Topic),
+		Id:          uuid.New().String(),
+		Type:        messages.JoinResponseV1,
+		Consistency: string(p.gs.consistency(req.Topic)),
+		Members:     p.gs.membrs(req.Topic),
 		//Members: p.addIntruder(req.Topic),
 	})
 	if err != nil {

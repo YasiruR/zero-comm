@@ -9,8 +9,9 @@ const (
 )
 
 type reqCreate struct {
-	Topic     string `json:"topic"`
-	Publisher bool   `json:"publisher"`
+	Topic       string `json:"topic"`
+	Publisher   bool   `json:"publisher"`
+	Consistency string `json:"consistency"`
 }
 
 type reqJoin struct {

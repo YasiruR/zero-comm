@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/gorilla/mux"
 	"github.com/tryfix/log"
 	"io/ioutil"
@@ -14,11 +15,11 @@ import (
 )
 
 type mocker struct {
-	ctr *domain.Container
+	ctr *container.Container
 	log log.Logger
 }
 
-func Start(c *domain.Container) {
+func Start(c *container.Container) {
 	m := mocker{
 		ctr: c,
 		log: c.Log,
@@ -91,7 +92,7 @@ func (m *mocker) handleCreate(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = m.ctr.PubSub.Create(req.Topic, req.Publisher); err != nil {
+	if err = m.ctr.PubSub.Create(req.Topic, req.Publisher, domain.ConsistencyLevel(req.Consistency)); err != nil {
 		m.log.Error(`mocker`, err)
 	}
 }

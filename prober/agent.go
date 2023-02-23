@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/domain/services"
@@ -36,7 +37,7 @@ type Prober struct {
 	syncConns       map[string]chan bool
 }
 
-func NewProber(c *domain.Container) (p *Prober, err error) {
+func NewProber(c *container.Container) (p *Prober, err error) {
 	p = &Prober{
 		invEndpoint:     c.Cfg.InvEndpoint,
 		exchEndpoint:    c.Cfg.InvEndpoint,

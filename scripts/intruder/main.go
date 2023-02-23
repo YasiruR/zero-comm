@@ -7,7 +7,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/core/did"
 	"github.com/YasiruR/didcomm-prober/core/invitation"
 	"github.com/YasiruR/didcomm-prober/crypto"
-	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	log3 "github.com/YasiruR/didcomm-prober/log"
 	"github.com/YasiruR/didcomm-prober/prober"
@@ -115,8 +115,8 @@ func init() {
 		logger.Fatal(fmt.Sprintf(`zmq context initialization failed - %v`, err))
 	}
 
-	cfg := domain.Config{
-		Args: &domain.Args{
+	cfg := container.Config{
+		Args: &container.Args{
 			Name:    "intruder",
 			Port:    9090,
 			Verbose: true,
@@ -124,12 +124,12 @@ func init() {
 			SingleQ: false,
 		},
 		Hostname:    ip,
-		InvEndpoint: ip + strconv.Itoa(9090) + domain.InvitationEndpoint,
+		InvEndpoint: ip + strconv.Itoa(9090),
 		PubEndpoint: ip + strconv.Itoa(9091),
 		LogLevel:    "DEBUG",
 	}
 
-	c := &domain.Container{
+	c := &container.Container{
 		Cfg:          &cfg,
 		KeyManager:   km,
 		Packer:       packer,

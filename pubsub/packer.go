@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
 )
 
@@ -14,7 +15,7 @@ type packer struct {
 	pckr servicesPkg.Packer
 }
 
-func newPacker(c *domain.Container, syncr *syncer) *packer {
+func newPacker(c *container.Container, syncr *syncer) *packer {
 	return &packer{
 		services: &services{
 			km:    c.KeyManager,

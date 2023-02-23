@@ -1,4 +1,4 @@
-package domain
+package container
 
 import (
 	"fmt"
@@ -17,7 +17,8 @@ type Args struct {
 	ZmqBufMs int
 	Mocker   bool
 	MockPort int
-	Sync     bool
+
+	Sync bool
 }
 
 type Config struct {

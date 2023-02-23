@@ -3,6 +3,7 @@ package pubsub
 import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
@@ -25,7 +26,7 @@ type zmq struct {
 	log    log.Logger
 }
 
-func newZmqTransport(zmqCtx *zmqPkg.Context, gs *groupStore, c *domain.Container) (*zmq, error) {
+func newZmqTransport(zmqCtx *zmqPkg.Context, gs *groupStore, c *container.Container) (*zmq, error) {
 	pubSkt, err := zmqCtx.NewSocket(zmqPkg.PUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)

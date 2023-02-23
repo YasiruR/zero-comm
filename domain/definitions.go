@@ -10,10 +10,26 @@ const (
 	TopicPrefix = `urn:didcomm-queue:`
 )
 
+type ConsistencyLevel string
+
 const (
-	InvitationEndpoint = `` // used in zmq for all endpoints
-	ExchangeEndpoint   = `/did-exchange`
+	NoConsistency    ConsistencyLevel = `none`
+	JoinConsistent   ConsistencyLevel = `join`
+	StrictConsistent ConsistencyLevel = `all`
 )
+
+func (c ConsistencyLevel) Valid() bool {
+	switch c {
+	case NoConsistency:
+		return true
+	case JoinConsistent:
+		return true
+	case StrictConsistent:
+		return true
+	}
+
+	return false
+}
 
 type Role int
 

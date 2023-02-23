@@ -39,7 +39,8 @@ type ReqGroupJoin struct {
 }
 
 type ResGroupJoin struct {
-	Id      string          `json:"@id"`
-	Type    string          `json:"@type"`
-	Members []models.Member `json:"members"` // includes acceptor
+	Id          string          `json:"@id"`
+	Type        string          `json:"@type"`
+	Consistency string          `json:"consistency"` // todo set to consistelevel type
+	Members     []models.Member `json:"members"`     // includes acceptor
 }

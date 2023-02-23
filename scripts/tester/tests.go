@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/reqrep/mock"
 	"log"
 	"net/http"
@@ -22,7 +22,7 @@ func joinLatency(buf int, singleQ, pub bool) {
 		fmt.Printf("Tester agent initialized (name: %s, port: %d, pub-endpoint: %s)\n", c.Cfg.Name, c.Cfg.Port, c.Cfg.PubEndpoint)
 
 		go listen(c)
-		go func(c *domain.Container) {
+		go func(c *container.Container) {
 			if err := c.Server.Start(); err != nil {
 				c.Log.Fatal(`tester `, `failed to start the server`, err)
 			}

@@ -1,6 +1,7 @@
 #!/bin/bash
 
 topic=$1
+consistency=$2
 counter=0
 first_ip=''
 first_label=''
@@ -37,7 +38,7 @@ while IFS="," read -r label ip pub ; do
   # first member creates the group
   if [[ $counter == 0 ]]
   then
-    data='{"topic": "'"$topic"'", "publisher": '$is_pub'}'
+    data='{"topic": "'"$topic"'", "publisher": '$is_pub', "consistency": "'"$consistency"'"}'
     curl -X POST --header 'Content-Type: application/json' --data-raw "$data" "${ip}/create"
 
     counter=$((counter+1))

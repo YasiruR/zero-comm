@@ -30,7 +30,8 @@ type groupMsg struct {
 // to the group will be impacted by syncer and can be enabled by command
 // line arguments of the agent.
 type syncer struct {
-	id     int
+	id int
+	// todo topic map
 	lampTs int64
 	*sync.RWMutex
 }
@@ -72,6 +73,9 @@ func (s *syncer) message(data []byte) (msg []byte, err error) {
 		lampTs = s.lampTs + 1
 	}
 	s.RUnlock()
+
+	// todo if checksum is not equal to last received, then wait (ot let notify) until right before returning here
+	// should only be done if strong consistency is required
 
 	return json.Marshal(groupMsg{Ts: ts{Id: s.id, LampTs: lampTs}, Data: data})
 }

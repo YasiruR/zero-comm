@@ -6,7 +6,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/core/did"
 	"github.com/YasiruR/didcomm-prober/core/invitation"
 	"github.com/YasiruR/didcomm-prober/crypto"
-	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/log"
 	"github.com/YasiruR/didcomm-prober/prober"
@@ -19,7 +19,7 @@ import (
 	"strconv"
 )
 
-func setConfigs(args *domain.Args) *domain.Config {
+func setConfigs(args *container.Args) *container.Config {
 	//hostname := `tcp://127.0.0.1:`
 	hn, err := os.Hostname()
 	if err != nil {
@@ -36,16 +36,16 @@ func setConfigs(args *domain.Args) *domain.Config {
 	}
 	ip := `tcp://` + ips[0].String() + `:`
 
-	return &domain.Config{
+	return &container.Config{
 		Args:        args,
 		Hostname:    ip,
-		InvEndpoint: ip + strconv.Itoa(args.Port) + domain.InvitationEndpoint,
+		InvEndpoint: ip + strconv.Itoa(args.Port),
 		PubEndpoint: ip + strconv.Itoa(args.PubPort),
 		LogLevel:    "DEBUG",
 	}
 }
 
-func initContainer(cfg *domain.Config) *domain.Container {
+func initContainer(cfg *container.Config) *container.Container {
 	logger := log.NewLogger(cfg.Args.Verbose, 3)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
@@ -54,7 +54,7 @@ func initContainer(cfg *domain.Config) *domain.Container {
 		logger.Fatal(fmt.Sprintf(`zmq context initialization failed - %v`, err))
 	}
 
-	c := &domain.Container{
+	c := &container.Container{
 		Cfg:          cfg,
 		KeyManager:   km,
 		Packer:       packer,
