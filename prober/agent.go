@@ -86,7 +86,7 @@ func (p *Prober) listen(s *streams) {
 				p.log.Error(err)
 			}
 		case m := <-s.data:
-			if _, err := p.ReadMessage(m); err != nil {
+			if _, _, err := p.ReadMessage(m); err != nil {
 				p.log.Error(err)
 			}
 		}
@@ -347,26 +347,26 @@ func (p *Prober) SendMessage(mt models.MsgType, to, text string) error {
 	return nil
 }
 
-func (p *Prober) ReadMessage(msg models.Message) (text string, err error) {
+func (p *Prober) ReadMessage(msg models.Message) (sender, text string, err error) {
 	peerName, err := p.peerByMsg(msg.Data)
 	if err != nil {
 		//p.log.Debug(fmt.Sprintf(`getting peer info failed - %v`, err))
-		return ``, fmt.Errorf(`getting peer info failed - %v`, err)
+		return ``, ``, fmt.Errorf(`getting peer info failed - %v`, err)
 	}
 
 	ownPubKey, err := p.ks.PublicKey(peerName)
 	if err != nil {
-		return ``, fmt.Errorf(`getting public key for connection with %s failed - %v`, peerName, err)
+		return ``, ``, fmt.Errorf(`getting public key for connection with %s failed - %v`, peerName, err)
 	}
 
 	ownPrvKey, err := p.ks.PrivateKey(peerName)
 	if err != nil {
-		return ``, fmt.Errorf(`getting private key for connection with %s failed - %v`, peerName, err)
+		return ``, ``, fmt.Errorf(`getting private key for connection with %s failed - %v`, peerName, err)
 	}
 
 	textBytes, err := p.packer.Unpack(msg.Data, ownPubKey, ownPrvKey)
 	if err != nil {
-		return ``, fmt.Errorf(`unpacking message failed - %v`, err)
+		return ``, ``, fmt.Errorf(`unpacking message failed - %v`, err)
 	}
 
 	if msg.Type == models.TypData {
@@ -375,7 +375,7 @@ func (p *Prober) ReadMessage(msg models.Message) (text string, err error) {
 		p.log.Trace(fmt.Sprintf(`message received for type '%s' - %s`, msg.Type, string(textBytes)))
 	}
 
-	return string(textBytes), nil
+	return peerName, string(textBytes), nil
 }
 
 func (p *Prober) setConnPrereqs(peer string) (pubKey, prvKey []byte, err error) {

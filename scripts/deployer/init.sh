@@ -1,7 +1,7 @@
 #!/bin/bash
 
-buf=$1
-num_nodes=$2
+num_nodes=$1
+buf=$2
 mode=$3
 user=$4
 key_path=$5

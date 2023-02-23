@@ -10,6 +10,7 @@ const (
 	TypQuery
 	TypGroupJoin
 	TypGroupStatus
+	TypGroupMsg
 )
 
 func (m MsgType) String() string {

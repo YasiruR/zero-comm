@@ -7,6 +7,10 @@ const (
 )
 
 const (
+	TopicPrefix = `urn:didcomm-queue:`
+)
+
+const (
 	InvitationEndpoint = `` // used in zmq for all endpoints
 	ExchangeEndpoint   = `/did-exchange`
 )

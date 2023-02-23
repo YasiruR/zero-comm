@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
-	"strings"
 )
 
 // processor implements the handlers functions for incoming messages
@@ -20,11 +19,14 @@ type processor struct {
 	probr   servicesPkg.Agent
 	log     log.Logger
 	outChan chan string
+
+	// todo internal services
 	*internals
 	*compactor
+	*syncer
 }
 
-func newProcessor(label string, c *domain.Container, in *internals, cmpctr *compactor) *processor {
+func newProcessor(label string, c *domain.Container, in *internals, cmpctr *compactor, syncr *syncer) *processor {
 	return &processor{
 		myLabel:   label,
 		probr:     c.Prober,
@@ -32,11 +34,12 @@ func newProcessor(label string, c *domain.Container, in *internals, cmpctr *comp
 		log:       c.Log,
 		outChan:   c.OutChan,
 		compactor: cmpctr,
+		syncer:    syncr,
 	}
 }
 
 func (p *processor) joinReqs(msg *models.Message) error {
-	body, err := p.probr.ReadMessage(*msg)
+	_, body, err := p.probr.ReadMessage(*msg)
 	if err != nil {
 		return fmt.Errorf(`reading group-join authcrypt request failed - %v`, err)
 	}
@@ -64,7 +67,7 @@ func (p *processor) joinReqs(msg *models.Message) error {
 		return fmt.Errorf(`marshalling group-join response failed - %v`, err)
 	}
 
-	packedMsg, err := p.packr.pack(req.Label, nil, byts)
+	packedMsg, err := p.packr.pack(false, req.Label, nil, byts)
 	if err != nil {
 		return fmt.Errorf(`packing group-join response failed - %v`, err)
 	}
@@ -77,7 +80,7 @@ func (p *processor) joinReqs(msg *models.Message) error {
 }
 
 func (p *processor) subscriptions(msg *models.Message) error {
-	unpackedMsg, err := p.probr.ReadMessage(*msg)
+	_, unpackedMsg, err := p.probr.ReadMessage(*msg)
 	if err != nil {
 		return fmt.Errorf(`reading subscribe message failed - %v`, err)
 	}
@@ -121,13 +124,8 @@ func (p *processor) subscriptions(msg *models.Message) error {
 	return nil
 }
 
-func (p *processor) states(msg string) error {
-	frames := strings.SplitN(msg, ` `, 2)
-	if len(frames) != 2 {
-		return fmt.Errorf(`received an invalid status message (length=%v)`, len(frames))
-	}
-
-	sm, err := p.extractStatus(frames[1])
+func (p *processor) states(_, msg string) error {
+	sm, err := p.extractStatus(msg)
 	if err != nil {
 		return fmt.Errorf(`extracting status message failed - %v`, err)
 	}
@@ -151,7 +149,7 @@ func (p *processor) states(msg string) error {
 		}
 	}(sm.Topic)
 
-	strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
+	_, strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
 	if err != nil {
 		return fmt.Errorf(`reading status didcomm message failed - %v`, err)
 	}
@@ -182,17 +180,20 @@ func (p *processor) states(msg string) error {
 	return nil
 }
 
-func (p *processor) data(msg string) error {
-	frames := strings.Split(msg, ` `)
-	if len(frames) != 2 {
-		return fmt.Errorf(`received an invalid subscribed message (%v)`, frames)
-	}
-
-	_, err := p.probr.ReadMessage(models.Message{Type: models.TypData, Data: []byte(frames[1])})
+func (p *processor) data(topic, msg string) error {
+	sender, data, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupMsg, Data: []byte(msg)})
 	if err != nil {
 		return fmt.Errorf(`reading subscribed message failed - %v`, err)
 	}
 
+	if p.syncer != nil {
+		data, err = p.syncer.parse(data)
+		if err != nil {
+			return fmt.Errorf(`parsing ordered data message failed - %v`, err)
+		}
+	}
+
+	p.outChan <- fmt.Sprintf(`%s sent in group '%s': %s`, sender, p.zmq.groupNameByDataTopic(topic), data)
 	return nil
 }
 
@@ -234,7 +235,7 @@ func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.
 		return fmt.Errorf(`marshalling subscribe response failed - %v`, err)
 	}
 
-	packedMsg, err := p.packr.pack(m.Label, nil, resByts)
+	packedMsg, err := p.packr.pack(false, m.Label, nil, resByts)
 	if err != nil {
 		return fmt.Errorf(`packing subscribe response failed - %v`, err)
 	}
@@ -249,7 +250,7 @@ func (p *processor) validJoiner(label string) bool {
 }
 
 //func (p *processor) addIntruder(topic string) []models.Member {
-//	return append(a.gs.membrs(topic),
+//	return append(p.gs.membrs(topic),
 //		models.Member{
 //			Active:      true,
 //			Publisher:   true,

@@ -6,6 +6,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
+	"strings"
 )
 
 type sktType int
@@ -90,10 +91,11 @@ func (z *zmq) connect(initRole domain.Role, initLabel, topic string, m models.Me
 	return nil
 }
 
-func (z *zmq) publish(topic string, data []byte) error {
-	if _, err := z.pub.SendMessage(fmt.Sprintf(`%s %s`, topic, string(data))); err != nil {
+func (z *zmq) publish(topic string, data []byte) (err error) {
+	if _, err = z.pub.SendMessage(fmt.Sprintf(`%s %s`, topic, string(data))); err != nil {
 		return fmt.Errorf(`publishing message (%s) failed - %v`, string(data), err)
 	}
+
 	return nil
 }
 
@@ -159,16 +161,26 @@ func (z *zmq) topicExists(topic string) bool {
 // constructs the URN in the format of 'urn:<NID>:<NSS>' (https://www.rfc-editor.org/rfc/rfc2141#section-2)
 func (z *zmq) dataTopic(topic, pub, sub string) string {
 	if z.singlQ {
-		return `urn:didcomm-queue:` + topic + `:data`
+		return domain.TopicPrefix + topic + `:data`
 	}
-	return `urn:didcomm-queue:` + topic + `:data:` + pub + `:` + sub
+	return domain.TopicPrefix + topic + `:data:` + pub + `:` + sub
 }
 
 func (z *zmq) stateTopic(topic string) string {
-	return `urn:didcomm-queue:` + topic + `:state`
+	return domain.TopicPrefix + topic + `:state`
 }
 
-func (z *zmq) listen(st sktType, handlerFunc func(msg string) error) {
+func (z *zmq) groupNameByDataTopic(topic string) string {
+	parts := strings.Split(topic, `:`)
+	if len(parts) < 3 {
+		z.log.Warn(`group name could not be fetched from topic`, topic)
+		return ``
+	}
+
+	return parts[2]
+}
+
+func (z *zmq) listen(st sktType, handlerFunc func(topic, msg string) error) {
 	var skt *zmqPkg.Socket
 	switch st {
 	case typStateSkt:
@@ -185,7 +197,14 @@ func (z *zmq) listen(st sktType, handlerFunc func(msg string) error) {
 				continue
 			}
 
-			if err = handlerFunc(msg); err != nil {
+			frames := strings.SplitN(msg, ` `, 2)
+			if len(frames) != 2 {
+				z.log.Error(fmt.Sprintf(`received an invalid status message (length=%v)`, len(frames)))
+				continue
+			}
+
+			data := frames[1]
+			if err = handlerFunc(frames[0], data); err != nil {
 				if z.singlQ && st == typMsgSkt {
 					z.log.Debug(fmt.Sprintf(`message may not be intended to this member - %v`, err))
 					continue

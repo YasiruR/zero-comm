@@ -36,6 +36,7 @@ func ParseArgs() *domain.Args {
 	bufLat := flag.Int(`buf`, 500, `latency buffer for zmq in milli-seconds`)
 	mocker := flag.Bool(`mock`, true, `enables mocking functions`)
 	mockPort := flag.Int(`mock_port`, 0, `port for mocking functions`)
+	sync := flag.Bool(`sync`, false, `enables causal ordering between messages`)
 	flag.Parse()
 
 	if *mocker == true && *mockPort == 0 {
@@ -51,6 +52,7 @@ func ParseArgs() *domain.Args {
 		ZmqBufMs: *bufLat,
 		Mocker:   *mocker,
 		MockPort: *mockPort,
+		Sync:     *sync,
 		Verbose:  *v,
 	}
 }

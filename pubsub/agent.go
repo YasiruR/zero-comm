@@ -16,10 +16,6 @@ import (
 	"time"
 )
 
-const (
-	zmqLatencyBufMilliSec = 500
-)
-
 type state struct {
 	myLabel     string
 	pubEndpoint string
@@ -40,6 +36,7 @@ type internals struct {
 	subs   *subStore
 	auth   *auth
 	packr  *packer
+	syncr  *syncer
 }
 
 type Agent struct {
@@ -77,7 +74,7 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
 			log:    c.Log,
 		},
 		compactor: compctr,
-		proc:      newProcessor(c.Cfg.Name, c, in, compctr),
+		proc:      newProcessor(c.Cfg.Name, c, in, compctr, in.syncr),
 		outChan:   c.OutChan,
 		zmqBufms:  c.Cfg.ZmqBufMs,
 	}
@@ -89,6 +86,8 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
 // initInternals initializes the internal components required by the group agent
 func initInternals(zmqCtx *zmqPkg.Context, c *domain.Container) (*internals, error) {
 	gs := newGroupStore()
+	syncr := newSyncer(c.Cfg.Sync)
+
 	transport, err := newZmqTransport(zmqCtx, gs, c)
 	if err != nil {
 		return nil, fmt.Errorf(`zmq transport init for group agent failed - %v`, err)
@@ -112,8 +111,9 @@ func initInternals(zmqCtx *zmqPkg.Context, c *domain.Container) (*internals, err
 		gs:     gs,
 		auth:   authn,
 		zmq:    transport,
+		syncr:  syncr,
 		valdtr: newValidator(c.Log),
-		packr:  newPacker(c),
+		packr:  newPacker(c, syncr),
 	}, nil
 }
 
@@ -130,11 +130,11 @@ func (a *Agent) start(srvr servicesPkg.Server) {
 	joinChan := make(chan models.Message)
 	srvr.AddHandler(models.TypGroupJoin, joinChan, false)
 
-	// initialize internal handlers for zmq requests
+	// initialize internal handlers for zmq requests on REQ sockets
 	a.process(joinChan, a.proc.joinReqs)
 	a.process(subChan, a.proc.subscriptions)
 
-	// initialize listening on subscriptions
+	// initialize listening on subscriptions on SUB sockets
 	a.zmq.listen(typStateSkt, a.proc.states)
 	a.zmq.listen(typMsgSkt, a.proc.data)
 }
@@ -292,7 +292,7 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 		return nil, fmt.Errorf(`marshalling group-join request failed - %v`, err)
 	}
 
-	data, err := a.packr.pack(accptr, s.PubKey, byts)
+	data, err := a.packr.pack(false, accptr, s.PubKey, byts)
 	if err != nil {
 		return nil, fmt.Errorf(`packing join-req for %s failed - %v`, accptr, err)
 	}
@@ -303,7 +303,7 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 	}
 	a.log.Debug(`group-join response received`, res)
 
-	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypGroupJoin, Data: []byte(res), Reply: nil})
+	_, unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypGroupJoin, Data: []byte(res), Reply: nil})
 	if err != nil {
 		return nil, fmt.Errorf(`unpacking group-join response failed - %v`, err)
 	}
@@ -333,7 +333,7 @@ func (a *Agent) Send(topic, msg string) error {
 
 	var published bool
 	for sub, key := range subs {
-		data, err := a.packr.pack(sub, key, []byte(msg))
+		data, err := a.packr.pack(true, sub, key, []byte(msg))
 		if err != nil {
 			return fmt.Errorf(`packing data message for %s failed - %v`, sub, err)
 		}
@@ -414,7 +414,7 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
 
-	data, err := a.packr.pack(m.Label, s.PubKey, byts)
+	data, err := a.packr.pack(false, m.Label, s.PubKey, byts)
 	if err != nil {
 		return ``, fmt.Errorf(`packing subscribe request for %s failed - %v`, m.Label, err)
 	}
@@ -424,7 +424,7 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`sending subscribe message failed - %v`, err)
 	}
 
-	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypSubscribe, Data: []byte(res), Reply: nil})
+	_, unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypSubscribe, Data: []byte(res), Reply: nil})
 	if err != nil {
 		return ``, fmt.Errorf(`reading subscribe didcomm response failed - %v`, err)
 	}
@@ -503,7 +503,7 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 			return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 		}
 
-		data, err := a.packr.pack(m.Label, s.PubKey, byts)
+		data, err := a.packr.pack(false, m.Label, s.PubKey, byts)
 		if err != nil {
 			return nil, fmt.Errorf(`packing message for %s failed - %v`, m.Label, err)
 		}

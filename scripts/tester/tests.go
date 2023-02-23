@@ -34,7 +34,7 @@ func joinLatency(buf int, singleQ, pub bool) {
 			log.Fatal(`tester `, fmt.Sprintf(`failed generating inv - %s`, err))
 		}
 
-		// send inv to oob endpoint - new
+		// send inv to oob endpoint
 		if _, err = http.DefaultClient.Post(group[0].mockEndpoint+mock.ConnectEndpoint, `application/octet-stream`, bytes.NewBufferString(url)); err != nil {
 			log.Fatal(`tester `, err)
 		}

@@ -5,47 +5,28 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
-	"github.com/klauspost/compress/zstd"
 )
-
-// compactor is an instance of zstandard compression algorithm
-type compactor struct {
-	zEncodr *zstd.Encoder
-	zDecodr *zstd.Decoder
-}
-
-func newCompactor() (*compactor, error) {
-	zstdEncoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
-	if err != nil {
-		return nil, fmt.Errorf(`creating zstd encoder failed - %v`, err)
-	}
-
-	zstdDecoder, err := zstd.NewReader(nil)
-	if err != nil {
-		return nil, fmt.Errorf(`creating zstd decoder failed - %v`, err)
-	}
-
-	return &compactor{zEncodr: zstdEncoder, zDecodr: zstdDecoder}, nil
-}
 
 // packer is an internal wrapper for the packing processes of group agent
 type packer struct {
 	*services
+	*syncer
 	pckr servicesPkg.Packer
 }
 
-func newPacker(c *domain.Container) *packer {
+func newPacker(c *domain.Container, syncr *syncer) *packer {
 	return &packer{
 		services: &services{
 			km:    c.KeyManager,
 			probr: c.Prober,
 		},
-		pckr: c.Packer,
+		pckr:   c.Packer,
+		syncer: syncr,
 	}
 }
 
 // pack constructs and encodes an authcrypt message to the given receiver
-func (p *packer) pack(receiver string, recPubKey []byte, msg []byte) ([]byte, error) {
+func (p *packer) pack(groupMsg bool, receiver string, recPubKey []byte, msg []byte) ([]byte, error) {
 	if recPubKey == nil {
 		s, err := p.probr.Service(domain.ServcGroupJoin, receiver)
 		if err != nil {
@@ -62,6 +43,14 @@ func (p *packer) pack(receiver string, recPubKey []byte, msg []byte) ([]byte, er
 	ownPrvKey, err := p.km.PrivateKey(receiver)
 	if err != nil {
 		return nil, fmt.Errorf(`getting private key for connection with %s failed - %v`, receiver, err)
+	}
+
+	// including order-metadata only if it is a group message and syncing is enabled by params
+	if groupMsg && p.syncer != nil {
+		msg, err = p.syncer.message(msg)
+		if err != nil {
+			return nil, fmt.Errorf(`constructing ordered group message failed - %v`, err)
+		}
 	}
 
 	encryptdMsg, err := p.pckr.Pack(msg, recPubKey, ownPubKey, ownPrvKey)

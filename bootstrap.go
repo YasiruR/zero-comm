@@ -92,5 +92,11 @@ func initContainer(cfg *domain.Config) *domain.Container {
 		c.Log.Info(`agent operates with multiple-queues for data messages`)
 	}
 
+	if c.Cfg.Sync {
+		c.Log.Info(`causal order is enforced on group messages`)
+	} else {
+		c.Log.Info(`ordering among multiple parties is disabled for group messages`)
+	}
+
 	return c
 }

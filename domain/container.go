@@ -17,6 +17,7 @@ type Args struct {
 	ZmqBufMs int
 	Mocker   bool
 	MockPort int
+	Sync     bool
 }
 
 type Config struct {
