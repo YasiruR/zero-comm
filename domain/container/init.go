@@ -18,6 +18,7 @@ type Args struct {
 	Mocker   bool
 	MockPort int
 
+	// todo should be a param of topic
 	Sync bool
 }
 

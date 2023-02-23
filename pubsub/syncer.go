@@ -16,8 +16,9 @@ type ts struct {
 	// in case lamport timestamps are equal for multiple messages
 	// reader can sort them corresponding to the id and hence the
 	// order will be consistent across the group
-	Id     int   `json:"id"`
-	LampTs int64 `json:"lamp_ts"`
+	Id       int    `json:"id"`
+	LampTs   int64  `json:"lamp_ts"`
+	Checksum string `json:"checksum"`
 }
 
 type groupMsg struct {
@@ -74,7 +75,7 @@ func (s *syncer) message(data []byte) (msg []byte, err error) {
 	}
 	s.RUnlock()
 
-	// todo if checksum is not equal to last received, then wait (ot let notify) until right before returning here
+	// todo if checksum is not equal to last received, then wait (ot let notify) until correct, before returning here
 	// should only be done if strong consistency is required
 
 	return json.Marshal(groupMsg{Ts: ts{Id: s.id, LampTs: lampTs}, Data: data})

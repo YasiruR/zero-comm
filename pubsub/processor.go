@@ -55,7 +55,7 @@ func (p *processor) joinReqs(msg *models.Message) error {
 	byts, err := json.Marshal(messages.ResGroupJoin{
 		Id:          uuid.New().String(),
 		Type:        messages.JoinResponseV1,
-		Consistency: p.gs.consistency(req.Topic),
+		Consistency: p.gs.consistLevel(req.Topic),
 		Members:     p.gs.membrs(req.Topic),
 		//Members: p.addIntruder(req.Topic),
 	})

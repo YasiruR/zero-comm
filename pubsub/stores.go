@@ -59,44 +59,43 @@ func (s *subStore) deleteTopic(topic string) {
 
 type groupStore struct {
 	*sync.RWMutex
-	// nested map for group state where primary key is the topic
-	// and secondary is the member's label
-	states map[string]map[string]models.Member
-	// consistency levels for each group
-	consLevels map[string]domain.ConsistencyLevel // todo changing this maliciously is a threat?
+	groups map[string]*models.Group // todo changing this (eg: cons level) maliciously is a threat?
 }
 
 func newGroupStore() *groupStore {
 	return &groupStore{
-		RWMutex:    &sync.RWMutex{},
-		states:     map[string]map[string]models.Member{},
-		consLevels: map[string]domain.ConsistencyLevel{},
+		RWMutex: &sync.RWMutex{},
+		groups:  map[string]*models.Group{},
 	}
 }
 
 func (g *groupStore) addMembr(topic string, m models.Member) {
 	g.Lock()
 	defer g.Unlock()
-	if g.states[topic] == nil {
-		g.states[topic] = make(map[string]models.Member)
+	if g.groups[topic] == nil {
+		g.groups[topic] = &models.Group{Members: map[string]models.Member{}}
 	}
-	g.states[topic][m.Label] = m
-	//g.log.Trace(`group member added`, m.Label)
+
+	if g.groups[topic].Members == nil {
+		g.groups[topic].Members = map[string]models.Member{}
+	}
+
+	g.groups[topic].Members[m.Label] = m
 }
 
 func (g *groupStore) deleteMembr(topic, membr string) {
 	g.Lock()
 	defer g.Unlock()
-	if g.states[topic] == nil {
+	if g.groups[topic] == nil {
 		return
 	}
-	delete(g.states[topic], membr)
+	delete(g.groups[topic].Members, membr)
 }
 
 func (g *groupStore) deleteTopic(topic string) {
 	g.Lock()
 	defer g.Unlock()
-	delete(g.states, topic)
+	delete(g.groups, topic)
 }
 
 // joined checks if current member has already joined a group
@@ -104,7 +103,7 @@ func (g *groupStore) deleteTopic(topic string) {
 func (g *groupStore) joined(topic string) bool {
 	g.RLock()
 	defer g.RUnlock()
-	if g.states[topic] == nil {
+	if g.groups[topic] == nil {
 		return false
 	}
 	return true
@@ -113,32 +112,42 @@ func (g *groupStore) joined(topic string) bool {
 func (g *groupStore) membrs(topic string) (m []models.Member) {
 	g.RLock()
 	defer g.RUnlock()
-	if g.states[topic] == nil {
+	if g.groups[topic] == nil {
 		return []models.Member{}
 	}
 
-	for _, mem := range g.states[topic] {
+	if g.groups[topic].Members == nil {
+		return []models.Member{}
+	}
+
+	for _, mem := range g.groups[topic].Members {
 		m = append(m, mem)
 	}
+
 	return m
 }
 
 func (g *groupStore) membr(topic, label string) *models.Member {
 	g.RLock()
 	defer g.RUnlock()
-	if g.states[topic] == nil {
+	if g.groups[topic] == nil {
 		return nil
 	}
 
-	for _, mem := range g.states[topic] {
+	if g.groups[topic].Members == nil {
+		return nil
+	}
+
+	for _, mem := range g.groups[topic].Members {
 		if mem.Label == label {
 			return &mem
 		}
 	}
+
 	return nil
 }
 
-func (g *groupStore) setConsistency(topic string, cl domain.ConsistencyLevel) error {
+func (g *groupStore) setConsistLevel(topic string, cl domain.ConsistencyLevel) error {
 	g.Lock()
 	defer g.Unlock()
 
@@ -146,14 +155,12 @@ func (g *groupStore) setConsistency(topic string, cl domain.ConsistencyLevel) er
 		return fmt.Errorf(`invalid consistency level - %s`, cl)
 	}
 
-	g.consLevels[topic] = cl
-	fmt.Println("CONSISTENCY LEVEL SET", cl)
-
+	g.groups[topic].ConsistencyLevel = cl
 	return nil
 }
 
-func (g *groupStore) consistency(topic string) domain.ConsistencyLevel {
+func (g *groupStore) consistLevel(topic string) domain.ConsistencyLevel {
 	g.RLock()
 	defer g.RUnlock()
-	return g.consLevels[topic]
+	return g.groups[topic].ConsistencyLevel
 }

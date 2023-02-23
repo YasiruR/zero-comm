@@ -162,7 +162,7 @@ func (a *Agent) Create(topic string, publisher bool, cl domain.ConsistencyLevel)
 
 	a.invs[topic] = inv
 	a.gs.addMembr(topic, m)
-	if err = a.gs.setConsistency(topic, cl); err != nil {
+	if err = a.gs.setConsistLevel(topic, cl); err != nil {
 		return fmt.Errorf(`updating consistency failed - %v`, err)
 	}
 
@@ -200,7 +200,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	a.gs.addMembr(topic, joiner)
-	if err = a.gs.setConsistency(topic, group.Consistency); err != nil {
+	if err = a.gs.setConsistLevel(topic, group.Consistency); err != nil {
 		return fmt.Errorf(`setting consistency failed - %v`, err)
 	}
 
@@ -220,7 +220,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 
 	if len(group.Members) > 1 {
 		if err = a.verifyJoin(acceptor, group.Members, hashes); err != nil {
-			if a.gs.consistency(topic) == domain.StrictConsistent {
+			if group.Consistency != domain.NoConsistency {
 				return fmt.Errorf(`join failed due to inconsistent view of the group - %v`, err)
 			}
 			a.log.Warn(fmt.Sprintf(`group verification failed but proceeded with registration - %v`, err))
