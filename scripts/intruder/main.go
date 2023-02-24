@@ -121,7 +121,6 @@ func init() {
 			Port:    9090,
 			Verbose: true,
 			PubPort: 9091,
-			SingleQ: false,
 		},
 		Hostname:    ip,
 		InvEndpoint: ip + strconv.Itoa(9090),

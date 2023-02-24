@@ -44,6 +44,7 @@ type ReqGroupJoin struct {
 type ResGroupJoin struct {
 	Id          string                  `json:"@id"`
 	Type        string                  `json:"@type"`
+	Mode        domain.GroupMode        `json:"mode"`
 	Consistency domain.ConsistencyLevel `json:"consistency"`
 	Members     []models.Member         `json:"members"` // includes acceptor
 }

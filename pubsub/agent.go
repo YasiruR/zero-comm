@@ -8,6 +8,8 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
+	"github.com/YasiruR/didcomm-prober/pubsub/stores"
+	"github.com/YasiruR/didcomm-prober/pubsub/validator"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
 	zmqPkg "github.com/pebbe/zmq4"
@@ -31,14 +33,13 @@ type services struct {
 }
 
 type internals struct {
-	valdtr   *validator
 	zmq      *zmq
-	gs       *groupStore
-	subs     *subStore
 	auth     *auth
 	packr    *packer
 	syncr    *syncer
 	compactr *compactor
+	gs       *stores.Group
+	subs     *stores.Subscriber
 }
 
 type Agent struct {
@@ -80,7 +81,7 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
 
 // initInternals initializes the internal components required by the group agent
 func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, error) {
-	gs := newGroupStore()
+	gs := stores.NewGroupStore()
 	syncr := newSyncer(c.Cfg.Sync)
 
 	compctr, err := newCompactor()
@@ -107,13 +108,12 @@ func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, 
 	}
 
 	return &internals{
-		subs:     newSubStore(),
+		subs:     stores.NewSubStore(),
 		gs:       gs,
 		auth:     authn,
 		zmq:      transport,
 		syncr:    syncr,
 		compactr: compctr,
-		valdtr:   newValidator(c.Log),
 		packr:    newPacker(c, syncr),
 	}, nil
 }
@@ -142,11 +142,7 @@ func (a *Agent) start(srvr servicesPkg.Server) {
 
 // Create constructs a group including creator's invitation
 // for the group and its models.Member
-func (a *Agent) Create(topic string, publisher bool, cl domain.ConsistencyLevel) error {
-	if cl == `` {
-		cl = domain.NoConsistency
-	}
-
+func (a *Agent) Create(topic string, publisher bool, cl domain.ConsistencyLevel, gm domain.GroupMode) error {
 	inv, err := a.probr.Invite()
 	if err != nil {
 		return fmt.Errorf(`generating invitation failed - %v`, err)
@@ -161,21 +157,25 @@ func (a *Agent) Create(topic string, publisher bool, cl domain.ConsistencyLevel)
 	}
 
 	a.invs[topic] = inv
-	a.gs.addMembr(topic, m)
-	if err = a.gs.setConsistLevel(topic, cl); err != nil {
-		return fmt.Errorf(`updating consistency failed - %v`, err)
+	//a.gs.AddMembr(topic, m)
+	if err = a.gs.SetGroupParams(topic, cl, gm); err != nil {
+		return fmt.Errorf(`updating group params failed - %v`, err)
 	}
 
-	if err = a.valdtr.updateHash(topic, []models.Member{m}); err != nil {
-		return fmt.Errorf(`updating checksum on group-create failed - %v`, err)
+	//if err = a.valdtr.updateHash(topic, []models.Member{m}); err != nil {
+	//	return fmt.Errorf(`updating checksum on group-create failed - %v`, err)
+	//}
+
+	if err = a.gs.AddMembrs(topic, m); err != nil {
+		return fmt.Errorf(`adding group creator failed - %v`, err)
 	}
 
 	return nil
 }
 
 func (a *Agent) Join(topic, acceptor string, publisher bool) error {
-	// check if already joined to the topic
-	if a.gs.joined(topic) {
+	// check if already Joined to the topic
+	if a.gs.Joined(topic) {
 		return fmt.Errorf(`already connected to group %s`, topic)
 	}
 
@@ -199,8 +199,8 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		PubEndpoint: a.pubEndpoint,
 	}
 
-	a.gs.addMembr(topic, joiner)
-	if err = a.gs.setConsistLevel(topic, group.Consistency); err != nil {
+	//a.gs.AddMembr(topic, joiner)
+	if err = a.gs.SetGroupParams(topic, group.Consistency, group.Mode); err != nil {
 		return fmt.Errorf(`setting consistency failed - %v`, err)
 	}
 
@@ -210,7 +210,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 			continue
 		}
 
-		checksum, err := a.addMember(topic, publisher, m)
+		checksum, err := a.connectMember(topic, publisher, m)
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`adding %s as a member failed - %v`, m.Label, err))
 			continue
@@ -219,12 +219,16 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	if len(group.Members) > 1 {
-		if err = a.verifyJoin(acceptor, group.Members, hashes); err != nil {
+		if err = validator.ValidJoin(acceptor, group.Members, hashes); err != nil {
 			if group.Consistency != domain.NoConsistency {
 				return fmt.Errorf(`join failed due to inconsistent view of the group - %v`, err)
 			}
 			a.log.Warn(fmt.Sprintf(`group verification failed but proceeded with registration - %v`, err))
 		}
+	}
+
+	if err = a.gs.AddMembrs(topic, append(group.Members, joiner)...); err != nil {
+		return fmt.Errorf(`adding group members failed - %v`, err)
 	}
 
 	// publish status
@@ -233,14 +237,14 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`publishing status active failed - %v`, err)
 	}
 
-	if err = a.valdtr.updateHash(topic, append(group.Members, joiner)); err != nil {
-		return fmt.Errorf(`updating checksum on group-join failed - %v`, err)
-	}
+	//if err = a.valdtr.updateHash(topic, append(group.Members, joiner)); err != nil {
+	//	return fmt.Errorf(`updating checksum on group-join failed - %v`, err)
+	//}
 
 	return nil
 }
 
-func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checksum string, err error) {
+func (a *Agent) connectMember(topic string, publisher bool, m models.Member) (checksum string, err error) {
 	if err = a.connectDIDComm(m); err != nil {
 		return ``, fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
 	}
@@ -255,7 +259,7 @@ func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checks
 	}
 
 	// add as a member to be shared with another in future
-	a.gs.addMembr(topic, m)
+	//a.gs.AddMembr(topic, m)
 
 	if !publisher {
 		return checksum, nil
@@ -265,28 +269,28 @@ func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checks
 	if err != nil {
 		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
-	a.subs.add(topic, m.Label, s.PubKey)
+	a.subs.Add(topic, m.Label, s.PubKey)
 
 	return checksum, nil
 }
 
-// verifyJoin checks if the initial member set returned by the acceptor is consistent
-// across other members thus eliminating intruders in the initial state of the joiner.
-// memHashs is a map with hash values indexed by the member label.
-func (a *Agent) verifyJoin(accptr string, joinSet []models.Member, memHashs map[string]string) error {
-	joinedChecksm, err := a.valdtr.calculate(joinSet)
-	if err != nil {
-		return fmt.Errorf(`calculating checksum of initial member set failed - %v`, err)
-	}
-	memHashs[accptr] = joinedChecksm
-
-	invalidMems, ok := a.valdtr.verify(memHashs)
-	if !ok {
-		return fmt.Errorf(`at least one inconsistent member set found (%v)`, invalidMems)
-	}
-
-	return nil
-}
+//// verifyJoin checks if the initial member set returned by the acceptor is consistent
+//// across other members thus eliminating intruders in the initial state of the joiner.
+//// memHashs is a map with hash values indexed by the member label.
+//func (a *Agent) verifyJoin(accptr string, joinSet []models.Member, memHashs map[string]string) error {
+//	joinedChecksm, err := validator.Calculate(joinSet)
+//	if err != nil {
+//		return fmt.Errorf(`calculating checksum of initial member set failed - %v`, err)
+//	}
+//	memHashs[accptr] = joinedChecksm
+//
+//	invalidMems, ok := validator.Verify(memHashs)
+//	if !ok {
+//		return fmt.Errorf(`at least one inconsistent member set found (%v)`, invalidMems)
+//	}
+//
+//	return nil
+//}
 
 // reqState checks if requester has already connected with acceptor
 // via didcomm and if true, sends a didcomm group-join request using
@@ -334,7 +338,7 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 }
 
 func (a *Agent) Send(topic, msg string) error {
-	curntMembr := a.gs.membr(topic, a.myLabel)
+	curntMembr := a.gs.Membr(topic, a.myLabel)
 	if curntMembr == nil {
 		return fmt.Errorf(`member information does not exist for the current member`)
 	}
@@ -343,7 +347,7 @@ func (a *Agent) Send(topic, msg string) error {
 		return fmt.Errorf(`current member is not registered as a publisher`)
 	}
 
-	subs, err := a.subs.queryByTopic(topic)
+	subs, err := a.subs.QueryByTopic(topic)
 	if err != nil {
 		return fmt.Errorf(`fetching subscribers for topic %s failed - %v`, topic, err)
 	}
@@ -504,7 +508,7 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 		return nil, fmt.Errorf(`marshalling member failed - %v`, err)
 	}
 
-	mems := a.gs.membrs(topic)
+	mems := a.gs.Membrs(topic)
 	for _, m := range mems {
 		if m.Label == a.myLabel {
 			continue
@@ -543,7 +547,7 @@ func (a *Agent) Leave(topic string) error {
 		return fmt.Errorf(`zmw unsubsription failed - %v`, err)
 	}
 
-	membrs := a.gs.membrs(topic)
+	membrs := a.gs.Membrs(topic)
 	if len(membrs) == 0 {
 		return fmt.Errorf(`no members found`)
 	}
@@ -559,15 +563,15 @@ func (a *Agent) Leave(topic string) error {
 		return fmt.Errorf(`publishing inactive status failed - %v`, err)
 	}
 
-	a.subs.deleteTopic(topic)
-	a.gs.deleteTopic(topic)
+	a.subs.DeleteTopic(topic)
+	a.gs.DeleteTopic(topic)
 	a.outChan <- `Left group ` + topic
 	return nil
 }
 
 func (a *Agent) Info(topic string) (mems []models.Member) {
 	// removing invitation for more clarity
-	for _, m := range a.gs.membrs(topic) {
+	for _, m := range a.gs.Membrs(topic) {
 		m.Inv = ``
 		mems = append(mems, m)
 	}

@@ -33,7 +33,6 @@ func ParseArgs() *container.Args {
 	p := flag.Int(`port`, 0, `agent's port'`)
 	pub := flag.Int(`pub`, 0, `agent's publishing port'`)
 	v := flag.Bool(`v`, false, `logging`)
-	singleQ := flag.Bool(`single`, false, `enables single-queue mode for data messages`)
 	bufLat := flag.Int(`buf`, 500, `latency buffer for zmq in milli-seconds`)
 	mocker := flag.Bool(`mock`, true, `enables mocking functions`)
 	mockPort := flag.Int(`mock_port`, 0, `port for mocking functions`)
@@ -49,7 +48,6 @@ func ParseArgs() *container.Args {
 		Name:     *n,
 		Port:     *p,
 		PubPort:  *pub,
-		SingleQ:  *singleQ,
 		ZmqBufMs: *bufLat,
 		Mocker:   *mocker,
 		MockPort: *mockPort,
@@ -221,6 +219,7 @@ func (r *runner) createGroup() {
 	topic := r.input(`Topic`)
 	strPub := r.input(`Publisher (Y/N)`)
 	consLevl := r.input(`Consistency Level (none[default]/join/all)`)
+	mode := r.input(`Group Mode (single/multiple[default])`)
 
 	publisher, err := r.validBool(strPub)
 	if err != nil {
@@ -228,7 +227,7 @@ func (r *runner) createGroup() {
 		return
 	}
 
-	if err = r.pubsub.Create(topic, publisher, domain.ConsistencyLevel(consLevl)); err != nil {
+	if err = r.pubsub.Create(topic, publisher, domain.ConsistencyLevel(consLevl), domain.GroupMode(mode)); err != nil {
 		r.error(`create group failed`, err)
 		return
 	}

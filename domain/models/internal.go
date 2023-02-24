@@ -30,9 +30,10 @@ type Member struct {
 }
 
 type Group struct {
-	Topic string
-	// map is used to prevent multiple instances of a member
-	Members      map[string]Member
+	Topic        string
+	Checksum     string
+	Members      map[string]Member // map is used to prevent multiple instances of a member
 	OrderEnabled bool
 	domain.ConsistencyLevel
+	domain.GroupMode
 }

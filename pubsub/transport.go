@@ -5,6 +5,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
+	"github.com/YasiruR/didcomm-prober/pubsub/stores"
 	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 	"strings"
@@ -18,15 +19,14 @@ const (
 )
 
 type zmq struct {
-	singlQ bool
-	pub    *zmqPkg.Socket
-	state  *zmqPkg.Socket
-	msgs   *zmqPkg.Socket
-	gs     *groupStore
-	log    log.Logger
+	pub   *zmqPkg.Socket
+	state *zmqPkg.Socket
+	msgs  *zmqPkg.Socket
+	gs    *stores.Group
+	log   log.Logger
 }
 
-func newZmqTransport(zmqCtx *zmqPkg.Context, gs *groupStore, c *container.Container) (*zmq, error) {
+func newZmqTransport(zmqCtx *zmqPkg.Context, gs *stores.Group, c *container.Container) (*zmq, error) {
 	pubSkt, err := zmqCtx.NewSocket(zmqPkg.PUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
@@ -43,12 +43,11 @@ func newZmqTransport(zmqCtx *zmqPkg.Context, gs *groupStore, c *container.Contai
 	}
 
 	return &zmq{
-		singlQ: c.Cfg.SingleQ,
-		pub:    pubSkt,
-		state:  sktStates,
-		msgs:   sktMsgs,
-		gs:     gs,
-		log:    c.Log,
+		pub:   pubSkt,
+		state: sktStates,
+		msgs:  sktMsgs,
+		gs:    gs,
+		log:   c.Log,
 	}, nil
 }
 
@@ -129,7 +128,7 @@ func (z *zmq) unsubscribeAll(label, topic string) error {
 		return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, z.stateTopic(topic), err)
 	}
 
-	for _, m := range z.gs.membrs(topic) {
+	for _, m := range z.gs.Membrs(topic) {
 		if !m.Publisher || m.Label == label {
 			continue
 		}
@@ -153,7 +152,7 @@ func (z *zmq) unsubscribeData(label, topic, peer string) error {
 }
 
 func (z *zmq) topicExists(topic string) bool {
-	if len(z.gs.membrs(topic)) < 2 {
+	if len(z.gs.Membrs(topic)) < 2 {
 		return false
 	}
 	return true
@@ -161,7 +160,7 @@ func (z *zmq) topicExists(topic string) bool {
 
 // constructs the URN in the format of 'urn:<NID>:<NSS>' (https://www.rfc-editor.org/rfc/rfc2141#section-2)
 func (z *zmq) dataTopic(topic, pub, sub string) string {
-	if z.singlQ {
+	if z.gs.Mode(topic) == domain.SingleQueueMode {
 		return domain.TopicPrefix + topic + `:data`
 	}
 	return domain.TopicPrefix + topic + `:data:` + pub + `:` + sub
@@ -206,10 +205,6 @@ func (z *zmq) listen(st sktType, handlerFunc func(topic, msg string) error) {
 
 			data := frames[1]
 			if err = handlerFunc(frames[0], data); err != nil {
-				if z.singlQ && st == typMsgSkt {
-					z.log.Debug(fmt.Sprintf(`message may not be intended to this member - %v`, err))
-					continue
-				}
 				z.log.Error(fmt.Sprintf(`processing received message failed - %v`, err))
 			}
 		}

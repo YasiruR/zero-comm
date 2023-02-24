@@ -13,7 +13,6 @@ type Args struct {
 	Port     int
 	Verbose  bool
 	PubPort  int
-	SingleQ  bool
 	ZmqBufMs int
 	Mocker   bool
 	MockPort int

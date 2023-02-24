@@ -25,7 +25,6 @@ func initAgent(name string, port, pubPort, buf int, singleQ bool) *container.Con
 		Port:     port,
 		Verbose:  false,
 		PubPort:  pubPort,
-		SingleQ:  singleQ,
 		ZmqBufMs: buf,
 	}))
 }

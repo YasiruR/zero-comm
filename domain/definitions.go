@@ -27,7 +27,6 @@ func (c ConsistencyLevel) Valid() bool {
 	case StrictConsistent:
 		return true
 	}
-
 	return false
 }
 
@@ -37,3 +36,20 @@ const (
 	RolePublisher Role = iota
 	RoleSubscriber
 )
+
+type GroupMode string
+
+const (
+	SingleQueueMode   GroupMode = `single-queue`
+	MultipleQueueMode GroupMode = `multiple-queue`
+)
+
+func (g GroupMode) Valid() bool {
+	switch g {
+	case SingleQueueMode:
+		return true
+	case MultipleQueueMode:
+		return true
+	}
+	return false
+}

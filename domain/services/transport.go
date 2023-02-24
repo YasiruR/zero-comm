@@ -32,7 +32,7 @@ type Server interface {
 /* message queue functions */
 
 type GroupAgent interface {
-	Create(topic string, publisher bool, cl domain.ConsistencyLevel) error
+	Create(topic string, publisher bool, cl domain.ConsistencyLevel, gm domain.GroupMode) error
 	Join(topic, acceptor string, publisher bool) error
 	Send(topic, msg string) error
 	Leave(topic string) error

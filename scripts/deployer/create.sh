@@ -1,7 +1,8 @@
 #!/bin/bash
 
 topic=$1
-consistency=$2
+mode=$2
+consistency=$3
 counter=0
 first_ip=''
 first_label=''
@@ -10,6 +11,14 @@ first_label=''
 if [[ "$topic" == "" ]]
 then
   topic='test'
+fi
+
+# setting mode if not set by args
+if [[ "$mode" == "s" ]]
+then
+  mode='single-queue'
+else
+  mode='multiple-queue'
 fi
 
 # creating invitations for each member (except for the first) and
@@ -38,7 +47,7 @@ while IFS="," read -r label ip pub ; do
   # first member creates the group
   if [[ $counter == 0 ]]
   then
-    data='{"topic": "'"$topic"'", "publisher": '$is_pub', "consistency": "'"$consistency"'"}'
+    data='{"topic": "'"$topic"'", "publisher": '$is_pub', "consistency": "'"$consistency"'", "mode": "'"$mode"'"}'
     curl -X POST --header 'Content-Type: application/json' --data-raw "$data" "${ip}/create"
 
     counter=$((counter+1))

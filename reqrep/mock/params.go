@@ -12,6 +12,7 @@ type reqCreate struct {
 	Topic       string `json:"topic"`
 	Publisher   bool   `json:"publisher"`
 	Consistency string `json:"consistency"`
+	Mode        string `json:"mode"`
 }
 
 type reqJoin struct {

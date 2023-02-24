@@ -44,7 +44,7 @@ func (p *processor) joinReqs(msg *models.Message) error {
 		return fmt.Errorf(`unmarshalling group-join request failed - %v`, err)
 	}
 
-	if len(p.gs.membrs(req.Topic)) == 0 {
+	if len(p.gs.Membrs(req.Topic)) == 0 {
 		return fmt.Errorf(`acceptor is not a member of the requested group (%s)`, req.Topic)
 	}
 
@@ -55,8 +55,9 @@ func (p *processor) joinReqs(msg *models.Message) error {
 	byts, err := json.Marshal(messages.ResGroupJoin{
 		Id:          uuid.New().String(),
 		Type:        messages.JoinResponseV1,
-		Consistency: p.gs.consistLevel(req.Topic),
-		Members:     p.gs.membrs(req.Topic),
+		Consistency: p.gs.ConsistLevel(req.Topic),
+		Mode:        p.gs.Mode(req.Topic),
+		Members:     p.gs.Membrs(req.Topic),
 		//Members: p.addIntruder(req.Topic),
 	})
 	if err != nil {
@@ -87,7 +88,7 @@ func (p *processor) subscriptions(msg *models.Message) error {
 	}
 
 	if !sm.Subscribe {
-		p.subs.delete(sm.Topic, sm.Member.Label)
+		p.subs.Delete(sm.Topic, sm.Member.Label)
 		return nil
 	}
 
@@ -114,7 +115,7 @@ func (p *processor) subscriptions(msg *models.Message) error {
 	}
 
 	sk := base58.Decode(sm.PubKey)
-	p.subs.add(sm.Topic, sm.Member.Label, sk)
+	p.subs.Add(sm.Topic, sm.Member.Label, sk)
 	p.log.Debug(`processed subscription request`, sm)
 
 	return nil
@@ -139,11 +140,11 @@ func (p *processor) states(_, msg string) error {
 		return fmt.Errorf(`status update is not intended to this member`)
 	}
 
-	defer func(topic string) {
-		if err = p.valdtr.updateHash(topic, p.gs.membrs(topic)); err != nil {
-			p.log.Error(fmt.Sprintf(`updating checksum for the group failed - %v`, err))
-		}
-	}(sm.Topic)
+	//defer func(topic string) {
+	//	if err = p.valdtr.updateHash(topic, p.gs.Membrs(topic)); err != nil {
+	//		p.log.Error(fmt.Sprintf(`updating checksum for the group failed - %v`, err))
+	//	}
+	//}(sm.Topic)
 
 	_, strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
 	if err != nil {
@@ -162,8 +163,8 @@ func (p *processor) states(_, msg string) error {
 			}
 		}
 
-		p.subs.delete(sm.Topic, member.Label)
-		p.gs.deleteMembr(sm.Topic, member.Label)
+		p.subs.Delete(sm.Topic, member.Label)
+		p.gs.DeleteMembr(sm.Topic, member.Label)
 		if err = p.auth.remvKeys(member.Label); err != nil {
 			return fmt.Errorf(`removing zmq transport keys failed - %v`, err)
 		}
@@ -171,14 +172,23 @@ func (p *processor) states(_, msg string) error {
 		return nil
 	}
 
-	p.gs.addMembr(sm.Topic, member)
+	//p.gs.AddMembr(sm.Topic, member)
+	if err = p.gs.AddMembrs(sm.Topic, member); err != nil {
+		return fmt.Errorf(`adding member failed - %v`, err)
+	}
+
 	p.log.Debug(fmt.Sprintf(`group state updated for member %s in topic %s`, member.Label, sm.Topic))
 	return nil
 }
 
-func (p *processor) data(topic, msg string) error {
+func (p *processor) data(zmqTopic, msg string) error {
+	topic := p.zmq.groupNameByDataTopic(zmqTopic)
 	sender, data, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupMsg, Data: []byte(msg)})
 	if err != nil {
+		if p.gs.Mode(topic) == domain.SingleQueueMode {
+			p.log.Debug(fmt.Sprintf(`message may not be intended to this member - %v`, err))
+			return nil
+		}
 		return fmt.Errorf(`reading subscribed message failed - %v`, err)
 	}
 
@@ -189,7 +199,7 @@ func (p *processor) data(topic, msg string) error {
 		}
 	}
 
-	p.outChan <- fmt.Sprintf(`%s sent in group '%s': %s`, sender, p.zmq.groupNameByDataTopic(topic), data)
+	p.outChan <- fmt.Sprintf(`%s sent in group '%s': %s`, sender, topic, data)
 	return nil
 }
 
@@ -209,14 +219,9 @@ func (p *processor) extractStatus(msg string) (*messages.Status, error) {
 
 func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.Message) error {
 	// to fetch if current node is a publisher of the topic
-	curntMembr := p.gs.membr(topic, p.myLabel)
+	curntMembr := p.gs.Membr(topic, p.myLabel)
 	if curntMembr == nil {
 		return fmt.Errorf(`current member or topic does not exist in group store`)
-	}
-
-	checksum, err := p.valdtr.hash(topic)
-	if err != nil {
-		return fmt.Errorf(`fetching group checksum failed - %v`, err)
 	}
 
 	resByts, err := json.Marshal(messages.ResSubscribe{
@@ -225,7 +230,7 @@ func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.
 			ClientPubKey: p.auth.client.pub,
 		},
 		Publisher: curntMembr.Publisher,
-		Checksum:  checksum,
+		Checksum:  p.gs.Checksum(topic),
 	})
 	if err != nil {
 		return fmt.Errorf(`marshalling subscribe response failed - %v`, err)
@@ -246,7 +251,7 @@ func (p *processor) validJoiner(label string) bool {
 }
 
 //func (p *processor) addIntruder(topic string) []models.Member {
-//	return append(p.gs.membrs(topic),
+//	return append(p.gs.Membrs(topic),
 //		models.Member{
 //			Active:      true,
 //			Publisher:   true,

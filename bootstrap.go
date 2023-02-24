@@ -86,12 +86,6 @@ func initContainer(cfg *container.Config) *container.Container {
 
 	c.Log.Info(fmt.Sprintf(`didcomm agent initialized with messaging port (%d) and publishing port (%d)`, c.Cfg.Port, c.Cfg.PubPort))
 
-	if c.Cfg.SingleQ {
-		c.Log.Info(`agent operates in single-queue mode for data messages`)
-	} else {
-		c.Log.Info(`agent operates with multiple-queues for data messages`)
-	}
-
 	if c.Cfg.Sync {
 		c.Log.Info(`causal order is enforced on group messages`)
 	} else {

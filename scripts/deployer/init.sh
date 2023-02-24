@@ -2,7 +2,6 @@
 
 num_nodes=$1
 buf=$2
-mode=$3
 user=$4
 key_path=$5
 counter=0
@@ -26,7 +25,7 @@ for label in "${labels[@]}"; do
     break
   fi
 
-  screen -d -m -S "$label" ./didcomm-prober -label="${labels[$counter]}" -port="${ports[$counter]}" -pub="${pub_ports[$counter]}" -mock_port="${mock_ports[$counter]}" -buf="$buf" -v -sync "$mode"
+  screen -d -m -S "$label" ./didcomm-prober -label="${labels[$counter]}" -port="${ports[$counter]}" -pub="${pub_ports[$counter]}" -mock_port="${mock_ports[$counter]}" -buf="$buf" -v -sync
 #  screen -d -m -S "$label" ssh -i "$key_path" "$user@${ips[$counter]}" "cd agent/ && ./didcomm-prober -label=${labels[$counter]} -port=${ports[$counter]} -pub=${pub_ports[$counter]} -mock_port=${mock_ports[$counter]} -buf="$buf" "$mode" -v"
 
   node="${ips[$counter]}:${mock_ports[$counter]}"
