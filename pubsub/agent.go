@@ -51,9 +51,6 @@ type Agent struct {
 	zmqBufms int
 }
 
-// todo read-only does not unsubscribe status topic upon leave
-// todo read-only could not join as a writer
-
 func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
 	in, err := initInternals(zmqCtx, c)
 	if err != nil {
@@ -138,7 +135,7 @@ func (a *Agent) start(srvr servicesPkg.Server) {
 	a.process(subChan, a.proc.subscriptions)
 
 	// initialize listening on subscriptions on SUB sockets
-	a.zmq.listen(typStateSkt, a.proc.states)
+	a.zmq.listen(typStateSkt, a.proc.state)
 	a.zmq.listen(typMsgSkt, a.proc.data)
 }
 

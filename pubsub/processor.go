@@ -124,14 +124,14 @@ func (p *processor) subscriptions(msg *models.Message) error {
 	return nil
 }
 
-func (p *processor) states(_, msg string) error {
-	sm, err := p.extractStatus(msg)
+func (p *processor) state(_, msg string) error {
+	status, err := p.extractStatus(msg)
 	if err != nil {
 		return fmt.Errorf(`extracting status message failed - %v`, err)
 	}
 
 	var validMsg string
-	for exchId, encMsg := range sm.AuthMsgs {
+	for exchId, encMsg := range status.AuthMsgs {
 		ok, _ := p.probr.ValidConn(exchId)
 		if ok {
 			validMsg = encMsg
@@ -148,33 +148,37 @@ func (p *processor) states(_, msg string) error {
 		return fmt.Errorf(`reading status didcomm message failed - %v`, err)
 	}
 
-	var member models.Member
-	if err = json.Unmarshal([]byte(strAuthMsg), &member); err != nil {
+	var m models.Member
+	if err = json.Unmarshal([]byte(strAuthMsg), &m); err != nil {
 		return fmt.Errorf(`unmarshalling member message failed - %v`, err)
 	}
 
-	if !member.Active {
-		if member.Publisher {
-			if err = p.zmq.unsubscribeData(p.myLabel, sm.Topic, member.Label); err != nil {
+	if !m.Active {
+		if err = p.zmq.disconnectStatus(m.PubEndpoint); err != nil {
+			return fmt.Errorf(`disconnect failed - %v`, err)
+		}
+
+		if m.Publisher {
+			if err = p.zmq.unsubscribeData(p.myLabel, status.Topic, m); err != nil {
 				return fmt.Errorf(`unsubscribing data topic failed - %v`, err)
 			}
 		}
 
-		p.subs.Delete(sm.Topic, member.Label)
-		p.gs.DeleteMembr(sm.Topic, member.Label)
-		if err = p.auth.remvKeys(member.Label); err != nil {
+		p.subs.Delete(status.Topic, m.Label)
+		p.gs.DeleteMembr(status.Topic, m.Label)
+		if err = p.auth.remvKeys(m.Label); err != nil {
 			return fmt.Errorf(`removing zmq transport keys failed - %v`, err)
 		}
-		p.outChan <- member.Label + ` left group ` + sm.Topic
+		p.outChan <- m.Label + ` left group ` + status.Topic
 		return nil
 	}
 
-	//p.gs.AddMembr(sm.Topic, member)
-	if err = p.gs.AddMembrs(sm.Topic, member); err != nil {
+	//p.gs.AddMembr(status.Topic, m)
+	if err = p.gs.AddMembrs(status.Topic, m); err != nil {
 		return fmt.Errorf(`adding member failed - %v`, err)
 	}
 
-	p.log.Debug(fmt.Sprintf(`group state updated for member %s in topic %s`, member.Label, sm.Topic))
+	p.log.Debug(fmt.Sprintf(`group state updated for member %s in topic %s`, m.Label, status.Topic))
 	return nil
 }
 

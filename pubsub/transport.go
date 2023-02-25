@@ -129,7 +129,15 @@ func (z *zmq) unsubscribeAll(label, topic string) error {
 	}
 
 	for _, m := range z.gs.Membrs(topic) {
-		if !m.Publisher || m.Label == label {
+		if m.Label == label {
+			continue
+		}
+
+		if err := z.state.Disconnect(m.PubEndpoint); err != nil {
+			return fmt.Errorf(`disconnecting state endpoint (%s) failed - %v`, m.PubEndpoint, err)
+		}
+
+		if !m.Publisher {
 			continue
 		}
 
@@ -137,17 +145,34 @@ func (z *zmq) unsubscribeAll(label, topic string) error {
 		if err := z.msgs.SetUnsubscribe(dt); err != nil {
 			return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, dt, err)
 		}
+
+		if err := z.msgs.Disconnect(m.PubEndpoint); err != nil {
+			return fmt.Errorf(`disconnecting data endpoint failed - %v`, err)
+		}
 	}
 
 	return nil
 }
 
-func (z *zmq) unsubscribeData(label, topic, peer string) error {
-	dt := z.dataTopic(topic, peer, label)
+// unsubscribeData includes disconnecting status socket since the function
+// is called only when removing an inactive member
+func (z *zmq) unsubscribeData(label, topic string, m models.Member) error {
+	dt := z.dataTopic(topic, m.Label, label)
 	if err := z.msgs.SetUnsubscribe(dt); err != nil {
 		return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, dt, err)
 	}
 
+	if err := z.msgs.Disconnect(m.PubEndpoint); err != nil {
+		return fmt.Errorf(`disconnecting data endpoint failed - %v`, err)
+	}
+
+	return nil
+}
+
+func (z *zmq) disconnectStatus(endpoint string) error {
+	if err := z.state.Disconnect(endpoint); err != nil {
+		return fmt.Errorf(`disconnecting state endpoint failed - %v`, err)
+	}
 	return nil
 }
 
