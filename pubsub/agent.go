@@ -51,6 +51,9 @@ type Agent struct {
 	zmqBufms int
 }
 
+// todo read-only does not unsubscribe status topic upon leave
+// todo read-only could not join as a writer
+
 func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
 	in, err := initInternals(zmqCtx, c)
 	if err != nil {
@@ -82,8 +85,7 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
 // initInternals initializes the internal components required by the group agent
 func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, error) {
 	gs := stores.NewGroupStore()
-	syncr := newSyncer(c.Cfg.Sync)
-
+	syncr := newSyncer()
 	compctr, err := newCompactor()
 	if err != nil {
 		return nil, fmt.Errorf(`initializing compressor failed - %v`, err)
@@ -142,7 +144,7 @@ func (a *Agent) start(srvr servicesPkg.Server) {
 
 // Create constructs a group including creator's invitation
 // for the group and its models.Member
-func (a *Agent) Create(topic string, publisher bool, cl domain.ConsistencyLevel, gm domain.GroupMode) error {
+func (a *Agent) Create(topic string, publisher bool, gp models.GroupParams) error {
 	inv, err := a.probr.Invite()
 	if err != nil {
 		return fmt.Errorf(`generating invitation failed - %v`, err)
@@ -157,19 +159,15 @@ func (a *Agent) Create(topic string, publisher bool, cl domain.ConsistencyLevel,
 	}
 
 	a.invs[topic] = inv
-	//a.gs.AddMembr(topic, m)
-	if err = a.gs.SetGroupParams(topic, cl, gm); err != nil {
+	if err = a.gs.SetParams(topic, gp); err != nil {
 		return fmt.Errorf(`updating group params failed - %v`, err)
 	}
-
-	//if err = a.valdtr.updateHash(topic, []models.Member{m}); err != nil {
-	//	return fmt.Errorf(`updating checksum on group-create failed - %v`, err)
-	//}
 
 	if err = a.gs.AddMembrs(topic, m); err != nil {
 		return fmt.Errorf(`adding group creator failed - %v`, err)
 	}
 
+	a.log.Info(fmt.Sprintf(`created '%s' group with the configured params`, topic), gp)
 	return nil
 }
 
@@ -199,8 +197,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		PubEndpoint: a.pubEndpoint,
 	}
 
-	//a.gs.AddMembr(topic, joiner)
-	if err = a.gs.SetGroupParams(topic, group.Consistency, group.Mode); err != nil {
+	if err = a.gs.SetParams(topic, group.Params); err != nil {
 		return fmt.Errorf(`setting consistency failed - %v`, err)
 	}
 
@@ -220,7 +217,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 
 	if len(group.Members) > 1 {
 		if err = validator.ValidJoin(acceptor, group.Members, hashes); err != nil {
-			if group.Consistency != domain.NoConsistency {
+			if group.Params.Consistency != domain.NoConsistency {
 				return fmt.Errorf(`join failed due to inconsistent view of the group - %v`, err)
 			}
 			a.log.Warn(fmt.Sprintf(`group verification failed but proceeded with registration - %v`, err))
@@ -236,10 +233,6 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	if err = a.notifyAll(topic, true, publisher); err != nil {
 		return fmt.Errorf(`publishing status active failed - %v`, err)
 	}
-
-	//if err = a.valdtr.updateHash(topic, append(group.Members, joiner)); err != nil {
-	//	return fmt.Errorf(`updating checksum on group-join failed - %v`, err)
-	//}
 
 	return nil
 }
@@ -258,9 +251,6 @@ func (a *Agent) connectMember(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`transport connection failed - %v`, err)
 	}
 
-	// add as a member to be shared with another in future
-	//a.gs.AddMembr(topic, m)
-
 	if !publisher {
 		return checksum, nil
 	}
@@ -273,24 +263,6 @@ func (a *Agent) connectMember(topic string, publisher bool, m models.Member) (ch
 
 	return checksum, nil
 }
-
-//// verifyJoin checks if the initial member set returned by the acceptor is consistent
-//// across other members thus eliminating intruders in the initial state of the joiner.
-//// memHashs is a map with hash values indexed by the member label.
-//func (a *Agent) verifyJoin(accptr string, joinSet []models.Member, memHashs map[string]string) error {
-//	joinedChecksm, err := validator.Calculate(joinSet)
-//	if err != nil {
-//		return fmt.Errorf(`calculating checksum of initial member set failed - %v`, err)
-//	}
-//	memHashs[accptr] = joinedChecksm
-//
-//	invalidMems, ok := validator.Verify(memHashs)
-//	if !ok {
-//		return fmt.Errorf(`at least one inconsistent member set found (%v)`, invalidMems)
-//	}
-//
-//	return nil
-//}
 
 // reqState checks if requester has already connected with acceptor
 // via didcomm and if true, sends a didcomm group-join request using

@@ -22,20 +22,6 @@ func NewGroupStore() *Group {
 	}
 }
 
-func (g *Group) AddMembr(topic string, m models.Member) {
-	g.Lock()
-	defer g.Unlock()
-	if g.groups[topic] == nil {
-		g.groups[topic] = &models.Group{Members: map[string]models.Member{}}
-	}
-
-	if g.groups[topic].Members == nil {
-		g.groups[topic].Members = map[string]models.Member{}
-	}
-
-	g.groups[topic].Members[m.Label] = m
-}
-
 func (g *Group) AddMembrs(topic string, mems ...models.Member) error {
 	g.Lock()
 	defer g.Unlock()
@@ -125,41 +111,46 @@ func (g *Group) Membr(topic, label string) *models.Member {
 	return nil
 }
 
-func (g *Group) SetGroupParams(topic string, cl domain.ConsistencyLevel, gm domain.GroupMode) error {
+func (g *Group) SetParams(topic string, gp models.GroupParams) error {
 	g.Lock()
 	defer g.Unlock()
 
-	if cl == `` {
-		cl = domain.NoConsistency
+	if gp.Consistency == `` {
+		gp.Consistency = domain.NoConsistency
 	}
 
-	if !cl.Valid() {
-		return fmt.Errorf(`invalid consistency level - %s`, cl)
+	if !gp.Consistency.Valid() {
+		return fmt.Errorf(`invalid consistency level - %s`, gp.Consistency)
 	}
 
-	if !gm.Valid() {
-		return fmt.Errorf(`invalid group mode - %s`, gm)
+	if !gp.Mode.Valid() {
+		return fmt.Errorf(`invalid group mode - %s`, gp.Mode)
 	}
 
 	if g.groups[topic] == nil {
 		g.groups[topic] = &models.Group{}
 	}
 
-	g.groups[topic].ConsistencyLevel = cl
-	g.groups[topic].GroupMode = gm
+	g.groups[topic].GroupParams = &gp
 	return nil
 }
 
 func (g *Group) ConsistLevel(topic string) domain.ConsistencyLevel {
 	g.RLock()
 	defer g.RUnlock()
-	return g.groups[topic].ConsistencyLevel
+	return g.groups[topic].Consistency
 }
 
 func (g *Group) Mode(topic string) domain.GroupMode {
 	g.RLock()
 	defer g.RUnlock()
-	return g.groups[topic].GroupMode
+	return g.groups[topic].Mode
+}
+
+func (g *Group) OrderEnabled(topic string) bool {
+	g.RLock()
+	defer g.RUnlock()
+	return g.groups[topic].OrderEnabled
 }
 
 func (g *Group) Checksum(topic string) string {

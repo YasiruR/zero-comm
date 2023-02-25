@@ -1,5 +1,7 @@
 package mock
 
+import "github.com/YasiruR/didcomm-prober/domain/models"
+
 const (
 	InvEndpoint     = `/inv`
 	ConnectEndpoint = `/oob`
@@ -9,10 +11,9 @@ const (
 )
 
 type reqCreate struct {
-	Topic       string `json:"topic"`
-	Publisher   bool   `json:"publisher"`
-	Consistency string `json:"consistency"`
-	Mode        string `json:"mode"`
+	Topic     string             `json:"topic"`
+	Publisher bool               `json:"publisher"`
+	Params    models.GroupParams `json:"params"`
 }
 
 type reqJoin struct {

@@ -1,7 +1,6 @@
 package services
 
 import (
-	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 )
 
@@ -32,7 +31,7 @@ type Server interface {
 /* message queue functions */
 
 type GroupAgent interface {
-	Create(topic string, publisher bool, cl domain.ConsistencyLevel, gm domain.GroupMode) error
+	Create(topic string, publisher bool, gp models.GroupParams) error
 	Join(topic, acceptor string, publisher bool) error
 	Send(topic, msg string) error
 	Leave(topic string) error

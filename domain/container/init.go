@@ -11,14 +11,11 @@ import (
 type Args struct {
 	Name     string
 	Port     int
-	Verbose  bool
 	PubPort  int
 	ZmqBufMs int
 	Mocker   bool
 	MockPort int
-
-	// todo should be a param of topic
-	Sync bool
+	Verbose  bool
 }
 
 type Config struct {

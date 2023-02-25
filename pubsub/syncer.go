@@ -37,11 +37,7 @@ type syncer struct {
 	*sync.RWMutex
 }
 
-func newSyncer(enabled bool) *syncer {
-	if !enabled {
-		return nil
-	}
-
+func newSyncer() *syncer {
 	s := rand.NewSource(time.Now().UnixNano())
 	return &syncer{
 		id:      rand.New(s).Intn(maxId),

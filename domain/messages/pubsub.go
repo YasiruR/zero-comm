@@ -1,7 +1,6 @@
 package messages
 
 import (
-	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 )
 
@@ -42,9 +41,8 @@ type ReqGroupJoin struct {
 }
 
 type ResGroupJoin struct {
-	Id          string                  `json:"@id"`
-	Type        string                  `json:"@type"`
-	Mode        domain.GroupMode        `json:"mode"`
-	Consistency domain.ConsistencyLevel `json:"consistency"`
-	Members     []models.Member         `json:"members"` // includes acceptor
+	Id      string             `json:"@id"`
+	Type    string             `json:"@type"`
+	Params  models.GroupParams `json:"params"`
+	Members []models.Member    `json:"members"` // includes acceptor
 }

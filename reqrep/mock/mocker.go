@@ -3,7 +3,6 @@ package mock
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/gorilla/mux"
 	"github.com/tryfix/log"
@@ -92,7 +91,7 @@ func (m *mocker) handleCreate(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = m.ctr.PubSub.Create(req.Topic, req.Publisher, domain.ConsistencyLevel(req.Consistency), domain.GroupMode(req.Mode)); err != nil {
+	if err = m.ctr.PubSub.Create(req.Topic, req.Publisher, req.Params); err != nil {
 		m.log.Error(`mocker`, err)
 	}
 }

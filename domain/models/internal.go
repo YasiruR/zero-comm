@@ -29,11 +29,15 @@ type Member struct {
 	PubEndpoint string `json:"pubEndpoint"`
 }
 
+type GroupParams struct {
+	OrderEnabled bool                    `json:"ordered"`
+	Consistency  domain.ConsistencyLevel `json:"consistency"`
+	Mode         domain.GroupMode        `json:"mode"`
+}
+
 type Group struct {
-	Topic        string
-	Checksum     string
-	Members      map[string]Member // map is used to prevent multiple instances of a member
-	OrderEnabled bool
-	domain.ConsistencyLevel
-	domain.GroupMode
+	Topic    string
+	Checksum string
+	Members  map[string]Member // map is used to prevent multiple instances of a member
+	*GroupParams
 }

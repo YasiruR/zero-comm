@@ -31,12 +31,11 @@ type runner struct {
 func ParseArgs() *container.Args {
 	n := flag.String(`label`, ``, `agent's name'`)
 	p := flag.Int(`port`, 0, `agent's port'`)
-	pub := flag.Int(`pub`, 0, `agent's publishing port'`)
-	v := flag.Bool(`v`, false, `logging`)
+	pub := flag.Int(`pub_port`, 0, `agent's publishing port'`)
 	bufLat := flag.Int(`buf`, 500, `latency buffer for zmq in milli-seconds`)
 	mocker := flag.Bool(`mock`, true, `enables mocking functions`)
 	mockPort := flag.Int(`mock_port`, 0, `port for mocking functions`)
-	syncData := flag.Bool(`sync`, false, `enables causal ordering between messages`)
+	v := flag.Bool(`v`, false, `logging`)
 	flag.Parse()
 
 	if *mocker == true && *mockPort == 0 {
@@ -51,7 +50,6 @@ func ParseArgs() *container.Args {
 		ZmqBufMs: *bufLat,
 		Mocker:   *mocker,
 		MockPort: *mockPort,
-		Sync:     *syncData,
 		Verbose:  *v,
 	}
 }
@@ -220,6 +218,7 @@ func (r *runner) createGroup() {
 	strPub := r.input(`Publisher (Y/N)`)
 	consLevl := r.input(`Consistency Level (none[default]/join/all)`)
 	mode := r.input(`Group Mode (single/multiple[default])`)
+	strOrdrd := r.input(`Order Group Messages (Y/N)`)
 
 	publisher, err := r.validBool(strPub)
 	if err != nil {
@@ -227,7 +226,15 @@ func (r *runner) createGroup() {
 		return
 	}
 
-	if err = r.pubsub.Create(topic, publisher, domain.ConsistencyLevel(consLevl), domain.GroupMode(mode)); err != nil {
+	ordrd, err := r.validBool(strOrdrd)
+	if err != nil {
+		r.error(`invalid input`, err)
+		return
+	}
+
+	if err = r.pubsub.Create(topic, publisher,
+		models.GroupParams{OrderEnabled: ordrd, Consistency: domain.ConsistencyLevel(consLevl), Mode: domain.GroupMode(mode)},
+	); err != nil {
 		r.error(`create group failed`, err)
 		return
 	}

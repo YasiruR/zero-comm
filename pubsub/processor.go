@@ -53,11 +53,14 @@ func (p *processor) joinReqs(msg *models.Message) error {
 	}
 
 	byts, err := json.Marshal(messages.ResGroupJoin{
-		Id:          uuid.New().String(),
-		Type:        messages.JoinResponseV1,
-		Consistency: p.gs.ConsistLevel(req.Topic),
-		Mode:        p.gs.Mode(req.Topic),
-		Members:     p.gs.Membrs(req.Topic),
+		Id:   uuid.New().String(),
+		Type: messages.JoinResponseV1,
+		Params: models.GroupParams{
+			OrderEnabled: p.gs.OrderEnabled(req.Topic),
+			Consistency:  p.gs.ConsistLevel(req.Topic),
+			Mode:         p.gs.Mode(req.Topic),
+		},
+		Members: p.gs.Membrs(req.Topic),
 		//Members: p.addIntruder(req.Topic),
 	})
 	if err != nil {
@@ -139,12 +142,6 @@ func (p *processor) states(_, msg string) error {
 	if validMsg == `` {
 		return fmt.Errorf(`status update is not intended to this member`)
 	}
-
-	//defer func(topic string) {
-	//	if err = p.valdtr.updateHash(topic, p.gs.Membrs(topic)); err != nil {
-	//		p.log.Error(fmt.Sprintf(`updating checksum for the group failed - %v`, err))
-	//	}
-	//}(sm.Topic)
 
 	_, strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
 	if err != nil {
