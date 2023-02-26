@@ -3,6 +3,7 @@ package pubsub
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/pubsub/stores"
 	"math/rand"
 	"sync"
 	"time"
@@ -16,7 +17,7 @@ type ts struct {
 	// in case lamport timestamps are equal for multiple messages
 	// reader can sort them corresponding to the id and hence the
 	// order will be consistent across the group
-	Id       int    `json:"id"`
+	SenderId int    `json:"send_id"`
 	LampTs   int64  `json:"lamp_ts"`
 	Checksum string `json:"checksum"`
 }
@@ -28,51 +29,76 @@ type groupMsg struct {
 
 // syncer is an additional layer enforced on the didcomm-message content
 // to maintain causal order among messages. Only data messages published
-// to the group will be impacted by syncer and can be enabled by command
-// line arguments of the agent.
+// to the group will be impacted by syncer and can be enabled for each topic.
 type syncer struct {
-	id int
-	// todo topic map
-	lampTs int64
-	*sync.RWMutex
+	id    int
+	tsMap map[string]*ts
+	gs    *stores.Group
+	*sync.Mutex
 }
 
-func newSyncer() *syncer {
+func newSyncer(gs *stores.Group) *syncer {
 	s := rand.NewSource(time.Now().UnixNano())
 	return &syncer{
-		id:      rand.New(s).Intn(maxId),
-		lampTs:  time.Now().Unix(),
-		RWMutex: &sync.RWMutex{},
+		id:    rand.New(s).Intn(maxId),
+		tsMap: map[string]*ts{},
+		gs:    gs,
+		Mutex: &sync.Mutex{},
+	}
+}
+
+func (s *syncer) init(topic string) {
+	s.Lock()
+	defer s.Unlock()
+	s.tsMap[topic] = &ts{
+		SenderId: s.id,
+		LampTs:   time.Now().Unix(),
+		Checksum: s.gs.Checksum(topic),
 	}
 }
 
 // parse returns the didcomm-message content while updating the lamport timestamp
-func (s *syncer) parse(msg string) (data string, err error) {
+func (s *syncer) parse(topic, msg string) (data string, err error) {
+	s.Lock()
+	defer s.Unlock()
+	storedTs, ok := s.tsMap[topic]
+	if !ok {
+		return msg, nil
+	}
+
 	var gm groupMsg
 	if err = json.Unmarshal([]byte(msg), &gm); err != nil {
 		return ``, fmt.Errorf(`unmarshalling message failed - %v`, err)
 	}
 
-	s.Lock()
-	defer s.Unlock()
-	if s.lampTs < gm.Ts.LampTs {
-		s.lampTs = gm.Ts.LampTs
+	if storedTs.LampTs <= gm.Ts.LampTs {
+		s.tsMap[topic] = &gm.Ts
 	}
 
 	return string(gm.Data), nil
 }
 
-// message builds the didcomm-message with updated lamport timestamp
-func (s *syncer) message(data []byte) (msg []byte, err error) {
-	lampTs := time.Now().Unix()
-	s.RLock()
-	if lampTs < s.lampTs {
-		lampTs = s.lampTs + 1
+// message builds the didcomm-message with updated lamport timestamp only if syncing enabled
+// for the topic. If otherwise, didcomm-message is returned without any modification
+func (s *syncer) message(topic string, data []byte) (msg []byte, err error) {
+	s.Lock()
+	defer s.Unlock()
+	storedTs, ok := s.tsMap[topic]
+	if !ok {
+		return data, nil
 	}
-	s.RUnlock()
 
-	// todo if checksum is not equal to last received, then wait (ot let notify) until correct, before returning here
+	curntTime := time.Now().Unix()
+	// setting the updated lamport timestamp by selecting between current_timestamp and stored_timestamp+1
+	if curntTime < storedTs.LampTs {
+		storedTs.LampTs = storedTs.LampTs + 1
+	} else {
+		storedTs.LampTs = curntTime
+	}
+	s.tsMap[topic] = storedTs
+
+	// todo if checksum is not equal to last received, then wait (or let notify) until correct, before returning here
 	// should only be done if strong consistency is required
 
-	return json.Marshal(groupMsg{Ts: ts{Id: s.id, LampTs: lampTs}, Data: data})
+	return json.Marshal(groupMsg{Ts: *storedTs, Data: data})
 }

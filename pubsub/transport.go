@@ -18,6 +18,8 @@ const (
 	typMsgSkt
 )
 
+// todo move this and auth to transport package?
+
 type zmq struct {
 	pub   *zmqPkg.Socket
 	state *zmqPkg.Socket

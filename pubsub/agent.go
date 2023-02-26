@@ -82,7 +82,6 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
 // initInternals initializes the internal components required by the group agent
 func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, error) {
 	gs := stores.NewGroupStore()
-	syncr := newSyncer()
 	compctr, err := newCompactor()
 	if err != nil {
 		return nil, fmt.Errorf(`initializing compressor failed - %v`, err)
@@ -111,9 +110,9 @@ func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, 
 		gs:       gs,
 		auth:     authn,
 		zmq:      transport,
-		syncr:    syncr,
 		compactr: compctr,
-		packr:    newPacker(c, syncr),
+		syncr:    newSyncer(gs),
+		packr:    newPacker(c),
 	}, nil
 }
 
@@ -164,6 +163,10 @@ func (a *Agent) Create(topic string, publisher bool, gp models.GroupParams) erro
 		return fmt.Errorf(`adding group creator failed - %v`, err)
 	}
 
+	if gp.OrderEnabled {
+		a.syncr.init(topic)
+	}
+
 	a.log.Info(fmt.Sprintf(`created '%s' group with the configured params`, topic), gp)
 	return nil
 }
@@ -196,6 +199,10 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 
 	if err = a.gs.SetParams(topic, group.Params); err != nil {
 		return fmt.Errorf(`setting consistency failed - %v`, err)
+	}
+
+	if group.Params.OrderEnabled {
+		a.syncr.init(topic)
 	}
 
 	hashes := make(map[string]string)
@@ -282,7 +289,7 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 		return nil, fmt.Errorf(`marshalling group-join request failed - %v`, err)
 	}
 
-	data, err := a.packr.pack(false, accptr, s.PubKey, byts)
+	data, err := a.packr.pack(accptr, s.PubKey, byts)
 	if err != nil {
 		return nil, fmt.Errorf(`packing join-req for %s failed - %v`, accptr, err)
 	}
@@ -321,9 +328,15 @@ func (a *Agent) Send(topic, msg string) error {
 		return fmt.Errorf(`fetching subscribers for topic %s failed - %v`, topic, err)
 	}
 
+	// including order-metadata only if it is a group message and syncing is enabled by params of topic
+	syncdMsg, err := a.syncr.message(topic, []byte(msg))
+	if err != nil {
+		return fmt.Errorf(`constructing ordered group message failed - %v`, err)
+	}
+
 	var published bool
 	for sub, key := range subs {
-		data, err := a.packr.pack(true, sub, key, []byte(msg))
+		data, err := a.packr.pack(sub, key, syncdMsg)
 		if err != nil {
 			return fmt.Errorf(`packing data message for %s failed - %v`, sub, err)
 		}
@@ -404,7 +417,7 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
 
-	data, err := a.packr.pack(false, m.Label, s.PubKey, byts)
+	data, err := a.packr.pack(m.Label, s.PubKey, byts)
 	if err != nil {
 		return ``, fmt.Errorf(`packing subscribe request for %s failed - %v`, m.Label, err)
 	}
@@ -493,7 +506,7 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 			return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 		}
 
-		data, err := a.packr.pack(false, m.Label, s.PubKey, byts)
+		data, err := a.packr.pack(m.Label, s.PubKey, byts)
 		if err != nil {
 			return nil, fmt.Errorf(`packing message for %s failed - %v`, m.Label, err)
 		}

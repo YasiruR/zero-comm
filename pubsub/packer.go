@@ -11,23 +11,21 @@ import (
 // packer is an internal wrapper for the packing processes of group agent
 type packer struct {
 	*services
-	*syncer
 	pckr servicesPkg.Packer
 }
 
-func newPacker(c *container.Container, syncr *syncer) *packer {
+func newPacker(c *container.Container) *packer {
 	return &packer{
 		services: &services{
 			km:    c.KeyManager,
 			probr: c.Prober,
 		},
-		pckr:   c.Packer,
-		syncer: syncr,
+		pckr: c.Packer,
 	}
 }
 
 // pack constructs and encodes an authcrypt message to the given receiver
-func (p *packer) pack(groupMsg bool, receiver string, recPubKey []byte, msg []byte) ([]byte, error) {
+func (p *packer) pack(receiver string, recPubKey []byte, msg []byte) ([]byte, error) {
 	if recPubKey == nil {
 		s, err := p.probr.Service(domain.ServcGroupJoin, receiver)
 		if err != nil {
@@ -44,14 +42,6 @@ func (p *packer) pack(groupMsg bool, receiver string, recPubKey []byte, msg []by
 	ownPrvKey, err := p.km.PrivateKey(receiver)
 	if err != nil {
 		return nil, fmt.Errorf(`getting private key for connection with %s failed - %v`, receiver, err)
-	}
-
-	// including order-metadata only if it is a group message and syncing is enabled by params
-	if groupMsg && p.syncer != nil {
-		msg, err = p.syncer.message(msg)
-		if err != nil {
-			return nil, fmt.Errorf(`constructing ordered group message failed - %v`, err)
-		}
 	}
 
 	encryptdMsg, err := p.pckr.Pack(msg, recPubKey, ownPubKey, ownPrvKey)

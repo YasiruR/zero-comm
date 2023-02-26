@@ -67,7 +67,7 @@ func (p *processor) joinReqs(msg *models.Message) error {
 		return fmt.Errorf(`marshalling group-join response failed - %v`, err)
 	}
 
-	packedMsg, err := p.packr.pack(false, req.Label, nil, byts)
+	packedMsg, err := p.packr.pack(req.Label, nil, byts)
 	if err != nil {
 		return fmt.Errorf(`packing group-join response failed - %v`, err)
 	}
@@ -193,11 +193,9 @@ func (p *processor) data(zmqTopic, msg string) error {
 		return fmt.Errorf(`reading subscribed message failed - %v`, err)
 	}
 
-	if p.syncr != nil {
-		data, err = p.syncr.parse(data)
-		if err != nil {
-			return fmt.Errorf(`parsing ordered data message failed - %v`, err)
-		}
+	data, err = p.syncr.parse(topic, data)
+	if err != nil {
+		return fmt.Errorf(`parsing data message via syncer failed - %v`, err)
 	}
 
 	p.outChan <- fmt.Sprintf(`%s sent in group '%s': %s`, sender, topic, data)
@@ -237,7 +235,7 @@ func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.
 		return fmt.Errorf(`marshalling subscribe response failed - %v`, err)
 	}
 
-	packedMsg, err := p.packr.pack(false, m.Label, nil, resByts)
+	packedMsg, err := p.packr.pack(m.Label, nil, resByts)
 	if err != nil {
 		return fmt.Errorf(`packing subscribe response failed - %v`, err)
 	}
