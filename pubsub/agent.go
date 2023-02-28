@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
+	"github.com/YasiruR/didcomm-prober/pubsub/stores"
+	"github.com/YasiruR/didcomm-prober/pubsub/validator"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
 	zmqPkg "github.com/pebbe/zmq4"
@@ -14,10 +17,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-)
-
-const (
-	zmqLatencyBufMilliSec = 500
 )
 
 type state struct {
@@ -34,32 +33,28 @@ type services struct {
 }
 
 type internals struct {
-	valdtr *validator
-	zmq    *zmq
-	gs     *groupStore
-	subs   *subStore
-	auth   *auth
-	packr  *packer
+	zmq      *zmq
+	auth     *auth
+	packr    *packer
+	syncr    *syncer
+	compactr *compactor
+	gs       *stores.Group
+	subs     *stores.Subscriber
 }
 
 type Agent struct {
 	*state
 	*internals
-	*compactor
 	*services
-	proc    *processor
-	outChan chan string
+	proc     *processor
+	outChan  chan string
+	zmqBufms int
 }
 
-func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
+func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
 	in, err := initInternals(zmqCtx, c)
 	if err != nil {
 		return nil, fmt.Errorf(`initializing internal services of group agent failed - %v`, err)
-	}
-
-	compctr, err := newCompactor()
-	if err != nil {
-		return nil, fmt.Errorf(`initializing compressor failed - %v`, err)
 	}
 
 	a := &Agent{
@@ -75,9 +70,9 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
 			client: c.Client,
 			log:    c.Log,
 		},
-		compactor: compctr,
-		proc:      newProcessor(c.Cfg.Name, c, in, compctr),
-		outChan:   c.OutChan,
+		proc:     newProcessor(c.Cfg.Name, c, in),
+		outChan:  c.OutChan,
+		zmqBufms: c.Cfg.ZmqBufMs,
 	}
 
 	a.start(c.Server)
@@ -85,8 +80,13 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *domain.Container) (*Agent, error) {
 }
 
 // initInternals initializes the internal components required by the group agent
-func initInternals(zmqCtx *zmqPkg.Context, c *domain.Container) (*internals, error) {
-	gs := newGroupStore()
+func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, error) {
+	gs := stores.NewGroupStore()
+	compctr, err := newCompactor()
+	if err != nil {
+		return nil, fmt.Errorf(`initializing compressor failed - %v`, err)
+	}
+
 	transport, err := newZmqTransport(zmqCtx, gs, c)
 	if err != nil {
 		return nil, fmt.Errorf(`zmq transport init for group agent failed - %v`, err)
@@ -106,12 +106,13 @@ func initInternals(zmqCtx *zmqPkg.Context, c *domain.Container) (*internals, err
 	}
 
 	return &internals{
-		subs:   newSubStore(),
-		gs:     gs,
-		auth:   authn,
-		zmq:    transport,
-		valdtr: newValidator(c.Log),
-		packr:  newPacker(c),
+		subs:     stores.NewSubStore(),
+		gs:       gs,
+		auth:     authn,
+		zmq:      transport,
+		compactr: compctr,
+		syncr:    newSyncer(gs),
+		packr:    newPacker(c),
 	}, nil
 }
 
@@ -128,18 +129,18 @@ func (a *Agent) start(srvr servicesPkg.Server) {
 	joinChan := make(chan models.Message)
 	srvr.AddHandler(models.TypGroupJoin, joinChan, false)
 
-	// initialize internal handlers for zmq requests
+	// initialize internal handlers for zmq requests on REQ sockets
 	a.process(joinChan, a.proc.joinReqs)
 	a.process(subChan, a.proc.subscriptions)
 
-	// initialize listening on subscriptions
-	a.zmq.listen(typStateSkt, a.proc.states)
+	// initialize listening on subscriptions on SUB sockets
+	a.zmq.listen(typStateSkt, a.proc.state)
 	a.zmq.listen(typMsgSkt, a.proc.data)
 }
 
 // Create constructs a group including creator's invitation
 // for the group and its models.Member
-func (a *Agent) Create(topic string, publisher bool) error {
+func (a *Agent) Create(topic string, publisher bool, gp models.GroupParams) error {
 	inv, err := a.probr.Invite()
 	if err != nil {
 		return fmt.Errorf(`generating invitation failed - %v`, err)
@@ -154,17 +155,25 @@ func (a *Agent) Create(topic string, publisher bool) error {
 	}
 
 	a.invs[topic] = inv
-	a.gs.addMembr(topic, m)
-	if err = a.valdtr.updateHash(topic, []models.Member{m}); err != nil {
-		return fmt.Errorf(`updating checksum on group-create failed - %v`, err)
+	if err = a.gs.SetParams(topic, gp); err != nil {
+		return fmt.Errorf(`updating group params failed - %v`, err)
 	}
 
+	if err = a.gs.AddMembrs(topic, m); err != nil {
+		return fmt.Errorf(`adding group creator failed - %v`, err)
+	}
+
+	if gp.OrderEnabled {
+		a.syncr.init(topic)
+	}
+
+	a.log.Info(fmt.Sprintf(`created '%s' group with the configured params`, topic), gp)
 	return nil
 }
 
 func (a *Agent) Join(topic, acceptor string, publisher bool) error {
-	// check if already joined to the topic
-	if a.gs.joined(topic) {
+	// check if already Joined to the topic
+	if a.gs.Joined(topic) {
 		return fmt.Errorf(`already connected to group %s`, topic)
 	}
 
@@ -187,7 +196,14 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		Inv:         inv,
 		PubEndpoint: a.pubEndpoint,
 	}
-	a.gs.addMembr(topic, joiner)
+
+	if err = a.gs.SetParams(topic, group.Params); err != nil {
+		return fmt.Errorf(`setting consistency failed - %v`, err)
+	}
+
+	if group.Params.OrderEnabled {
+		a.syncr.init(topic)
+	}
 
 	hashes := make(map[string]string)
 	for _, m := range group.Members {
@@ -195,7 +211,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 			continue
 		}
 
-		checksum, err := a.addMember(topic, publisher, m)
+		checksum, err := a.connectMember(topic, publisher, m)
 		if err != nil {
 			a.log.Error(fmt.Sprintf(`adding %s as a member failed - %v`, m.Label, err))
 			continue
@@ -204,25 +220,28 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	if len(group.Members) > 1 {
-		if err = a.verifyJoin(acceptor, group.Members, hashes); err != nil {
+		if err = validator.ValidJoin(acceptor, group.Members, hashes); err != nil {
+			if group.Params.JoinConsistent {
+				return fmt.Errorf(`join failed due to inconsistent view of the group - %v`, err)
+			}
 			a.log.Warn(fmt.Sprintf(`group verification failed but proceeded with registration - %v`, err))
 		}
 	}
 
-	// publish status
-	time.Sleep(zmqLatencyBufMilliSec * time.Millisecond) // buffer for zmq subscription latency
-	if err = a.notifyAll(topic, true, publisher); err != nil {
-		return fmt.Errorf(`publishing status active failed - %v`, err)
+	if err = a.gs.AddMembrs(topic, append(group.Members, joiner)...); err != nil {
+		return fmt.Errorf(`adding group members failed - %v`, err)
 	}
 
-	if err = a.valdtr.updateHash(topic, append(group.Members, joiner)); err != nil {
-		return fmt.Errorf(`updating checksum on group-join failed - %v`, err)
+	// publish status
+	time.Sleep(time.Duration(a.zmqBufms) * time.Millisecond) // buffer for zmq subscription latency
+	if err = a.notifyAll(topic, true, publisher); err != nil {
+		return fmt.Errorf(`publishing status active failed - %v`, err)
 	}
 
 	return nil
 }
 
-func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checksum string, err error) {
+func (a *Agent) connectMember(topic string, publisher bool, m models.Member) (checksum string, err error) {
 	if err = a.connectDIDComm(m); err != nil {
 		return ``, fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
 	}
@@ -236,9 +255,6 @@ func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checks
 		return ``, fmt.Errorf(`transport connection failed - %v`, err)
 	}
 
-	// add as a member to be shared with another in future
-	a.gs.addMembr(topic, m)
-
 	if !publisher {
 		return checksum, nil
 	}
@@ -247,26 +263,9 @@ func (a *Agent) addMember(topic string, publisher bool, m models.Member) (checks
 	if err != nil {
 		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
-	a.subs.add(topic, m.Label, s.PubKey)
+	a.subs.Add(topic, m.Label, s.PubKey)
+
 	return checksum, nil
-}
-
-// verifyJoin checks if the initial member set returned by the acceptor is consistent
-// across other members thus eliminating intruders in the initial state of the joiner.
-// memHashs is a map with hash values indexed by the member label.
-func (a *Agent) verifyJoin(accptr string, joinSet []models.Member, memHashs map[string]string) error {
-	joinedChecksm, err := a.valdtr.calculate(joinSet)
-	if err != nil {
-		return fmt.Errorf(`calculating checksum of initial member set failed - %v`, err)
-	}
-	memHashs[accptr] = joinedChecksm
-
-	invalidMems, ok := a.valdtr.verify(memHashs)
-	if !ok {
-		return fmt.Errorf(`at least one inconsistent member set found (%v)`, invalidMems)
-	}
-
-	return nil
 }
 
 // reqState checks if requester has already connected with acceptor
@@ -301,7 +300,7 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 	}
 	a.log.Debug(`group-join response received`, res)
 
-	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypGroupJoin, Data: []byte(res), Reply: nil})
+	_, unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypGroupJoin, Data: []byte(res), Reply: nil})
 	if err != nil {
 		return nil, fmt.Errorf(`unpacking group-join response failed - %v`, err)
 	}
@@ -315,7 +314,7 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 }
 
 func (a *Agent) Send(topic, msg string) error {
-	curntMembr := a.gs.membr(topic, a.myLabel)
+	curntMembr := a.gs.Membr(topic, a.myLabel)
 	if curntMembr == nil {
 		return fmt.Errorf(`member information does not exist for the current member`)
 	}
@@ -324,14 +323,20 @@ func (a *Agent) Send(topic, msg string) error {
 		return fmt.Errorf(`current member is not registered as a publisher`)
 	}
 
-	subs, err := a.subs.queryByTopic(topic)
+	subs, err := a.subs.QueryByTopic(topic)
 	if err != nil {
 		return fmt.Errorf(`fetching subscribers for topic %s failed - %v`, topic, err)
 	}
 
+	// including order-metadata only if it is a group message and syncing is enabled by params of topic
+	syncdMsg, err := a.syncr.message(topic, []byte(msg))
+	if err != nil {
+		return fmt.Errorf(`constructing ordered group message failed - %v`, err)
+	}
+
 	var published bool
 	for sub, key := range subs {
-		data, err := a.packr.pack(sub, key, []byte(msg))
+		data, err := a.packr.pack(sub, key, syncdMsg)
 		if err != nil {
 			return fmt.Errorf(`packing data message for %s failed - %v`, sub, err)
 		}
@@ -422,7 +427,7 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`sending subscribe message failed - %v`, err)
 	}
 
-	unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypSubscribe, Data: []byte(res), Reply: nil})
+	_, unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypSubscribe, Data: []byte(res), Reply: nil})
 	if err != nil {
 		return ``, fmt.Errorf(`reading subscribe didcomm response failed - %v`, err)
 	}
@@ -485,7 +490,7 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 		return nil, fmt.Errorf(`marshalling member failed - %v`, err)
 	}
 
-	mems := a.gs.membrs(topic)
+	mems := a.gs.Membrs(topic)
 	for _, m := range mems {
 		if m.Label == a.myLabel {
 			continue
@@ -514,23 +519,9 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 		return nil, fmt.Errorf(`marshalling status message failed - %v`, err)
 	}
 
-	cmprsd := a.zEncodr.EncodeAll(encodedStatus, make([]byte, 0, len(encodedStatus)))
+	cmprsd := a.compactr.zEncodr.EncodeAll(encodedStatus, make([]byte, 0, len(encodedStatus)))
 	a.log.Trace(fmt.Sprintf(`compressed status message (from %d to %d #bytes)`, len(encodedStatus), len(cmprsd)))
 	return cmprsd, nil
-}
-
-func (a *Agent) parseMembrStatus(msg string) (*messages.Status, error) {
-	frames := strings.Split(msg, " ")
-	if len(frames) != 2 {
-		return nil, fmt.Errorf(`received a message (%v) with an invalid format - frame count should be 2`, msg)
-	}
-
-	var ms messages.Status
-	if err := json.Unmarshal([]byte(frames[1]), &ms); err != nil {
-		return nil, fmt.Errorf(`unmarshalling publisher status failed (msg: %s) - %v`, frames[1], err)
-	}
-
-	return &ms, nil
 }
 
 func (a *Agent) Leave(topic string) error {
@@ -538,7 +529,7 @@ func (a *Agent) Leave(topic string) error {
 		return fmt.Errorf(`zmw unsubsription failed - %v`, err)
 	}
 
-	membrs := a.gs.membrs(topic)
+	membrs := a.gs.Membrs(topic)
 	if len(membrs) == 0 {
 		return fmt.Errorf(`no members found`)
 	}
@@ -554,15 +545,15 @@ func (a *Agent) Leave(topic string) error {
 		return fmt.Errorf(`publishing inactive status failed - %v`, err)
 	}
 
-	a.subs.deleteTopic(topic)
-	a.gs.deleteTopic(topic)
+	a.subs.DeleteTopic(topic)
+	a.gs.DeleteTopic(topic)
 	a.outChan <- `Left group ` + topic
 	return nil
 }
 
 func (a *Agent) Info(topic string) (mems []models.Member) {
 	// removing invitation for more clarity
-	for _, m := range a.gs.membrs(topic) {
+	for _, m := range a.gs.Membrs(topic) {
 		m.Inv = ``
 		mems = append(mems, m)
 	}

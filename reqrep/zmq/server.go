@@ -3,7 +3,7 @@ package zmq
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
@@ -21,7 +21,7 @@ type Server struct {
 	log     log.Logger
 }
 
-func NewServer(zmqCtx *zmq.Context, c *domain.Container) (*Server, error) {
+func NewServer(zmqCtx *zmq.Context, c *container.Container) (*Server, error) {
 	skt, err := zmqCtx.NewSocket(zmq.REP)
 	if err != nil {
 		return nil, fmt.Errorf(`constructing zmq server socket failed - %v`, err)

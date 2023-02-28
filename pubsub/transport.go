@@ -3,9 +3,12 @@ package pubsub
 import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
+	"github.com/YasiruR/didcomm-prober/pubsub/stores"
 	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
+	"strings"
 )
 
 type sktType int
@@ -15,16 +18,17 @@ const (
 	typMsgSkt
 )
 
+// todo move this and auth to transport package?
+
 type zmq struct {
-	singlQ bool
-	pub    *zmqPkg.Socket
-	state  *zmqPkg.Socket
-	msgs   *zmqPkg.Socket
-	gs     *groupStore
-	log    log.Logger
+	pub   *zmqPkg.Socket
+	state *zmqPkg.Socket
+	msgs  *zmqPkg.Socket
+	gs    *stores.Group
+	log   log.Logger
 }
 
-func newZmqTransport(zmqCtx *zmqPkg.Context, gs *groupStore, c *domain.Container) (*zmq, error) {
+func newZmqTransport(zmqCtx *zmqPkg.Context, gs *stores.Group, c *container.Container) (*zmq, error) {
 	pubSkt, err := zmqCtx.NewSocket(zmqPkg.PUB)
 	if err != nil {
 		return nil, fmt.Errorf(`creating zmq pub socket failed - %v`, err)
@@ -41,12 +45,11 @@ func newZmqTransport(zmqCtx *zmqPkg.Context, gs *groupStore, c *domain.Container
 	}
 
 	return &zmq{
-		singlQ: c.Cfg.SingleQ,
-		pub:    pubSkt,
-		state:  sktStates,
-		msgs:   sktMsgs,
-		gs:     gs,
-		log:    c.Log,
+		pub:   pubSkt,
+		state: sktStates,
+		msgs:  sktMsgs,
+		gs:    gs,
+		log:   c.Log,
 	}, nil
 }
 
@@ -90,10 +93,11 @@ func (z *zmq) connect(initRole domain.Role, initLabel, topic string, m models.Me
 	return nil
 }
 
-func (z *zmq) publish(topic string, data []byte) error {
-	if _, err := z.pub.SendMessage(fmt.Sprintf(`%s %s`, topic, string(data))); err != nil {
+func (z *zmq) publish(topic string, data []byte) (err error) {
+	if _, err = z.pub.SendMessage(fmt.Sprintf(`%s %s`, topic, string(data))); err != nil {
 		return fmt.Errorf(`publishing message (%s) failed - %v`, string(data), err)
 	}
+
 	return nil
 }
 
@@ -126,8 +130,16 @@ func (z *zmq) unsubscribeAll(label, topic string) error {
 		return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, z.stateTopic(topic), err)
 	}
 
-	for _, m := range z.gs.membrs(topic) {
-		if !m.Publisher || m.Label == label {
+	for _, m := range z.gs.Membrs(topic) {
+		if m.Label == label {
+			continue
+		}
+
+		if err := z.state.Disconnect(m.PubEndpoint); err != nil {
+			return fmt.Errorf(`disconnecting state endpoint (%s) failed - %v`, m.PubEndpoint, err)
+		}
+
+		if !m.Publisher {
 			continue
 		}
 
@@ -135,22 +147,39 @@ func (z *zmq) unsubscribeAll(label, topic string) error {
 		if err := z.msgs.SetUnsubscribe(dt); err != nil {
 			return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, dt, err)
 		}
+
+		if err := z.msgs.Disconnect(m.PubEndpoint); err != nil {
+			return fmt.Errorf(`disconnecting data endpoint failed - %v`, err)
+		}
 	}
 
 	return nil
 }
 
-func (z *zmq) unsubscribeData(label, topic, peer string) error {
-	dt := z.dataTopic(topic, peer, label)
+// unsubscribeData includes disconnecting status socket since the function
+// is called only when removing an inactive member
+func (z *zmq) unsubscribeData(label, topic string, m models.Member) error {
+	dt := z.dataTopic(topic, m.Label, label)
 	if err := z.msgs.SetUnsubscribe(dt); err != nil {
 		return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, dt, err)
 	}
 
+	if err := z.msgs.Disconnect(m.PubEndpoint); err != nil {
+		return fmt.Errorf(`disconnecting data endpoint failed - %v`, err)
+	}
+
+	return nil
+}
+
+func (z *zmq) disconnectStatus(endpoint string) error {
+	if err := z.state.Disconnect(endpoint); err != nil {
+		return fmt.Errorf(`disconnecting state endpoint failed - %v`, err)
+	}
 	return nil
 }
 
 func (z *zmq) topicExists(topic string) bool {
-	if len(z.gs.membrs(topic)) < 2 {
+	if len(z.gs.Membrs(topic)) < 2 {
 		return false
 	}
 	return true
@@ -158,17 +187,27 @@ func (z *zmq) topicExists(topic string) bool {
 
 // constructs the URN in the format of 'urn:<NID>:<NSS>' (https://www.rfc-editor.org/rfc/rfc2141#section-2)
 func (z *zmq) dataTopic(topic, pub, sub string) string {
-	if z.singlQ {
-		return `urn:didcomm-queue:` + topic + `:data`
+	if z.gs.Mode(topic) == domain.SingleQueueMode {
+		return domain.TopicPrefix + topic + `:data`
 	}
-	return `urn:didcomm-queue:` + topic + `:data:` + pub + `:` + sub
+	return domain.TopicPrefix + topic + `:data:` + pub + `:` + sub
 }
 
 func (z *zmq) stateTopic(topic string) string {
-	return `urn:didcomm-queue:` + topic + `:state`
+	return domain.TopicPrefix + topic + `:state`
 }
 
-func (z *zmq) listen(st sktType, handlerFunc func(msg string) error) {
+func (z *zmq) groupNameByDataTopic(topic string) string {
+	parts := strings.Split(topic, `:`)
+	if len(parts) < 3 {
+		z.log.Warn(`group name could not be fetched from topic`, topic)
+		return ``
+	}
+
+	return parts[2]
+}
+
+func (z *zmq) listen(st sktType, handlerFunc func(topic, msg string) error) {
 	var skt *zmqPkg.Socket
 	switch st {
 	case typStateSkt:
@@ -185,11 +224,14 @@ func (z *zmq) listen(st sktType, handlerFunc func(msg string) error) {
 				continue
 			}
 
-			if err = handlerFunc(msg); err != nil {
-				if z.singlQ && st == typMsgSkt {
-					z.log.Debug(fmt.Sprintf(`message may not be intended to this member - %v`, err))
-					continue
-				}
+			frames := strings.SplitN(msg, ` `, 2)
+			if len(frames) != 2 {
+				z.log.Error(fmt.Sprintf(`received an invalid status message (length=%v)`, len(frames)))
+				continue
+			}
+
+			data := frames[1]
+			if err = handlerFunc(frames[0], data); err != nil {
 				z.log.Error(fmt.Sprintf(`processing received message failed - %v`, err))
 			}
 		}

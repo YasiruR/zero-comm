@@ -12,7 +12,7 @@ type Agent interface {
 	SyncAccept(encodedInv string) error
 	Accept(encodedInv string) (sender string, err error)
 	SendMessage(mt models.MsgType, to, text string) error
-	ReadMessage(msg models.Message) (text string, err error)
+	ReadMessage(msg models.Message) (sender, text string, err error)
 	Peer(label string) (models.Peer, error)
 	Service(name, peer string) (*models.Service, error)
 	ValidConn(exchId string) (ok bool, pr models.Peer)

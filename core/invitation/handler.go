@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/google/uuid"
 )
@@ -14,8 +14,8 @@ type OOBService struct {
 	invEndpoint string
 }
 
-func NewOOBService(cfg *domain.Config) *OOBService {
-	return &OOBService{invEndpoint: cfg.Hostname + domain.InvitationEndpoint}
+func NewOOBService(cfg *container.Config) *OOBService {
+	return &OOBService{invEndpoint: cfg.Hostname}
 }
 
 func (o *OOBService) CreateInv(label, did string, didDoc messages.DIDDocument) (url string, err error) {

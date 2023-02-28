@@ -3,7 +3,7 @@ package http
 import (
 	"bytes"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/gorilla/mux"
 	"github.com/tryfix/log"
@@ -22,7 +22,7 @@ type HTTP struct {
 	inChan chan []byte
 }
 
-func NewHTTP(c *domain.Container) *HTTP {
+func NewHTTP(c *container.Container) *HTTP {
 	return &HTTP{
 		port:   c.Cfg.Args.Port,
 		packer: c.Packer,
@@ -35,8 +35,7 @@ func NewHTTP(c *domain.Container) *HTTP {
 }
 
 func (h *HTTP) Start() {
-	h.router.HandleFunc(domain.InvitationEndpoint, h.handleConnReqs).Methods(http.MethodPost)
-	h.router.HandleFunc(domain.ExchangeEndpoint, h.handleInbound).Methods(http.MethodPost)
+	// need to add endpoints if http transport is used
 	if err := http.ListenAndServe(":"+strconv.Itoa(h.port), h.router); err != nil {
 		h.log.Fatal(`http server initialization failed - %v`, err)
 	}

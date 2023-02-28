@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/core/discovery"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/domain/services"
 	internalLog "github.com/YasiruR/didcomm-prober/log"
@@ -17,7 +18,7 @@ import (
 )
 
 type runner struct {
-	cfg     *domain.Config
+	cfg     *container.Config
 	reader  *bufio.Reader
 	prober  services.Agent
 	disc    services.Discoverer
@@ -27,18 +28,33 @@ type runner struct {
 	pubsub  services.GroupAgent
 }
 
-func ParseArgs() *domain.Args {
+func ParseArgs() *container.Args {
 	n := flag.String(`label`, ``, `agent's name'`)
 	p := flag.Int(`port`, 0, `agent's port'`)
-	pub := flag.Int(`pub`, 0, `agent's publishing port'`)
+	pub := flag.Int(`pub_port`, 0, `agent's publishing port'`)
+	bufLat := flag.Int(`buf`, 500, `latency buffer for zmq in milli-seconds`)
+	mocker := flag.Bool(`mock`, true, `enables mocking functions`)
+	mockPort := flag.Int(`mock_port`, 0, `port for mocking functions`)
 	v := flag.Bool(`v`, false, `logging`)
-	singleQ := flag.Bool(`single`, false, `enables single-queue mode for data messages`)
 	flag.Parse()
 
-	return &domain.Args{Name: *n, Port: *p, PubPort: *pub, SingleQ: *singleQ, Verbose: *v}
+	if *mocker == true && *mockPort == 0 {
+		fmt.Println("mock server port should be provided when enabled (see -h or --help for details)")
+		os.Exit(0)
+	}
+
+	return &container.Args{
+		Name:     *n,
+		Port:     *p,
+		PubPort:  *pub,
+		ZmqBufMs: *bufLat,
+		Mocker:   *mocker,
+		MockPort: *mockPort,
+		Verbose:  *v,
+	}
 }
 
-func Init(c *domain.Container) {
+func Init(c *container.Container) {
 	fmt.Printf("-> Agent initialized with following attributes: \n\t- Name: %s\n\t- Hostname: %s\n", c.Cfg.Args.Name, c.Cfg.Hostname[:len(c.Cfg.Hostname)-1])
 	fmt.Printf("-> Press c and enter for commands\n")
 
@@ -154,7 +170,7 @@ func (r *runner) generateInvitation() {
 }
 
 func (r *runner) connectWithInv() {
-	u, err := url.Parse(strings.TrimSpace(r.input(`Provide invitation in URL form`)))
+	u, err := url.Parse(r.input(`Provide invitation in URL form`))
 	if err != nil {
 		r.error(`invalid url format, please try again`, err)
 		return
@@ -172,8 +188,8 @@ func (r *runner) connectWithInv() {
 }
 
 func (r *runner) sendMsg() {
-	peer := strings.TrimSpace(r.input(`Recipient`))
-	msg := strings.TrimSpace(r.input(`Message`))
+	peer := r.input(`Recipient`)
+	msg := r.input(`Message`)
 
 	if err := r.prober.SendMessage(models.TypData, peer, msg); err != nil {
 		r.error(`sending message failed`, err)
@@ -181,9 +197,9 @@ func (r *runner) sendMsg() {
 }
 
 func (r *runner) discover() {
-	endpoint := strings.TrimSpace(r.input(`Endpoint`))
-	query := strings.TrimSpace(r.input(`Query`))
-	comment := strings.TrimSpace(r.input(`Comment`))
+	endpoint := r.input(`Endpoint`)
+	query := r.input(`Query`)
+	comment := r.input(`Comment`)
 	features, err := r.disc.Query(endpoint, query, comment)
 	if err != nil {
 		r.error(`discovering features failed, please try again`, err)
@@ -198,8 +214,11 @@ func (r *runner) discover() {
 }
 
 func (r *runner) createGroup() {
-	topic := strings.TrimSpace(r.input(`Topic`))
-	strPub := strings.TrimSpace(r.input(`Publisher (Y/N)`))
+	topic := r.input(`Topic`)
+	strPub := r.input(`Publisher (Y/N)`)
+	mode := r.input(`Group mode (single/multiple[default])`)
+	strJoinConsist := r.input(`Strict consistency for join operation (Y/N)`)
+	strOrdrd := r.input(`Causal consistency for group messages (Y/N)`)
 
 	publisher, err := r.validBool(strPub)
 	if err != nil {
@@ -207,7 +226,21 @@ func (r *runner) createGroup() {
 		return
 	}
 
-	if err = r.pubsub.Create(topic, publisher); err != nil {
+	ordrd, err := r.validBool(strOrdrd)
+	if err != nil {
+		r.error(`invalid input`, err)
+		return
+	}
+
+	joinConsist, err := r.validBool(strJoinConsist)
+	if err != nil {
+		r.error(`invalid input`, err)
+		return
+	}
+
+	if err = r.pubsub.Create(topic, publisher,
+		models.GroupParams{OrderEnabled: ordrd, JoinConsistent: joinConsist, Mode: domain.GroupMode(mode)},
+	); err != nil {
 		r.error(`create group failed`, err)
 		return
 	}
@@ -215,9 +248,9 @@ func (r *runner) createGroup() {
 }
 
 func (r *runner) joinGroup() {
-	topic := strings.TrimSpace(r.input(`Topic`))
-	acceptor := strings.TrimSpace(r.input(`Acceptor`))
-	strPub := strings.TrimSpace(r.input(`Publisher (Y/N)`))
+	topic := r.input(`Topic`)
+	acceptor := r.input(`Acceptor`)
+	strPub := r.input(`Publisher (Y/N)`)
 
 	publisher, err := r.validBool(strPub)
 	if err != nil {
@@ -233,8 +266,8 @@ func (r *runner) joinGroup() {
 }
 
 func (r *runner) groupMsg() {
-	topic := strings.TrimSpace(r.input(`Topic`))
-	msg := strings.TrimSpace(r.input(`Message`))
+	topic := r.input(`Topic`)
+	msg := r.input(`Message`)
 
 	if err := r.pubsub.Send(topic, msg); err != nil {
 		r.error(`sending group message failed`, err)
@@ -242,14 +275,14 @@ func (r *runner) groupMsg() {
 }
 
 func (r *runner) leave() {
-	topic := strings.TrimSpace(r.input(`Topic`))
+	topic := r.input(`Topic`)
 	if err := r.pubsub.Leave(topic); err != nil {
 		r.error(`leaving group failed`, err)
 	}
 }
 
 func (r *runner) groupInfo() {
-	topic := strings.TrimSpace(r.input(`Topic`))
+	topic := r.input(`Topic`)
 	r.output(fmt.Sprintf(`%v`, r.pubsub.Info(topic)))
 }
 
@@ -263,7 +296,7 @@ readInput:
 		fmt.Printf("   ! Error: reading %s failed, please try again\n", label)
 		goto readInput
 	}
-	return msg
+	return strings.TrimSpace(msg)
 }
 
 func (r *runner) output(text string) {

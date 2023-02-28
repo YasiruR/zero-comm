@@ -37,7 +37,9 @@ func authenticator(label string, verbose bool) (*auth, error) {
 	// check zmq version and return if curve is available
 	zmqPkg.AuthSetVerbose(verbose)
 	if err := zmqPkg.AuthStart(); err != nil {
-		return nil, fmt.Errorf(`starting zmq authenticator failed - %v`, err)
+		if err.Error() != "Auth is already running" {
+			return nil, fmt.Errorf(`starting zmq authenticator failed - %v`, err)
+		}
 	}
 
 	a := &auth{id: label, keys: &sync.Map{}, RWMutex: &sync.RWMutex{}}
