@@ -165,7 +165,10 @@ func (p *processor) state(_, msg string) error {
 		}
 
 		p.subs.Delete(status.Topic, m.Label)
-		p.gs.DeleteMembr(status.Topic, m.Label)
+		if err = p.gs.DeleteMembr(status.Topic, m.Label); err != nil {
+			return fmt.Errorf(`deleting member failed - %v`, err)
+		}
+
 		if err = p.auth.remvKeys(m.Label); err != nil {
 			return fmt.Errorf(`removing zmq transport keys failed - %v`, err)
 		}

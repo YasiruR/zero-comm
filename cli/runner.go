@@ -283,7 +283,9 @@ func (r *runner) leave() {
 
 func (r *runner) groupInfo() {
 	topic := r.input(`Topic`)
-	r.output(fmt.Sprintf(`%v`, r.pubsub.Info(topic)))
+	mems := r.pubsub.Info(topic)
+	r.output(fmt.Sprintf(`Number of members: %d`, len(mems)))
+	r.output(fmt.Sprintf(`Member list: %v`, mems))
 }
 
 /* command-line specific functions */

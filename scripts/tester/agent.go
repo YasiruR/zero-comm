@@ -19,7 +19,7 @@ import (
 	"strconv"
 )
 
-func initAgent(name string, port, pubPort, buf int, singleQ bool) *container.Container {
+func initAgent(name string, port, pubPort, buf int) *container.Container {
 	return initContainer(setConfigs(&container.Args{
 		Name:     name,
 		Port:     port,
@@ -55,7 +55,7 @@ func setConfigs(args *container.Args) *container.Config {
 }
 
 func initContainer(cfg *container.Config) *container.Container {
-	logger := log.NewLogger(cfg.Args.Verbose, 3)
+	logger := log.NewLogger(cfg.Args.Verbose, 2)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
 	ctx, err := zmq.NewContext()

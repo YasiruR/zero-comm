@@ -46,9 +46,27 @@ func order(grp []models.Member) (sorted []models.Member) {
 	return sorted
 }
 
+// ValidJoin checks if the initial member set returned by the acceptor is consistent
+// across other members thus eliminating intruders in the initial state of the joiner.
+// grpHashes is a map with hash values indexed by the member label.
+func ValidJoin(accptr string, joinedSet []models.Member, grpHashes map[string]string) error {
+	joinedChecksm, err := Calculate(joinedSet)
+	if err != nil {
+		return fmt.Errorf(`calculating checksum of initial member set failed - %v`, err)
+	}
+	grpHashes[accptr] = joinedChecksm
+
+	invalidMems, ok := Verify(grpHashes)
+	if !ok {
+		return fmt.Errorf(`at least one inconsistent member set found (%v)`, invalidMems)
+	}
+
+	return nil
+}
+
 // Verify takes a map of group-state hash values indexed by label and returns
 // the list of members deviated from the majority. In cases where multiple
-// intruder sets exist, the set with least number of deviated members is returned.
+// intruder sets exist, set with the least number of deviated members is returned.
 func Verify(states map[string]string) (invalidMems []string, ok bool) {
 	// inverse map of states where key is hash and value is the list of members
 	mems := make(map[string][]string)
@@ -73,22 +91,4 @@ func Verify(states map[string]string) (invalidMems []string, ok bool) {
 	}
 
 	return invalidMems, false
-}
-
-// ValidJoin checks if the initial member set returned by the acceptor is consistent
-// across other members thus eliminating intruders in the initial state of the joiner.
-// grpHashes is a map with hash values indexed by the member label.
-func ValidJoin(accptr string, joinedSet []models.Member, grpHashes map[string]string) error {
-	joinedChecksm, err := Calculate(joinedSet)
-	if err != nil {
-		return fmt.Errorf(`calculating checksum of initial member set failed - %v`, err)
-	}
-	grpHashes[accptr] = joinedChecksm
-
-	invalidMems, ok := Verify(grpHashes)
-	if !ok {
-		return fmt.Errorf(`at least one inconsistent member set found (%v)`, invalidMems)
-	}
-
-	return nil
 }

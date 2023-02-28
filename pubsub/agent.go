@@ -225,6 +225,8 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 				return fmt.Errorf(`join failed due to inconsistent view of the group - %v`, err)
 			}
 			a.log.Warn(fmt.Sprintf(`group verification failed but proceeded with registration - %v`, err))
+		} else {
+			a.log.Info(`verified virtual synchrony of the group via consistent views`)
 		}
 	}
 
