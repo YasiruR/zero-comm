@@ -4,29 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
-	"github.com/klauspost/compress/zstd"
 )
-
-// compactor is an instance of zstandard compression algorithm
-type compactor struct {
-	zEncodr *zstd.Encoder
-	zDecodr *zstd.Decoder
-}
-
-func newCompactor() (*compactor, error) {
-	zstdEncoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
-	if err != nil {
-		return nil, fmt.Errorf(`creating zstd encoder failed - %v`, err)
-	}
-
-	zstdDecoder, err := zstd.NewReader(nil)
-	if err != nil {
-		return nil, fmt.Errorf(`creating zstd decoder failed - %v`, err)
-	}
-
-	return &compactor{zEncodr: zstdEncoder, zDecodr: zstdDecoder}, nil
-}
 
 // packer is an internal wrapper for the packing processes of group agent
 type packer struct {
@@ -34,7 +14,7 @@ type packer struct {
 	pckr servicesPkg.Packer
 }
 
-func newPacker(c *domain.Container) *packer {
+func newPacker(c *container.Container) *packer {
 	return &packer{
 		services: &services{
 			km:    c.KeyManager,

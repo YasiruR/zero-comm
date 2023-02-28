@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain"
+	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
@@ -11,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
-	"strings"
 )
 
 // processor implements the handlers functions for incoming messages
@@ -21,22 +21,20 @@ type processor struct {
 	log     log.Logger
 	outChan chan string
 	*internals
-	*compactor
 }
 
-func newProcessor(label string, c *domain.Container, in *internals, cmpctr *compactor) *processor {
+func newProcessor(label string, c *container.Container, in *internals) *processor {
 	return &processor{
 		myLabel:   label,
 		probr:     c.Prober,
 		internals: in,
 		log:       c.Log,
 		outChan:   c.OutChan,
-		compactor: cmpctr,
 	}
 }
 
 func (p *processor) joinReqs(msg *models.Message) error {
-	body, err := p.probr.ReadMessage(*msg)
+	_, body, err := p.probr.ReadMessage(*msg)
 	if err != nil {
 		return fmt.Errorf(`reading group-join authcrypt request failed - %v`, err)
 	}
@@ -46,7 +44,7 @@ func (p *processor) joinReqs(msg *models.Message) error {
 		return fmt.Errorf(`unmarshalling group-join request failed - %v`, err)
 	}
 
-	if len(p.gs.membrs(req.Topic)) == 0 {
+	if len(p.gs.Membrs(req.Topic)) == 0 {
 		return fmt.Errorf(`acceptor is not a member of the requested group (%s)`, req.Topic)
 	}
 
@@ -55,9 +53,14 @@ func (p *processor) joinReqs(msg *models.Message) error {
 	}
 
 	byts, err := json.Marshal(messages.ResGroupJoin{
-		Id:      uuid.New().String(),
-		Type:    messages.JoinResponseV1,
-		Members: p.gs.membrs(req.Topic),
+		Id:   uuid.New().String(),
+		Type: messages.JoinResponseV1,
+		Params: models.GroupParams{
+			OrderEnabled:   p.gs.OrderEnabled(req.Topic),
+			JoinConsistent: p.gs.JoinConsistent(req.Topic),
+			Mode:           p.gs.Mode(req.Topic),
+		},
+		Members: p.gs.Membrs(req.Topic),
 		//Members: p.addIntruder(req.Topic),
 	})
 	if err != nil {
@@ -77,7 +80,7 @@ func (p *processor) joinReqs(msg *models.Message) error {
 }
 
 func (p *processor) subscriptions(msg *models.Message) error {
-	unpackedMsg, err := p.probr.ReadMessage(*msg)
+	_, unpackedMsg, err := p.probr.ReadMessage(*msg)
 	if err != nil {
 		return fmt.Errorf(`reading subscribe message failed - %v`, err)
 	}
@@ -88,7 +91,7 @@ func (p *processor) subscriptions(msg *models.Message) error {
 	}
 
 	if !sm.Subscribe {
-		p.subs.delete(sm.Topic, sm.Member.Label)
+		p.subs.Delete(sm.Topic, sm.Member.Label)
 		return nil
 	}
 
@@ -115,25 +118,20 @@ func (p *processor) subscriptions(msg *models.Message) error {
 	}
 
 	sk := base58.Decode(sm.PubKey)
-	p.subs.add(sm.Topic, sm.Member.Label, sk)
+	p.subs.Add(sm.Topic, sm.Member.Label, sk)
 	p.log.Debug(`processed subscription request`, sm)
 
 	return nil
 }
 
-func (p *processor) states(msg string) error {
-	frames := strings.SplitN(msg, ` `, 2)
-	if len(frames) != 2 {
-		return fmt.Errorf(`received an invalid status message (length=%v)`, len(frames))
-	}
-
-	sm, err := p.extractStatus(frames[1])
+func (p *processor) state(_, msg string) error {
+	status, err := p.extractStatus(msg)
 	if err != nil {
 		return fmt.Errorf(`extracting status message failed - %v`, err)
 	}
 
 	var validMsg string
-	for exchId, encMsg := range sm.AuthMsgs {
+	for exchId, encMsg := range status.AuthMsgs {
 		ok, _ := p.probr.ValidConn(exchId)
 		if ok {
 			validMsg = encMsg
@@ -145,59 +143,67 @@ func (p *processor) states(msg string) error {
 		return fmt.Errorf(`status update is not intended to this member`)
 	}
 
-	defer func(topic string) {
-		if err = p.valdtr.updateHash(topic, p.gs.membrs(topic)); err != nil {
-			p.log.Error(fmt.Sprintf(`updating checksum for the group failed - %v`, err))
-		}
-	}(sm.Topic)
-
-	strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
+	_, strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
 	if err != nil {
 		return fmt.Errorf(`reading status didcomm message failed - %v`, err)
 	}
 
-	var member models.Member
-	if err = json.Unmarshal([]byte(strAuthMsg), &member); err != nil {
+	var m models.Member
+	if err = json.Unmarshal([]byte(strAuthMsg), &m); err != nil {
 		return fmt.Errorf(`unmarshalling member message failed - %v`, err)
 	}
 
-	if !member.Active {
-		if member.Publisher {
-			if err = p.zmq.unsubscribeData(p.myLabel, sm.Topic, member.Label); err != nil {
+	if !m.Active {
+		if err = p.zmq.disconnectStatus(m.PubEndpoint); err != nil {
+			return fmt.Errorf(`disconnect failed - %v`, err)
+		}
+
+		if m.Publisher {
+			if err = p.zmq.unsubscribeData(p.myLabel, status.Topic, m); err != nil {
 				return fmt.Errorf(`unsubscribing data topic failed - %v`, err)
 			}
 		}
 
-		p.subs.delete(sm.Topic, member.Label)
-		p.gs.deleteMembr(sm.Topic, member.Label)
-		if err = p.auth.remvKeys(member.Label); err != nil {
+		p.subs.Delete(status.Topic, m.Label)
+		p.gs.DeleteMembr(status.Topic, m.Label)
+		if err = p.auth.remvKeys(m.Label); err != nil {
 			return fmt.Errorf(`removing zmq transport keys failed - %v`, err)
 		}
-		p.outChan <- member.Label + ` left group ` + sm.Topic
+		p.outChan <- m.Label + ` left group ` + status.Topic
 		return nil
 	}
 
-	p.gs.addMembr(sm.Topic, member)
-	p.log.Debug(fmt.Sprintf(`group state updated for member %s in topic %s`, member.Label, sm.Topic))
+	//p.gs.AddMembr(status.Topic, m)
+	if err = p.gs.AddMembrs(status.Topic, m); err != nil {
+		return fmt.Errorf(`adding member failed - %v`, err)
+	}
+
+	p.log.Debug(fmt.Sprintf(`group state updated for member %s in topic %s`, m.Label, status.Topic))
 	return nil
 }
 
-func (p *processor) data(msg string) error {
-	frames := strings.Split(msg, ` `)
-	if len(frames) != 2 {
-		return fmt.Errorf(`received an invalid subscribed message (%v)`, frames)
-	}
-
-	_, err := p.probr.ReadMessage(models.Message{Type: models.TypData, Data: []byte(frames[1])})
+func (p *processor) data(zmqTopic, msg string) error {
+	topic := p.zmq.groupNameByDataTopic(zmqTopic)
+	sender, data, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupMsg, Data: []byte(msg)})
 	if err != nil {
+		if p.gs.Mode(topic) == domain.SingleQueueMode {
+			p.log.Debug(fmt.Sprintf(`message may not be intended to this member - %v`, err))
+			return nil
+		}
 		return fmt.Errorf(`reading subscribed message failed - %v`, err)
 	}
 
+	data, err = p.syncr.parse(topic, data)
+	if err != nil {
+		return fmt.Errorf(`parsing data message via syncer failed - %v`, err)
+	}
+
+	p.outChan <- fmt.Sprintf(`%s sent in group '%s': %s`, sender, topic, data)
 	return nil
 }
 
 func (p *processor) extractStatus(msg string) (*messages.Status, error) {
-	out, err := p.zDecodr.DecodeAll([]byte(msg), nil)
+	out, err := p.compactr.zDecodr.DecodeAll([]byte(msg), nil)
 	if err != nil {
 		return nil, fmt.Errorf(`decode error - %v`, err)
 	}
@@ -212,14 +218,9 @@ func (p *processor) extractStatus(msg string) (*messages.Status, error) {
 
 func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.Message) error {
 	// to fetch if current node is a publisher of the topic
-	curntMembr := p.gs.membr(topic, p.myLabel)
+	curntMembr := p.gs.Membr(topic, p.myLabel)
 	if curntMembr == nil {
 		return fmt.Errorf(`current member or topic does not exist in group store`)
-	}
-
-	checksum, err := p.valdtr.hash(topic)
-	if err != nil {
-		return fmt.Errorf(`fetching group checksum failed - %v`, err)
 	}
 
 	resByts, err := json.Marshal(messages.ResSubscribe{
@@ -228,7 +229,7 @@ func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.
 			ClientPubKey: p.auth.client.pub,
 		},
 		Publisher: curntMembr.Publisher,
-		Checksum:  checksum,
+		Checksum:  p.gs.Checksum(topic),
 	})
 	if err != nil {
 		return fmt.Errorf(`marshalling subscribe response failed - %v`, err)
@@ -249,7 +250,7 @@ func (p *processor) validJoiner(label string) bool {
 }
 
 //func (p *processor) addIntruder(topic string) []models.Member {
-//	return append(a.gs.membrs(topic),
+//	return append(p.gs.Membrs(topic),
 //		models.Member{
 //			Active:      true,
 //			Publisher:   true,

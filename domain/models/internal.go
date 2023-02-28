@@ -1,5 +1,7 @@
 package models
 
+import "github.com/YasiruR/didcomm-prober/domain"
+
 type Peer struct {
 	Active       bool // currently all stored peers are active since no disconnect is implemented
 	DID          string
@@ -25,4 +27,18 @@ type Member struct {
 	Label       string `json:"label"` // todo check if DID can be used
 	Inv         string `json:"inv"`
 	PubEndpoint string `json:"pubEndpoint"`
+}
+
+type GroupParams struct {
+	OrderEnabled   bool             `json:"ordered"`
+	JoinConsistent bool             `json:"consistent_join"`
+	Mode           domain.GroupMode `json:"mode"`
+}
+
+type Group struct {
+	Topic    string
+	Checksum string
+	Members  map[string]Member // map is used to prevent multiple instances of a member
+	*GroupParams
+	LastUpdated int64
 }

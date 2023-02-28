@@ -2,6 +2,8 @@ package main
 
 import (
 	"github.com/YasiruR/didcomm-prober/cli"
+	"github.com/YasiruR/didcomm-prober/domain/container"
+	"github.com/YasiruR/didcomm-prober/reqrep/mock"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,12 +20,16 @@ func main() {
 		}
 	}()
 
-	go func() {
+	go func(c *container.Container) {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGKILL)
 		<-sig
-		shutdown(c)
-	}()
+		c.Stop()
+	}(c)
+
+	if c.Cfg.Mocker {
+		mock.Start(c)
+	}
 
 	cli.Init(c)
 }

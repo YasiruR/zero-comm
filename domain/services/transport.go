@@ -31,7 +31,7 @@ type Server interface {
 /* message queue functions */
 
 type GroupAgent interface {
-	Create(topic string, publisher bool) error
+	Create(topic string, publisher bool, gp models.GroupParams) error
 	Join(topic, acceptor string, publisher bool) error
 	Send(topic, msg string) error
 	Leave(topic string) error

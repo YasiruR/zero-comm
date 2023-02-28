@@ -7,9 +7,28 @@ const (
 )
 
 const (
-	InvitationEndpoint = ``
-	ExchangeEndpoint   = `/did-exchange/`
+	TopicPrefix = `urn:didcomm-queue:`
 )
+
+type ConsistencyLevel string
+
+const (
+	NoConsistency    ConsistencyLevel = `none`
+	JoinConsistent   ConsistencyLevel = `join`
+	StrictConsistent ConsistencyLevel = `all`
+)
+
+func (c ConsistencyLevel) Valid() bool {
+	switch c {
+	case NoConsistency:
+		return true
+	case JoinConsistent:
+		return true
+	case StrictConsistent:
+		return true
+	}
+	return false
+}
 
 type Role int
 
@@ -17,3 +36,20 @@ const (
 	RolePublisher Role = iota
 	RoleSubscriber
 )
+
+type GroupMode string
+
+const (
+	SingleQueueMode   GroupMode = `single-queue`
+	MultipleQueueMode GroupMode = `multiple-queue`
+)
+
+func (g GroupMode) Valid() bool {
+	switch g {
+	case SingleQueueMode:
+		return true
+	case MultipleQueueMode:
+		return true
+	}
+	return false
+}

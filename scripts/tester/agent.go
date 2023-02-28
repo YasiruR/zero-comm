@@ -19,8 +19,17 @@ import (
 	"strconv"
 )
 
+func initAgent(name string, port, pubPort, buf int, singleQ bool) *container.Container {
+	return initContainer(setConfigs(&container.Args{
+		Name:     name,
+		Port:     port,
+		Verbose:  false,
+		PubPort:  pubPort,
+		ZmqBufMs: buf,
+	}))
+}
+
 func setConfigs(args *container.Args) *container.Config {
-	//hostname := `tcp://127.0.0.1:`
 	hn, err := os.Hostname()
 	if err != nil {
 		log2.Fatal(fmt.Sprintf(`fetching hostname failed - %v`, err))
@@ -51,7 +60,7 @@ func initContainer(cfg *container.Config) *container.Container {
 	km := crypto.NewKeyManager()
 	ctx, err := zmq.NewContext()
 	if err != nil {
-		logger.Fatal(fmt.Sprintf(`zmq context initialization failed - %v`, err))
+		logger.Fatal(`test-agent`, fmt.Sprintf(`zmq context initialization failed - %v`, err))
 	}
 
 	c := &container.Container{
@@ -69,21 +78,27 @@ func initContainer(cfg *container.Config) *container.Container {
 
 	s, err := reqRepZmq.NewServer(ctx, c)
 	if err != nil {
-		logger.Fatal(`initializing zmq server failed`, err)
+		logger.Fatal(`test-agent`, `initializing zmq server failed`, err)
 	}
 	c.Server = s
 
 	prb, err := prober.NewProber(c)
 	if err != nil {
-		logger.Fatal(`initializing prober failed`, err)
+		logger.Fatal(`test-agent`, `initializing prober failed`, err)
 	}
 	c.Prober = prb
 
 	c.PubSub, err = pubsub.NewAgent(ctx, c)
 	if err != nil {
-		logger.Fatal(`initializing pubsub group agent failed`, err)
+		logger.Fatal(`test-agent`, `initializing pubsub group agent failed`, err)
 	}
 
-	c.Log.Info(fmt.Sprintf(`didcomm agent initialized with messaging port (%d) and publishing port (%d)`, c.Cfg.Port, c.Cfg.PubPort))
 	return c
+}
+
+func listen(c *container.Container) {
+	for {
+		_ = <-c.OutChan
+		//fmt.Printf("-> %s\n", text)
+	}
 }
