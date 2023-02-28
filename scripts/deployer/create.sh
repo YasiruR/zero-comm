@@ -22,6 +22,14 @@ else
   mode='multiple-queue'
 fi
 
+# setting consistency if not set by args
+if [[ "$ordered" == "consistent_join" ]]
+then
+  consistency=true
+else
+  consistency=false
+fi
+
 # setting ordering if not set by args
 if [[ "$ordered" == "ordered" ]]
 then
@@ -56,7 +64,7 @@ while IFS="," read -r label ip pub ; do
   # first member creates the group
   if [[ $counter == 0 ]]
   then
-    data='{"topic": "'"$topic"'", "publisher": '$is_pub', "params": {"ordered": '$ordered', "consistency": "'"$consistency"'", "mode": "'"$mode"'"}}'
+    data='{"topic": "'"$topic"'", "publisher": '$is_pub', "params": {"ordered": '$ordered', "consistent_join": '$consistency', "mode": "'"$mode"'"}}'
     echo "date: $data"
     curl -X POST --header 'Content-Type: application/json' --data-raw "$data" "${ip}/create"
 

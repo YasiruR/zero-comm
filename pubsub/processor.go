@@ -56,9 +56,9 @@ func (p *processor) joinReqs(msg *models.Message) error {
 		Id:   uuid.New().String(),
 		Type: messages.JoinResponseV1,
 		Params: models.GroupParams{
-			OrderEnabled: p.gs.OrderEnabled(req.Topic),
-			Consistency:  p.gs.ConsistLevel(req.Topic),
-			Mode:         p.gs.Mode(req.Topic),
+			OrderEnabled:   p.gs.OrderEnabled(req.Topic),
+			JoinConsistent: p.gs.JoinConsistent(req.Topic),
+			Mode:           p.gs.Mode(req.Topic),
 		},
 		Members: p.gs.Membrs(req.Topic),
 		//Members: p.addIntruder(req.Topic),

@@ -17,9 +17,8 @@ type ts struct {
 	// in case lamport timestamps are equal for multiple messages
 	// reader can sort them corresponding to the id and hence the
 	// order will be consistent across the group
-	SenderId int    `json:"send_id"`
-	LampTs   int64  `json:"lamp_ts"`
-	Checksum string `json:"checksum"`
+	SenderId int   `json:"send_id"`
+	LampTs   int64 `json:"lamp_ts"`
 }
 
 type groupMsg struct {
@@ -53,7 +52,6 @@ func (s *syncer) init(topic string) {
 	s.tsMap[topic] = &ts{
 		SenderId: s.id,
 		LampTs:   time.Now().Unix(),
-		Checksum: s.gs.Checksum(topic),
 	}
 }
 
@@ -95,10 +93,6 @@ func (s *syncer) message(topic string, data []byte) (msg []byte, err error) {
 	} else {
 		storedTs.LampTs = curntTime
 	}
-	s.tsMap[topic] = storedTs
-
-	// todo if checksum is not equal to last received, then wait (or let notify) until correct, before returning here
-	// should only be done if strong consistency is required
 
 	return json.Marshal(groupMsg{Ts: *storedTs, Data: data})
 }

@@ -30,9 +30,9 @@ type Member struct {
 }
 
 type GroupParams struct {
-	OrderEnabled bool                    `json:"ordered"`
-	Consistency  domain.ConsistencyLevel `json:"consistency"`
-	Mode         domain.GroupMode        `json:"mode"`
+	OrderEnabled   bool             `json:"ordered"`
+	JoinConsistent bool             `json:"consistent_join"`
+	Mode           domain.GroupMode `json:"mode"`
 }
 
 type Group struct {
@@ -40,4 +40,5 @@ type Group struct {
 	Checksum string
 	Members  map[string]Member // map is used to prevent multiple instances of a member
 	*GroupParams
+	LastUpdated int64
 }

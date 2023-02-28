@@ -221,7 +221,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 
 	if len(group.Members) > 1 {
 		if err = validator.ValidJoin(acceptor, group.Members, hashes); err != nil {
-			if group.Params.Consistency != domain.NoConsistency {
+			if group.Params.JoinConsistent {
 				return fmt.Errorf(`join failed due to inconsistent view of the group - %v`, err)
 			}
 			a.log.Warn(fmt.Sprintf(`group verification failed but proceeded with registration - %v`, err))

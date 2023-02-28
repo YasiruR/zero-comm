@@ -216,9 +216,9 @@ func (r *runner) discover() {
 func (r *runner) createGroup() {
 	topic := r.input(`Topic`)
 	strPub := r.input(`Publisher (Y/N)`)
-	consLevl := r.input(`Consistency Level (none[default]/join/all)`)
-	mode := r.input(`Group Mode (single/multiple[default])`)
-	strOrdrd := r.input(`Order Group Messages (Y/N)`)
+	mode := r.input(`Group mode (single/multiple[default])`)
+	strJoinConsist := r.input(`Strict consistency for join operation (Y/N)`)
+	strOrdrd := r.input(`Causal consistency for group messages (Y/N)`)
 
 	publisher, err := r.validBool(strPub)
 	if err != nil {
@@ -232,8 +232,14 @@ func (r *runner) createGroup() {
 		return
 	}
 
+	joinConsist, err := r.validBool(strJoinConsist)
+	if err != nil {
+		r.error(`invalid input`, err)
+		return
+	}
+
 	if err = r.pubsub.Create(topic, publisher,
-		models.GroupParams{OrderEnabled: ordrd, Consistency: domain.ConsistencyLevel(consLevl), Mode: domain.GroupMode(mode)},
+		models.GroupParams{OrderEnabled: ordrd, JoinConsistent: joinConsist, Mode: domain.GroupMode(mode)},
 	); err != nil {
 		r.error(`create group failed`, err)
 		return

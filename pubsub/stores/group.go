@@ -6,6 +6,11 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/pubsub/validator"
 	"sync"
+	"time"
+)
+
+const (
+	notifierSleepMs = 200
 )
 
 /* Group Store */
@@ -115,14 +120,6 @@ func (g *Group) SetParams(topic string, gp models.GroupParams) error {
 	g.Lock()
 	defer g.Unlock()
 
-	if gp.Consistency == `` {
-		gp.Consistency = domain.NoConsistency
-	}
-
-	if !gp.Consistency.Valid() {
-		return fmt.Errorf(`invalid consistency level - %s`, gp.Consistency)
-	}
-
 	if !gp.Mode.Valid() {
 		return fmt.Errorf(`invalid group mode - %s`, gp.Mode)
 	}
@@ -133,12 +130,6 @@ func (g *Group) SetParams(topic string, gp models.GroupParams) error {
 
 	g.groups[topic].GroupParams = &gp
 	return nil
-}
-
-func (g *Group) ConsistLevel(topic string) domain.ConsistencyLevel {
-	g.RLock()
-	defer g.RUnlock()
-	return g.groups[topic].Consistency
 }
 
 func (g *Group) Mode(topic string) domain.GroupMode {
@@ -153,8 +144,32 @@ func (g *Group) OrderEnabled(topic string) bool {
 	return g.groups[topic].OrderEnabled
 }
 
+func (g *Group) JoinConsistent(topic string) bool {
+	g.RLock()
+	defer g.RUnlock()
+	return g.groups[topic].JoinConsistent
+}
+
 func (g *Group) Checksum(topic string) string {
 	g.RLock()
 	g.RUnlock()
 	return g.groups[topic].Checksum
+}
+
+func (g *Group) Notifier(topic, msgHash string, out chan bool) {
+	t := time.NewTicker(notifierSleepMs)
+	for {
+		select {
+		case <-t.C:
+			g.RLock()
+			hash := g.groups[topic].Checksum
+			g.RUnlock()
+
+			if hash == msgHash {
+				out <- true
+				t.Stop()
+				return
+			}
+		}
+	}
 }
