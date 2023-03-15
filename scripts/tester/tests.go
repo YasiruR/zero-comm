@@ -15,12 +15,14 @@ const (
 	firstPubPort   = 6240
 )
 
-func joinLatency(buf int, pub bool) {
+// todo test joining with multiple groups
+
+func joinLatency(topic string, buf int, pub bool) float64 {
 	var total int64
 	for i := 0; i < numTests; i++ {
 		// init agent
 		c := initAgent(fmt.Sprintf(`tester-%d`, i+1), firstAgentPort+i, firstPubPort+i, buf)
-		fmt.Printf("Tester agent initialized (name: %s, port: %d, pub-endpoint: %s)\n", c.Cfg.Name, c.Cfg.Port, c.Cfg.PubEndpoint)
+		fmt.Printf("	Tester agent initialized (name: %s, port: %d, pub-endpoint: %s)\n", c.Cfg.Name, c.Cfg.Port, c.Cfg.PubEndpoint)
 
 		go listen(c)
 		go func(c *container.Container) {
@@ -44,19 +46,18 @@ func joinLatency(buf int, pub bool) {
 		start := time.Now()
 
 		// connect to group
-		if err = c.PubSub.Join(group[0].topic, group[0].name, pub); err != nil {
+		if err = c.PubSub.Join(topic, group[0].name, pub); err != nil {
 			c.Log.Fatal(`tester`, err)
 		}
 
 		elapsed := time.Since(start).Milliseconds()
-		fmt.Printf("Attempt %d: %d ms\n\n", i+1, elapsed)
+		fmt.Printf("	Attempt %d: %d ms\n", i+1, elapsed)
 		total += elapsed
 
-		if err = c.PubSub.Leave(group[0].topic); err != nil {
+		if err = c.PubSub.Leave(topic); err != nil {
 			c.Log.Fatal(`tester`, err)
 		}
 	}
 
-	fmt.Printf("Average join-latency (ms): %f\n", float64(total)/numTests)
-	fmt.Println(`----- END -----`)
+	return float64(total) / numTests
 }

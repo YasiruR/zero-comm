@@ -6,3 +6,4 @@ while IFS="," read -r label ip ; do
 done < started_nodes.csv
 
 rm started_nodes.csv
+rm group_cfg.csv

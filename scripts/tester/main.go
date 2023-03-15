@@ -1,34 +1,37 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
-	"strconv"
+)
+
+const (
+	testJoin = `join`
 )
 
 func main() {
 	args := os.Args
-	if len(args) != 4 {
+	if len(args) != 2 {
 		log.Fatalln(`incorrect number of arguments`)
 	}
 
-	typ, strSize, strBuf := args[1], args[2], args[3]
-	buf, err := strconv.ParseInt(strBuf, 10, 64)
-	if err != nil {
-		log.Fatalln(`invalid buffer: `, err)
-	}
-
-	size, err := strconv.ParseInt(strSize, 10, 64)
-	if err != nil {
-		log.Fatalln(`invalid size: `, err)
-	}
-
-	initGroup(int(size))
+	typ := args[1]
+	cfgs := setGroup()
+	fmt.Println(`----- START -----`)
 
 	switch typ {
-	case `join`:
-		joinLatency(int(buf), true)
+	case testJoin:
+		fmt.Printf("[Join latency test for an initial group size of %d with %dms zmq buffer]\n", cfgs.initSize, cfgs.zmqBuf)
+		fmt.Println("Test debug logs:")
+		avg := joinLatency(cfgs.name, int(cfgs.zmqBuf), true)
+		fmt.Printf("Average join-latency (ms): %f\n", avg)
+		persist(testJoin, cfgs, []float64{avg})
+	default:
+		log.Fatalln(`invalid test method`)
 	}
+
+	fmt.Println(`----- END -----`)
 
 	// todo throughput
 }
