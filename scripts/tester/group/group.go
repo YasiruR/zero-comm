@@ -38,21 +38,23 @@ func InitGroup(topic, mode string, consistntJoin, ordrd bool, size, zmqBuf int64
 		ordr = `not_ordered`
 	}
 
-	initCmd := exec.Command(`/bin/bash`, `../deployer/init.sh`, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10))
-	initOut, err := initCmd.Output()
+	initCmd := exec.Command(`/bin/bash`, `init.sh`, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10))
+	initOut, err := initCmd.CombinedOutput()
 	if err != nil {
 		log.Fatalln(`initializing members failed -`, err, string(initOut))
 	}
 
-	//cmd := exec.Command(`/bin/bash`, fmt.Sprintf(`../deployer/create.sh %s %s %s %s %d %d`, topic, mode, consistncy, ordr, size, zmqBuf))
-	cmd := exec.Command(`/bin/bash`, `../deployer/create.sh`, topic, mode, consistncy, ordr, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10))
-	out, err := cmd.Output()
+	cmd := exec.Command(`/bin/bash`, `create.sh`, topic, mode, consistncy, ordr, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10))
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Fatalln(`creating group failed -`, err, string(out))
 	}
 
+	// todo check why consistent gives only warning
+	// can update info func and use response in mocker
+
+	// todo check why inconsistency happens
 	fmt.Println("CMD: ", cmd.String())
-	fmt.Println("OUT: ", string(out))
 
 	return Config{
 		Topic:         topic,
@@ -66,7 +68,7 @@ func InitGroup(topic, mode string, consistntJoin, ordrd bool, size, zmqBuf int64
 
 func membrs() []Member {
 	// read individual members
-	f2, err := os.Open(`../deployer/started_nodes.csv`)
+	f2, err := os.Open(`started_nodes.csv`)
 	if err != nil {
 		log.Fatalln(`opening group members failed -`, err)
 	}
@@ -82,14 +84,14 @@ func membrs() []Member {
 		group = append(group, Member{Name: row[0], MockEndpoint: `http://` + row[1]})
 	}
 
-	fmt.Printf("Group initialized: %v\n", group)
+	fmt.Printf("# Group initialized: %v\n", group)
 	return group
 }
 
 func Purge() {
-	cmd := exec.Command(`/bin/bash`, fmt.Sprintf(`bash ../deployer/term.sh`))
-	_, err := cmd.Output()
+	cmd := exec.Command(`/bin/bash`, `term.sh`)
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatalln(`purging group failed -`, err)
+		log.Fatalln(`purging group failed -`, err, string(out))
 	}
 }

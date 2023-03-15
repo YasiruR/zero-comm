@@ -17,7 +17,7 @@ func Persist(test string, gc group.Config, results []float64) {
 }
 
 func writeJoin(gc group.Config, results []float64) {
-	const path = `results/join.csv`
+	const path = `../tester/results/join.csv`
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		log.Fatalln(`opening or creating join.csv failed -`, err)
