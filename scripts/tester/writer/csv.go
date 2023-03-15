@@ -1,21 +1,22 @@
-package main
+package writer
 
 import (
 	"encoding/csv"
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/scripts/tester/group"
 	"log"
 	"os"
 	"strconv"
 )
 
-func persist(test string, gc groupCfg, results []float64) {
+func Persist(test string, gc group.Config, results []float64) {
 	switch test {
 	case `join`:
 		writeJoin(gc, results)
 	}
 }
 
-func writeJoin(gc groupCfg, results []float64) {
+func writeJoin(gc group.Config, results []float64) {
 	const path = `results/join.csv`
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
@@ -37,12 +38,12 @@ func writeJoin(gc groupCfg, results []float64) {
 
 	for _, r := range results {
 		if err = w.Write([]string{
-			gc.name,
-			strconv.FormatInt(gc.initSize, 10),
-			gc.mode,
-			fmt.Sprintf(`%t`, gc.consistntJoin),
-			fmt.Sprintf(`%t`, gc.ordered),
-			strconv.FormatInt(gc.zmqBuf, 10),
+			gc.Topic,
+			strconv.FormatInt(gc.InitSize, 10),
+			gc.Mode,
+			fmt.Sprintf(`%t`, gc.ConsistntJoin),
+			fmt.Sprintf(`%t`, gc.Ordered),
+			strconv.FormatInt(gc.ZmqBuf, 10),
 			fmt.Sprintf(`%f`, r),
 		}); err != nil {
 			log.Fatalln(`writing join results failed -`, err)

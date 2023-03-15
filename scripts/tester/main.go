@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/scripts/tester/tests"
 	"log"
 	"os"
 )
@@ -17,16 +18,12 @@ func main() {
 	}
 
 	typ := args[1]
-	cfgs := setGroup()
+	//cfg, grp := group.InitGroup()
 	fmt.Println(`----- START -----`)
 
 	switch typ {
 	case testJoin:
-		fmt.Printf("[Join latency test for an initial group size of %d with %dms zmq buffer]\n", cfgs.initSize, cfgs.zmqBuf)
-		fmt.Println("Test debug logs:")
-		avg := joinLatency(cfgs.name, int(cfgs.zmqBuf), true)
-		fmt.Printf("Average join-latency (ms): %f\n", avg)
-		persist(testJoin, cfgs, []float64{avg})
+		tests.Join(10)
 	default:
 		log.Fatalln(`invalid test method`)
 	}

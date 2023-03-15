@@ -9,7 +9,7 @@ buf=$6
 user=$7
 key_path=$8
 
-bash init.sh "$num_nodes" "$buf" "$user" "$key_path"
+#bash init.sh "$num_nodes" "$buf" "$user" "$key_path"
 
 counter=0
 first_ip=''
@@ -85,4 +85,4 @@ while IFS="," read -r label ip pub ; do
   curl -X POST --header 'Content-Type: application/json' --data-raw "$data" "${ip}/join"
 done < started_nodes.csv
 
-echo "$topic,$num_nodes,$mode,$consistency,$ordered,$buf" >> group_cfg.csv
+#echo "$topic,$num_nodes,$mode,$consistency,$ordered,$buf" >> group_cfg.csv

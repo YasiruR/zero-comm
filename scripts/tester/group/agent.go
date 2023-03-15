@@ -1,4 +1,4 @@
-package main
+package group
 
 import (
 	"fmt"
@@ -19,7 +19,7 @@ import (
 	"strconv"
 )
 
-func initAgent(name string, port, pubPort, buf int) *container.Container {
+func InitAgent(name string, port, pubPort, buf int) *container.Container {
 	return initContainer(setConfigs(&container.Args{
 		Name:     name,
 		Port:     port,
@@ -96,7 +96,7 @@ func initContainer(cfg *container.Config) *container.Container {
 	return c
 }
 
-func listen(c *container.Container) {
+func Listen(c *container.Container) {
 	for {
 		_ = <-c.OutChan
 		//fmt.Printf("-> %s\n", text)
