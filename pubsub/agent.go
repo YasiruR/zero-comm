@@ -553,14 +553,14 @@ func (a *Agent) Leave(topic string) error {
 	return nil
 }
 
-func (a *Agent) Info(topic string) (mems []models.Member) {
+func (a *Agent) Info(topic string) (gp models.GroupParams, mems []models.Member) {
 	// removing invitation for more clarity
 	for _, m := range a.gs.Membrs(topic) {
 		m.Inv = ``
 		mems = append(mems, m)
 	}
 
-	return mems
+	return *a.gs.Params(topic), mems
 }
 
 func (a *Agent) Close() error {

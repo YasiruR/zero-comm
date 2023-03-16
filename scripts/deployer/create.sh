@@ -2,14 +2,8 @@
 
 topic=$1
 mode=$2
-consistency=$3
+consistent_join=$3
 ordered=$4
-num_nodes=$5
-buf=$6
-user=$7
-key_path=$8
-
-#bash init.sh "$num_nodes" "$buf" "$user" "$key_path"
 
 counter=0
 first_ip=''
@@ -22,15 +16,13 @@ then
 fi
 
 # setting mode if not set by args
-if [[ "$mode" == "single" ]]
+if [[ "$mode" != "single-queue" ]]
 then
-  mode='single-queue'
-else
   mode='multiple-queue'
 fi
 
 # setting consistency if not set by args
-if [[ "$ordered" == "consistent_join" ]]
+if [[ "$consistent_join" == "consistent_join" ]]
 then
   consistency=true
 else
@@ -84,5 +76,3 @@ while IFS="," read -r label ip pub ; do
   data='{"topic": "'"$topic"'", "acceptor": "'"$first_label"'", "publisher": '$is_pub'}'
   curl -X POST --header 'Content-Type: application/json' --data-raw "$data" "${ip}/join"
 done < started_nodes.csv
-
-#echo "$topic,$num_nodes,$mode,$consistency,$ordered,$buf" >> group_cfg.csv

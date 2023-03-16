@@ -153,7 +153,7 @@ func (r *runner) listen() {
 			atomic.StoreUint64(&r.disCmds, 0)
 			fmt.Println()
 		}
-		r.output(text)
+		r.output(text, true)
 	}
 }
 
@@ -166,7 +166,7 @@ func (r *runner) generateInvitation() {
 		return
 	}
 
-	r.output(fmt.Sprintf("Invitation URL: %s", inv))
+	r.output(fmt.Sprintf("Invitation URL: %s", inv), true)
 }
 
 func (r *runner) connectWithInv() {
@@ -244,7 +244,7 @@ func (r *runner) createGroup() {
 		r.error(`create group failed`, err)
 		return
 	}
-	r.output(`Group created`)
+	r.output(`Group created`, true)
 }
 
 func (r *runner) joinGroup() {
@@ -262,7 +262,7 @@ func (r *runner) joinGroup() {
 		r.error(`group join failed`, err)
 		return
 	}
-	r.output(`Joined group ` + topic)
+	r.output(`Joined group `+topic, true)
 }
 
 func (r *runner) groupMsg() {
@@ -283,9 +283,12 @@ func (r *runner) leave() {
 
 func (r *runner) groupInfo() {
 	topic := r.input(`Topic`)
-	mems := r.pubsub.Info(topic)
-	r.output(fmt.Sprintf(`Number of members: %d`, len(mems)))
-	r.output(fmt.Sprintf(`Member list: %v`, mems))
+	params, mems := r.pubsub.Info(topic)
+	r.output(fmt.Sprintf(`Mode: %s`, params.Mode), true)
+	r.output(fmt.Sprintf(`Causally ordered: %t`, params.OrderEnabled), false)
+	r.output(fmt.Sprintf(`Virtual synchrony at join: %t`, params.JoinConsistent), false)
+	r.output(fmt.Sprintf(`Number of members: %d`, len(mems)), false)
+	r.output(fmt.Sprintf(`Member list: %v`, mems), false)
 }
 
 /* command-line specific functions */
@@ -301,8 +304,12 @@ readInput:
 	return strings.TrimSpace(msg)
 }
 
-func (r *runner) output(text string) {
-	fmt.Printf("-> %s\n", text)
+func (r *runner) output(text string, firstLine bool) {
+	if firstLine {
+		fmt.Printf("-> %s\n", text)
+		return
+	}
+	fmt.Printf("   %s\n", text)
 }
 
 func (r *runner) outputList(title string, list []string) {

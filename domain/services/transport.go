@@ -35,6 +35,6 @@ type GroupAgent interface {
 	Join(topic, acceptor string, publisher bool) error
 	Send(topic, msg string) error
 	Leave(topic string) error
-	Info(topic string) []models.Member
+	Info(topic string) (models.GroupParams, []models.Member)
 	Close() error
 }

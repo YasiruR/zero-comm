@@ -144,6 +144,17 @@ func (g *Group) SetParams(topic string, gp models.GroupParams) error {
 	return nil
 }
 
+func (g *Group) Params(topic string) *models.GroupParams {
+	g.RLock()
+	defer g.RUnlock()
+
+	if g.groups[topic] == nil {
+		return nil
+	}
+
+	return g.groups[topic].GroupParams
+}
+
 func (g *Group) Mode(topic string) domain.GroupMode {
 	g.RLock()
 	defer g.RUnlock()

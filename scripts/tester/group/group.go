@@ -50,11 +50,7 @@ func InitGroup(topic, mode string, consistntJoin, ordrd bool, size, zmqBuf int64
 		log.Fatalln(`creating group failed -`, err, string(out))
 	}
 
-	// todo check why consistent gives only warning
-	// can update info func and use response in mocker
-
 	// todo check why inconsistency happens
-	fmt.Println("CMD: ", cmd.String())
 
 	return Config{
 		Topic:         topic,
