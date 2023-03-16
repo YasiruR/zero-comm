@@ -176,7 +176,6 @@ func (p *processor) state(_, msg string) error {
 		return nil
 	}
 
-	//p.gs.AddMembr(status.Topic, m)
 	if err = p.gs.AddMembrs(status.Topic, m); err != nil {
 		return fmt.Errorf(`adding member failed - %v`, err)
 	}

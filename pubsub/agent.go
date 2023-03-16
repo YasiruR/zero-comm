@@ -234,10 +234,22 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`adding group members failed - %v`, err)
 	}
 
+	// buffer for zmq subscription latency
+	time.Sleep(time.Duration(a.zmqBufms) * time.Millisecond)
+
+	// wait till didcomm connections are established with all group members
+	for _, m := range group.Members {
+	checkPeer:
+		_, err = a.probr.Peer(m.Label)
+		if err != nil {
+			goto checkPeer
+			// can use sleep to reduce resource utilization
+		}
+	}
+
 	// publish status
-	time.Sleep(time.Duration(a.zmqBufms) * time.Millisecond) // buffer for zmq subscription latency
 	if err = a.notifyAll(topic, true, publisher); err != nil {
-		return fmt.Errorf(`publishing status active failed - %v`, err)
+		return fmt.Errorf(`publishing active status failed - %v`, err)
 	}
 
 	return nil

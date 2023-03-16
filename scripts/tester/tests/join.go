@@ -12,65 +12,54 @@ import (
 )
 
 const (
-	numTests = 3
-	//firstAgentPort = 6140
-	//firstPubPort   = 6240
+	numTests       = 3
+	testLatencyBuf = 1
 )
 
 var (
-	//groupSizes     = []int{1, 2, 5, 10, 20}
-	groupSizes     = []int{5}
+	groupSizes     = []int{1, 2, 5, 10, 20}
 	firstAgentPort = 6140
 	firstPubPort   = 6540
 )
 
 // todo test joining with multiple groups
 
-func Join(buf int) {
+func Join(buf int64) {
 	for _, size := range groupSizes {
-		// todo remove purge from here
 		fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d, buffer=%d] \n", size, buf)
-		joinTest(`sq-c-o-topic`, `single-queue`, true, true, int64(size), int64(buf))
-		group.Purge()
+		joinTest(`sq-c-o-topic`, `single-queue`, true, true, int64(size), buf)
 
 		fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d, buffer=%d] \n", size, buf)
-		joinTest(`mq-c-o-topic`, `multiple-queue`, true, true, int64(size), int64(buf))
-		group.Purge()
+		joinTest(`mq-c-o-topic`, `multiple-queue`, true, true, int64(size), buf)
 
 		fmt.Printf("\n[single-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, buf)
-		joinTest(`sq-i-o-topic`, `single-queue`, false, true, int64(size), int64(buf))
-		group.Purge()
+		joinTest(`sq-i-o-topic`, `single-queue`, false, true, int64(size), buf)
 
 		fmt.Printf("\n[multiple-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, buf)
-		joinTest(`mq-i-o-topic`, `multiple-queue`, false, true, int64(size), int64(buf))
-		group.Purge()
+		joinTest(`mq-i-o-topic`, `multiple-queue`, false, true, int64(size), buf)
 
 		fmt.Printf("\n[single-queue, join-consistent, not-ordered, size=%d, buffer=%d] \n", size, buf)
-		joinTest(`sq-c-no-topic`, `single-queue`, true, false, int64(size), int64(buf))
-		group.Purge()
+		joinTest(`sq-c-no-topic`, `single-queue`, true, false, int64(size), buf)
 
 		fmt.Printf("\n[multiple-queue, join-consistent, not-ordered, size=%d, buffer=%d] \n", size, buf)
-		joinTest(`mq-c-no-topic`, `multiple-queue`, true, false, int64(size), int64(buf))
-		group.Purge()
+		joinTest(`mq-c-no-topic`, `multiple-queue`, true, false, int64(size), buf)
 
 		fmt.Printf("\n[single-queue, join-inconsistent, not-ordered, size=%d, buffer=%d] \n", size, buf)
-		joinTest(`sq-i-no-topic`, `single-queue`, false, false, int64(size), int64(buf))
-		group.Purge()
+		joinTest(`sq-i-no-topic`, `single-queue`, false, false, int64(size), buf)
 
 		fmt.Printf("\n[multiple-queue, join-inconsistent, not-ordered, size=%d, buffer=%d] \n", size, buf)
-		joinTest(`mq-i-no-topic`, `multiple-queue`, false, false, int64(size), int64(buf))
+		joinTest(`mq-i-no-topic`, `multiple-queue`, false, false, int64(size), buf)
 	}
 }
 
 func joinTest(topic, mode string, consistntJoin, ordrd bool, size, zmqBuf int64) {
 	cfg, grp := group.InitGroup(topic, mode, consistntJoin, ordrd, size, zmqBuf)
-	fmt.Printf("# Join latency test for an initial group size of %d with %dms zmq buffer\n", cfg.InitSize, cfg.ZmqBuf)
 	fmt.Println("# Test debug logs:")
 
 	avg := join(cfg.Topic, int(zmqBuf), true, grp)
 	writer.Persist(`join`, cfg, []float64{avg})
 	fmt.Printf("# Average join-latency (ms): %f\n", avg)
-	//group.Purge()
+	group.Purge()
 }
 
 func join(topic string, buf int, pub bool, grp []group.Member) float64 {
@@ -84,29 +73,29 @@ func join(topic string, buf int, pub bool, grp []group.Member) float64 {
 
 		go func(c *container.Container) {
 			if err := c.Server.Start(); err != nil {
-				c.Log.Fatal(`tester`, `failed to start the server`, err)
+				c.Log.Fatal(`failed to start the server`, err)
 			}
 		}(c)
 
 		// generate inv
 		url, err := c.Prober.Invite()
 		if err != nil {
-			c.Log.Fatal(`tester`, fmt.Sprintf(`failed generating inv - %s`, err))
+			c.Log.Fatal(fmt.Sprintf(`failed generating inv - %s`, err))
 		}
 
 		// send inv to oob endpoint
 		if _, err = http.DefaultClient.Post(grp[0].MockEndpoint+mock.ConnectEndpoint, `application/octet-stream`, bytes.NewBufferString(url)); err != nil {
-			c.Log.Fatal(`tester`, err)
+			c.Log.Fatal(err)
 		}
 
-		time.Sleep(1 * time.Second)
+		time.Sleep(testLatencyBuf * time.Second)
 
 		// start measuring time
 		start := time.Now()
 
 		// connect to group
 		if err = c.PubSub.Join(topic, grp[0].Name, pub); err != nil {
-			c.Log.Fatal(`tester`, err)
+			c.Log.Fatal(err)
 		}
 
 		elapsed := time.Since(start).Milliseconds()
@@ -114,10 +103,10 @@ func join(topic string, buf int, pub bool, grp []group.Member) float64 {
 		total += elapsed
 
 		if err = c.PubSub.Leave(topic); err != nil {
-			c.Log.Fatal(`tester`, err)
+			c.Log.Fatal(err)
 		}
 
-		time.Sleep(3 * time.Second)
+		time.Sleep(testLatencyBuf * time.Second)
 	}
 
 	// can remove by making constant

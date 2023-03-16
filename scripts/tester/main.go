@@ -5,6 +5,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/scripts/tester/tests"
 	"log"
 	"os"
+	"strconv"
 )
 
 const (
@@ -13,21 +14,23 @@ const (
 
 func main() {
 	args := os.Args
-	if len(args) != 2 {
+	if len(args) != 3 {
 		log.Fatalln(`incorrect number of arguments`)
 	}
 
-	typ := args[1]
-	//cfg, grp := group.InitGroup()
-	fmt.Println(`----- START -----`)
+	typ, strBuf := args[1], args[2]
+	buf, err := strconv.ParseInt(strBuf, 10, 64)
+	if err != nil {
+		log.Fatalln(`invalid zmq buffer`)
+	}
 
+	fmt.Println(`----- START -----`)
 	switch typ {
 	case testJoin:
-		tests.Join(10)
+		tests.Join(buf)
 	default:
 		log.Fatalln(`invalid test method`)
 	}
-
 	fmt.Println(`----- END -----`)
 
 	// todo throughput
