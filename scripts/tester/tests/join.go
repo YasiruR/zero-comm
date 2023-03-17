@@ -13,11 +13,11 @@ import (
 
 const (
 	numTests       = 3
-	testLatencyBuf = 1
+	testLatencyBuf = 2
 )
 
 var (
-	groupSizes     = []int{1, 2, 5, 10, 20}
+	groupSizes     = []int{1, 2, 5, 10, 20, 50, 100}
 	firstAgentPort = 6140
 	firstPubPort   = 6540
 )
@@ -31,12 +31,12 @@ func Join(buf int64) {
 
 		fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d, buffer=%d] \n", size, buf)
 		joinTest(`mq-c-o-topic`, `multiple-queue`, true, true, int64(size), buf)
-
+		
 		fmt.Printf("\n[single-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, buf)
 		joinTest(`sq-i-o-topic`, `single-queue`, false, true, int64(size), buf)
 
-		fmt.Printf("\n[multiple-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, buf)
-		joinTest(`mq-i-o-topic`, `multiple-queue`, false, true, int64(size), buf)
+		//fmt.Printf("\n[multiple-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, buf)
+		//joinTest(`mq-i-o-topic`, `multiple-queue`, false, true, int64(size), buf)
 
 		fmt.Printf("\n[single-queue, join-consistent, not-ordered, size=%d, buffer=%d] \n", size, buf)
 		joinTest(`sq-c-no-topic`, `single-queue`, true, false, int64(size), buf)
