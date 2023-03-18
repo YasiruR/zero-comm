@@ -38,19 +38,23 @@ func InitGroup(topic, mode string, consistntJoin, ordrd bool, size, zmqBuf int64
 		ordr = `not_ordered`
 	}
 
-	initCmd := exec.Command(`/bin/bash`, `init.sh`, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10))
+	fmt.Println("about too init")
+
+	// todo remove confidential
+	//initCmd := exec.Command(`/bin/bash`, `init.sh`, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10), `azureuser`, `/home/yasi/.ssh/zcomm-alice_key.pem`)
+	initCmd := exec.Command(`/bin/bash`, `init.sh`, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10), `azureuser`, `/home/azureuser/.ssh/zcomm-alice_key.pem`)
 	initOut, err := initCmd.CombinedOutput()
 	if err != nil {
 		log.Fatalln(`initializing members failed -`, err, string(initOut))
 	}
+
+	fmt.Println("about to createe")
 
 	cmd := exec.Command(`/bin/bash`, `create.sh`, topic, mode, consistncy, ordr, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Fatalln(`creating group failed -`, err, string(out))
 	}
-
-	// todo check why inconsistency happens
 
 	return Config{
 		Topic:         topic,

@@ -572,7 +572,12 @@ func (a *Agent) Info(topic string) (gp models.GroupParams, mems []models.Member)
 		mems = append(mems, m)
 	}
 
-	return *a.gs.Params(topic), mems
+	params := a.gs.Params(topic)
+	if params == nil {
+		return models.GroupParams{}, mems
+	}
+
+	return *params, mems
 }
 
 func (a *Agent) Close() error {

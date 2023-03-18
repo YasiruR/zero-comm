@@ -2,8 +2,8 @@
 
 num_nodes=$1
 buf=$2
-user=$4
-key_path=$5
+user=$3
+key_path=$4
 counter=0
 
 # read params from the file (port, pubport etc)
@@ -15,7 +15,7 @@ while IFS="," read -r label ip port pub_port mock_port pub ; do
   pub_ports+=("$pub_port")
   mock_ports+=("$mock_port")
   pubs+=("$pub")
-done < agents.csv
+done < remote.csv
 
 go build ../..
 
@@ -25,8 +25,12 @@ for label in "${labels[@]}"; do
     break
   fi
 
-  screen -d -m -S "$label" ./didcomm-prober -label="${labels[$counter]}" -port="${ports[$counter]}" -pub_port="${pub_ports[$counter]}" -mock_port="${mock_ports[$counter]}" -buf="$buf" -v
-#  screen -d -m -S "$label" ssh -i "$key_path" "$user@${ips[$counter]}" "cd agent/ && ./didcomm-prober -label=${labels[$counter]} -port=${ports[$counter]} -pub_port=${pub_ports[$counter]} -mock_port=${mock_ports[$counter]} -buf="$buf" -v"
+echo "startingg"
+echo "ssh -i ""$key_path"" ""$user"@"${ips[$counter]}"""
+
+#  screen -d -m -S "$label" ./didcomm-prober -label="${labels[$counter]}" -port="${ports[$counter]}" -pub_port="${pub_ports[$counter]}" -mock_port="${mock_ports[$counter]}" -buf="$buf" -v
+  screen -d -m -S "$label" ssh -i "$key_path" "$user@${ips[$counter]}" "cd agent/ && ./didcomm-prober -label=${labels[$counter]} -port=${ports[$counter]} -pub_port=${pub_ports[$counter]} -mock_port=${mock_ports[$counter]} -buf=""$buf"" -v"
+#  screen -d -m -S "$label" ssh "$user@${ips[$counter]}" "cd agent/ && ./didcomm-prober -label=${labels[$counter]} -port=${ports[$counter]} -pub_port=${pub_ports[$counter]} -mock_port=${mock_ports[$counter]} -buf=""$buf"" -v"
 
   node="${ips[$counter]}:${mock_ports[$counter]}"
   echo "$label - $node started"
