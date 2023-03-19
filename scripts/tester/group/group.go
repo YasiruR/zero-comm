@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -23,47 +24,35 @@ type Member struct {
 	MockEndpoint string
 }
 
-func InitGroup(topic, mode string, consistntJoin, ordrd bool, size, zmqBuf int64) (Config, []Member) {
+func InitGroup(cfg Config, testBuf time.Duration, usr, keyPath string) []Member {
 	var consistncy string
-	if consistntJoin {
+	if cfg.ConsistntJoin {
 		consistncy = `consistent_join`
 	} else {
 		consistncy = `inconsistent_join`
 	}
 
 	var ordr string
-	if ordrd {
+	if cfg.Ordered {
 		ordr = `ordered`
 	} else {
 		ordr = `not_ordered`
 	}
 
-	fmt.Println("about too init")
-
-	// todo remove confidential
-	//initCmd := exec.Command(`/bin/bash`, `init.sh`, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10), `azureuser`, `/home/yasi/.ssh/zcomm-alice_key.pem`)
-	initCmd := exec.Command(`/bin/bash`, `init.sh`, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10), `azureuser`, `/home/azureuser/.ssh/zcomm-alice_key.pem`)
+	initCmd := exec.Command(`/bin/bash`, `init.sh`, strconv.FormatInt(cfg.InitSize, 10), strconv.FormatInt(cfg.ZmqBuf, 10), usr, keyPath)
 	initOut, err := initCmd.CombinedOutput()
 	if err != nil {
 		log.Fatalln(`initializing members failed -`, err, string(initOut))
 	}
 
-	fmt.Println("about to createe")
-
-	cmd := exec.Command(`/bin/bash`, `create.sh`, topic, mode, consistncy, ordr, strconv.FormatInt(size, 10), strconv.FormatInt(zmqBuf, 10))
+	time.Sleep(testBuf * time.Second)
+	cmd := exec.Command(`/bin/bash`, `create.sh`, cfg.Topic, cfg.Mode, consistncy, ordr, strconv.FormatInt(cfg.InitSize, 10), strconv.FormatInt(cfg.ZmqBuf, 10))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Fatalln(`creating group failed -`, err, string(out))
 	}
 
-	return Config{
-		Topic:         topic,
-		InitSize:      size,
-		Mode:          mode,
-		ConsistntJoin: consistntJoin,
-		Ordered:       ordrd,
-		ZmqBuf:        zmqBuf,
-	}, membrs()
+	return membrs()
 }
 
 func membrs() []Member {

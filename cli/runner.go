@@ -284,6 +284,11 @@ func (r *runner) leave() {
 func (r *runner) groupInfo() {
 	topic := r.input(`Topic`)
 	params, mems := r.pubsub.Info(topic)
+	if mems == nil {
+		r.output(`Topic does not exist`, true)
+		return
+	}
+
 	r.output(fmt.Sprintf(`Mode: %s`, params.Mode), true)
 	r.output(fmt.Sprintf(`Causally ordered: %t`, params.OrderEnabled), false)
 	r.output(fmt.Sprintf(`Virtual synchrony at join: %t`, params.JoinConsistent), false)

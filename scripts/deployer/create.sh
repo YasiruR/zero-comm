@@ -64,7 +64,7 @@ while IFS="," read -r label ip pub ; do
   if [[ $counter == 0 ]]
   then
     data='{"topic": "'"$topic"'", "publisher": '$is_pub', "params": {"ordered": '$ordered', "consistent_join": '$consistency', "mode": "'"$mode"'"}}'
-    echo "date: $data"
+    echo "data: $data"
     curl -X POST --header 'Content-Type: application/json' --data-raw "$data" "${ip}/create"
 
     counter=$((counter+1))

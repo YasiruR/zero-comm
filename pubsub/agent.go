@@ -574,6 +574,9 @@ func (a *Agent) Info(topic string) (gp models.GroupParams, mems []models.Member)
 
 	params := a.gs.Params(topic)
 	if params == nil {
+		if len(mems) == 0 {
+			return models.GroupParams{}, nil
+		}
 		return models.GroupParams{}, mems
 	}
 

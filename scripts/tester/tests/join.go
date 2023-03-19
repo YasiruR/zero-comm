@@ -12,59 +12,70 @@ import (
 )
 
 const (
-	numTests       = 3
-	testLatencyBuf = 2
+	numTests = 3
 )
 
 var (
 	//groupSizes     = []int{1, 2, 5, 10, 20, 50, 100}
-	groupSizes     = []int{1, 2}
-	firstAgentPort = 6140
-	firstPubPort   = 6540
+	groupSizes                   = []int{1, 2, 5, 10}
+	firstAgentPort               = 6140
+	firstPubPort                 = 6540
+	testLatencyBuf time.Duration = 0
 )
 
 // todo test joining with multiple groups
 
-func Join(buf int64) {
+func Join(zmqBuf, testBuf int64, usr, keyPath string) {
+	testLatencyBuf = time.Duration(testBuf)
 	for _, size := range groupSizes {
-		fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d, buffer=%d] \n", size, buf)
-		joinTest(`sq-c-o-topic`, `single-queue`, true, true, int64(size), buf)
+		fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d, buffer=%d] \n", size, zmqBuf)
+		joinTest(`sq-c-o-topic`, `single-queue`, true, true, int64(size), zmqBuf, usr, keyPath)
 
-		//fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d, buffer=%d] \n", size, buf)
-		//joinTest(`mq-c-o-topic`, `multiple-queue`, true, true, int64(size), buf)
+		//fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d, buffer=%d] \n", size, zmqBuf)
+		//joinTest(`mq-c-o-topic`, `multiple-queue`, true, true, int64(size), zmqBuf, usr, keyPath)
 		//
-		//fmt.Printf("\n[single-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, buf)
-		//joinTest(`sq-i-o-topic`, `single-queue`, false, true, int64(size), buf)
+		//fmt.Printf("\n[single-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, zmqBuf)
+		//joinTest(`sq-i-o-topic`, `single-queue`, false, true, int64(size), zmqBuf, usr, keyPath)
 		//
-		//fmt.Printf("\n[multiple-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, buf)
-		//joinTest(`mq-i-o-topic`, `multiple-queue`, false, true, int64(size), buf)
+		//fmt.Printf("\n[multiple-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, zmqBuf)
+		//joinTest(`mq-i-o-topic`, `multiple-queue`, false, true, int64(size), zmqBuf, usr, keyPath)
 		//
-		//fmt.Printf("\n[single-queue, join-consistent, not-ordered, size=%d, buffer=%d] \n", size, buf)
-		//joinTest(`sq-c-no-topic`, `single-queue`, true, false, int64(size), buf)
+		//fmt.Printf("\n[single-queue, join-consistent, not-ordered, size=%d, buffer=%d] \n", size, zmqBuf)
+		//joinTest(`sq-c-no-topic`, `single-queue`, true, false, int64(size), zmqBuf, usr, keyPath)
 		//
-		//fmt.Printf("\n[multiple-queue, join-consistent, not-ordered, size=%d, buffer=%d] \n", size, buf)
-		//joinTest(`mq-c-no-topic`, `multiple-queue`, true, false, int64(size), buf)
+		//fmt.Printf("\n[multiple-queue, join-consistent, not-ordered, size=%d, buffer=%d] \n", size, zmqBuf)
+		//joinTest(`mq-c-no-topic`, `multiple-queue`, true, false, int64(size), zmqBuf, usr, keyPath)
 		//
-		//fmt.Printf("\n[single-queue, join-inconsistent, not-ordered, size=%d, buffer=%d] \n", size, buf)
-		//joinTest(`sq-i-no-topic`, `single-queue`, false, false, int64(size), buf)
+		//fmt.Printf("\n[single-queue, join-inconsistent, not-ordered, size=%d, buffer=%d] \n", size, zmqBuf)
+		//joinTest(`sq-i-no-topic`, `single-queue`, false, false, int64(size), zmqBuf, usr, keyPath)
 		//
-		//fmt.Printf("\n[multiple-queue, join-inconsistent, not-ordered, size=%d, buffer=%d] \n", size, buf)
-		//joinTest(`mq-i-no-topic`, `multiple-queue`, false, false, int64(size), buf)
+		//fmt.Printf("\n[multiple-queue, join-inconsistent, not-ordered, size=%d, buffer=%d] \n", size, zmqBuf)
+		//joinTest(`mq-i-no-topic`, `multiple-queue`, false, false, int64(size), zmqBuf, usr, keyPath)
 	}
 }
 
-func joinTest(topic, mode string, consistntJoin, ordrd bool, size, zmqBuf int64) {
-	cfg, grp := group.InitGroup(topic, mode, consistntJoin, ordrd, size, zmqBuf)
-	fmt.Println("# Test debug logs:")
+func joinTest(topic, mode string, consistntJoin, ordrd bool, size, zmqBuf int64, usr, keyPath string) {
+	cfg := group.Config{
+		Topic:         topic,
+		InitSize:      size,
+		Mode:          mode,
+		ConsistntJoin: consistntJoin,
+		Ordered:       ordrd,
+		ZmqBuf:        zmqBuf,
+	}
 
-	avg := join(cfg.Topic, int(zmqBuf), true, grp)
-	writer.Persist(`join`, cfg, []float64{avg})
-	fmt.Printf("# Average join-latency (ms): %f\n", avg)
+	grp := group.InitGroup(cfg, testLatencyBuf, usr, keyPath)
+	time.Sleep(testLatencyBuf * time.Second)
+
+	fmt.Println("# Test debug logs:")
+	latList := join(cfg.Topic, int(zmqBuf), true, grp)
+	writer.Persist(`join`, cfg, latList)
+
+	fmt.Printf("# Average join-latency (ms): %f\n", avg(latList))
 	group.Purge()
 }
 
-func join(topic string, buf int, pub bool, grp []group.Member) float64 {
-	var total int64
+func join(topic string, buf int, pub bool, grp []group.Member) (latList []float64) {
 	for i := 0; i < numTests; i++ {
 		// init agent
 		c := group.InitAgent(fmt.Sprintf(`tester-%d`, i+1), firstAgentPort+i, firstPubPort+i, buf)
@@ -83,34 +94,24 @@ func join(topic string, buf int, pub bool, grp []group.Member) float64 {
 			c.Log.Fatal(fmt.Sprintf(`failed generating inv - %s`, err))
 		}
 
-		fmt.Println("INV GEND", grp[0].MockEndpoint+mock.ConnectEndpoint)
-		fmt.Println("INV: ", url)
-		fmt.Println()
-
 		// send inv to oob endpoint
 		if _, err = http.DefaultClient.Post(grp[0].MockEndpoint+mock.ConnectEndpoint, `application/octet-stream`, bytes.NewBufferString(url)); err != nil {
 			c.Log.Fatal(err)
 		}
-
-		fmt.Println("INV SENT", grp[0].MockEndpoint+mock.ConnectEndpoint)
 
 		time.Sleep(testLatencyBuf * time.Second)
 
 		// start measuring time
 		start := time.Now()
 
-		fmt.Println("JOIN INITING")
-
 		// connect to group
 		if err = c.PubSub.Join(topic, grp[0].Name, pub); err != nil {
 			c.Log.Fatal(err)
 		}
 
-		fmt.Println("JOIN DONE")
-
 		elapsed := time.Since(start).Milliseconds()
 		fmt.Printf("	Attempt %d: %d ms\n", i+1, elapsed)
-		total += elapsed
+		latList = append(latList, float64(elapsed))
 
 		if err = c.PubSub.Leave(topic); err != nil {
 			c.Log.Fatal(err)
@@ -122,5 +123,14 @@ func join(topic string, buf int, pub bool, grp []group.Member) float64 {
 	// can remove by making constant
 	firstAgentPort += numTests
 	firstPubPort += numTests
-	return float64(total) / numTests
+	return latList
+}
+
+func avg(latList []float64) float64 {
+	var total float64
+	for _, l := range latList {
+		total += l
+	}
+
+	return total / float64(len(latList))
 }
