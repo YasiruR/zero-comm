@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
 	"github.com/tryfix/log"
+	"time"
 )
 
 type streams struct {
@@ -28,7 +29,7 @@ type Prober struct {
 	did             services.DIDUtils
 	conn            services.Connector
 	oob             services.OutOfBand
-	peers           map[string]models.Peer
+	peers           map[string]models.Peer // todo use sync map
 	myDidDocs       map[string]messages.DIDDocument
 	dids            map[string]string
 	outChan         chan string
@@ -265,7 +266,7 @@ func (p *Prober) processConnRes(msg models.Message) error {
 		}
 	}
 
-	return fmt.Errorf(`requested peer is unknown to the agent`)
+	return fmt.Errorf(`requested peer is unknown to the agent (exchange_id=%s, peers=%v)`, pthId, p.peers)
 }
 
 func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (svcs []models.Service, err error) {
@@ -467,6 +468,30 @@ func (p *Prober) Service(name, peer string) (*models.Service, error) {
 	}
 
 	return srvc, nil
+}
+
+func (p *Prober) SyncService(name, peer string, timeout int64) (*models.Service, error) {
+	c := make(chan *models.Service)
+	tickr := time.NewTicker(time.Duration(timeout) * time.Second)
+
+	go func(c chan *models.Service) {
+		for {
+			tmpSvc, err := p.Service(name, peer)
+			if err == nil {
+				c <- tmpSvc
+				break
+			}
+		}
+	}(c)
+
+	for {
+		select {
+		case svc := <-c:
+			return svc, nil
+		case <-tickr.C:
+			return nil, fmt.Errorf(`timedout waiting for the service info (service=%s, peer=%s)`, name, peer)
+		}
+	}
 }
 
 func (p *Prober) ValidConn(exchId string) (ok bool, pr models.Peer) {

@@ -46,8 +46,8 @@ func InitGroup(cfg Config, testBuf time.Duration, usr, keyPath string) []Member 
 	}
 
 	time.Sleep(testBuf * time.Second)
-	cmd := exec.Command(`/bin/bash`, `create.sh`, cfg.Topic, cfg.Mode, consistncy, ordr, strconv.FormatInt(cfg.InitSize, 10), strconv.FormatInt(cfg.ZmqBuf, 10))
-	out, err := cmd.CombinedOutput()
+	createCmd := exec.Command(`/bin/bash`, `create.sh`, cfg.Topic, cfg.Mode, consistncy, ordr)
+	out, err := createCmd.CombinedOutput()
 	if err != nil {
 		log.Fatalln(`creating group failed -`, err, string(out))
 	}

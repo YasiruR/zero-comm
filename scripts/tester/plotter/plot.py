@@ -4,39 +4,42 @@ from matplotlib import pyplot as plt
 import pandas as pd
 import csv
 
-def readData(name):
-    topics = []
+# add error bars
+# draw all in one?
+
+def readData(fileName, topic):
     init_sizes = []
-    modes = []
-    consistency = []
-    ordering = []
     bufs = []
     latency = []
-    with open(name) as file:        
+    with open(fileName) as file:        
         reader = csv.reader(file)
         line_index = 0
         for row in reader:
             if line_index > 0:
-                topics.append(row[0])
                 init_sizes.append(int(row[1]))
-                modes.append(row[2])
-                consistency.append(row[3])
-                ordering.append(row[4])
                 bufs.append(int(row[5]))
                 latency.append(float(row[6]))
             line_index += 1
-    return topics, init_sizes, modes, consistency, ordering, bufs, latency
+    return init_sizes, bufs, latency
 
-def plot(filtr, topics, init_sizes, bufs, latency):
-    tmp_sizes = []
-    tmp_lat = []
-    for i in range(len(topics)):
-        if topics[i] == filtr:
-            tmp_sizes.append(init_sizes[i])
-            tmp_lat.append(latency[i])
-            buf = bufs[i]
-            
-    plt.plot(tmp_sizes, tmp_lat, label="sq-c-o-topic", color="seagreen")
+def plot(filtr, init_sizes, buf, latency):
+    sizes = []
+    avg_lat_list = []
+    tmp_size = init_sizes[0]
+    total = 0.0
+    counter = 0
+    for i in range(len(latency)):
+        if tmp_size != init_sizes[i] or i == len(latency)-1:
+            avg_lat_list.append(total/float(counter))
+            sizes.append(tmp_size)
+            tmp_size = init_sizes[i]
+            total = latency[i]
+            counter = 1
+        else:
+            total += latency[i]
+            counter += 1
+          
+    plt.plot(sizes, avg_lat_list, label=filtr, color="seagreen")
     plt.legend()
     plt.xlabel('initial group size')
     plt.ylabel('average time (ms)')
@@ -45,6 +48,10 @@ def plot(filtr, topics, init_sizes, bufs, latency):
 #    plt.savefig('get_line.pdf', bbox_inches="tight")
     plt.show()
 
-topics, init_sizes, modes, consistency, ordering, bufs, latency = readData('../results/join.csv')   
-plot('sq-c-o-topic', topics, init_sizes, bufs, latency)
+topic = 'sq-c-o-topic'
+init_sizes, bufs, latency = readData('../results/join.csv', topic)
+print(init_sizes)
+print(latency)
+
+#plot(topic, init_sizes, bufs[0], latency)
 

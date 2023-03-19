@@ -41,6 +41,7 @@ func Start(c *container.Container) {
 }
 
 func (m *mocker) handleInv(w http.ResponseWriter, _ *http.Request) {
+	m.log.Trace(`mocker received a request for invitation`)
 	inv, err := m.ctr.Prober.Invite()
 	if err != nil {
 		m.log.Error(err)
@@ -50,6 +51,7 @@ func (m *mocker) handleInv(w http.ResponseWriter, _ *http.Request) {
 	if _, err = w.Write([]byte(inv)); err != nil {
 		m.log.Error(err)
 	}
+	m.log.Trace(`mocker sent invitation`, inv)
 }
 
 func (m *mocker) handleConnect(_ http.ResponseWriter, r *http.Request) {
@@ -68,7 +70,7 @@ func (m *mocker) handleConnect(_ http.ResponseWriter, r *http.Request) {
 
 	inv, ok := u.Query()[`oob`]
 	if !ok {
-		m.log.Error(`invitation url must contain 'oob' parameter, please try again`, err)
+		m.log.Error(`invitation url must contain 'oob' parameter, please try again`, inv)
 		return
 	}
 
@@ -90,7 +92,7 @@ func (m *mocker) handleCreate(_ http.ResponseWriter, r *http.Request) {
 		m.log.Error(err)
 		return
 	}
-	m.log.Trace(`create mock endpoint received a request`, req.Topic)
+	m.log.Trace(`mocker received a request for create endpoint`, req.Topic)
 
 	if err = m.ctr.PubSub.Create(req.Topic, req.Publisher, req.Params); err != nil {
 		m.log.Error(err)
