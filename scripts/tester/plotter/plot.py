@@ -50,8 +50,5 @@ def plot(filtr, init_sizes, buf, latency):
 
 topic = 'sq-c-o-topic'
 init_sizes, bufs, latency = readData('../results/join.csv', topic)
-print(init_sizes)
-print(latency)
-
-#plot(topic, init_sizes, bufs[0], latency)
+plot(topic, init_sizes, bufs[0], latency)
 

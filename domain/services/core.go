@@ -16,7 +16,7 @@ type Agent interface {
 	Peer(label string) (models.Peer, error)
 	Service(name, peer string) (*models.Service, error)
 	SyncService(name, peer string, timeout int64) (*models.Service, error)
-	ValidConn(exchId string) (ok bool, pr models.Peer)
+	ValidConn(exchId string) (pr models.Peer, ok bool)
 }
 
 type DIDUtils interface {

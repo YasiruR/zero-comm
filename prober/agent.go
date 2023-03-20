@@ -29,7 +29,7 @@ type Prober struct {
 	did             services.DIDUtils
 	conn            services.Connector
 	oob             services.OutOfBand
-	peers           map[string]models.Peer // todo use sync map
+	peers           *peers
 	myDidDocs       map[string]messages.DIDDocument
 	dids            map[string]string
 	outChan         chan string
@@ -51,7 +51,7 @@ func NewProber(c *container.Container) (p *Prober, err error) {
 		oob:             c.OOB,
 		outChan:         c.OutChan,
 		label:           c.Cfg.Args.Name,
-		peers:           map[string]models.Peer{}, // name as the key may not be ideal
+		peers:           initPeerStore(c.Log),
 		myDidDocs:       map[string]messages.DIDDocument{},
 		dids:            map[string]string{},
 		client:          c.Client,
@@ -169,7 +169,7 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 		return ``, fmt.Errorf(`sending connection request failed - %v`, err)
 	}
 
-	p.peers[inv.Label] = models.Peer{DID: inv.From, ExchangeThId: connReq.Thread.ThId}
+	p.peers.add(inv.Label, models.Peer{DID: inv.From, ExchangeThId: connReq.Thread.ThId})
 	return inv.Label, nil
 }
 
@@ -223,7 +223,7 @@ func (p *Prober) processConnReq(msg models.Message) error {
 		return fmt.Errorf(`sending connection response failed - %v`, err)
 	}
 
-	p.peers[peerLabel] = models.Peer{DID: peerDid, Services: svcs, ExchangeThId: exchId}
+	p.peers.add(peerLabel, models.Peer{DID: peerDid, Services: svcs, ExchangeThId: exchId})
 	p.outChan <- `Connection established with ` + peerLabel
 
 	return nil
@@ -237,36 +237,34 @@ func (p *Prober) processConnRes(msg models.Message) error {
 
 	// todo send complete message
 
-	for name, peer := range p.peers {
-		if peer.ExchangeThId == pthId {
-			ownPubKey, err := p.ks.PublicKey(name)
-			if err != nil {
-				return fmt.Errorf(`getting public key for connection with %s failed - %v`, name, err)
-			}
-
-			ownPrvKey, err := p.ks.PrivateKey(name)
-			if err != nil {
-				return fmt.Errorf(`getting private key for connection with %s failed - %v`, name, err)
-			}
-
-			// decrypts peer did doc which is encrypted with default keys
-			svcs, err := p.getPeerInfo(peerEncDocBytes, ownPubKey, ownPrvKey)
-			if err != nil {
-				return fmt.Errorf(`getting peer data failed - %v`, err)
-			}
-
-			p.peers[name] = models.Peer{DID: peer.DID, Services: svcs, ExchangeThId: pthId}
-
-			if p.syncConns[name] != nil {
-				p.syncConns[name] <- true
-			}
-
-			p.outChan <- `Connection established with ` + name
-			return nil
-		}
+	name, pr, ok := p.peers.peerByExchId(pthId)
+	if !ok {
+		return fmt.Errorf(`fetching peer by exchange id failed - %v`, err)
 	}
 
-	return fmt.Errorf(`requested peer is unknown to the agent (exchange_id=%s, peers=%v)`, pthId, p.peers)
+	ownPubKey, err := p.ks.PublicKey(name)
+	if err != nil {
+		return fmt.Errorf(`getting public key for connection with %s failed - %v`, name, err)
+	}
+
+	ownPrvKey, err := p.ks.PrivateKey(name)
+	if err != nil {
+		return fmt.Errorf(`getting private key for connection with %s failed - %v`, name, err)
+	}
+
+	// decrypts peer did doc which is encrypted with default keys
+	svcs, err := p.getPeerInfo(peerEncDocBytes, ownPubKey, ownPrvKey)
+	if err != nil {
+		return fmt.Errorf(`getting peer data failed - %v`, err)
+	}
+
+	p.peers.add(name, models.Peer{DID: pr.DID, Services: svcs, ExchangeThId: pthId})
+	if p.syncConns[name] != nil {
+		p.syncConns[name] <- true
+	}
+
+	p.outChan <- `Connection established with ` + name
+	return nil
 }
 
 func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (svcs []models.Service, err error) {
@@ -306,9 +304,9 @@ func (p *Prober) getPeerInfo(encDocBytes, recPubKey, recPrvKey []byte) (svcs []m
 }
 
 func (p *Prober) SendMessage(mt models.MsgType, to, text string) error {
-	peer, ok := p.peers[to]
-	if !ok {
-		return fmt.Errorf(`no didcomm connection found for the recipient %s`, to)
+	peer, err := p.peers.peerByLabel(to)
+	if err != nil {
+		return fmt.Errorf(`no didcomm connection found for the recipient %s - %v`, to, err)
 	}
 
 	ownPubKey, err := p.ks.PublicKey(to)
@@ -442,9 +440,9 @@ func (p *Prober) infoByServc(filter string, svcs []models.Service) (endpoint str
 
 // Peer returns the connected models.Peer queried by label
 func (p *Prober) Peer(label string) (models.Peer, error) {
-	pr, ok := p.peers[label]
-	if !ok {
-		return models.Peer{}, fmt.Errorf(`no peer found for the label (%s)`, label)
+	pr, err := p.peers.peerByLabel(label)
+	if err != nil {
+		return models.Peer{}, fmt.Errorf(`no peer found for the label (%s) - %v`, label, err)
 	}
 	return pr, nil
 }
@@ -494,11 +492,7 @@ func (p *Prober) SyncService(name, peer string, timeout int64) (*models.Service,
 	}
 }
 
-func (p *Prober) ValidConn(exchId string) (ok bool, pr models.Peer) {
-	for _, connPr := range p.peers {
-		if connPr.ExchangeThId == exchId {
-			return true, connPr
-		}
-	}
-	return false, models.Peer{}
+func (p *Prober) ValidConn(exchId string) (pr models.Peer, ok bool) {
+	_, pr, ok = p.peers.peerByExchId(exchId)
+	return pr, ok
 }

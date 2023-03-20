@@ -132,7 +132,7 @@ func (p *processor) state(_, msg string) error {
 
 	var validMsg string
 	for exchId, encMsg := range status.AuthMsgs {
-		ok, _ := p.probr.ValidConn(exchId)
+		_, ok := p.probr.ValidConn(exchId)
 		if ok {
 			validMsg = encMsg
 			break
