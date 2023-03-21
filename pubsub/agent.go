@@ -17,11 +17,12 @@ import (
 	"github.com/tryfix/log"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
-	helloProtocolBuf = 500
+	helloProtocolBuf = 100
 )
 
 type state struct {
@@ -210,22 +211,35 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		a.syncr.init(topic)
 	}
 
-	hashes := make(map[string]string)
+	hashes := &sync.Map{}
+	wg := &sync.WaitGroup{}
 	for _, m := range group.Members {
-		if !m.Active {
-			continue
-		}
+		wg.Add(1)
+		go func(m models.Member, hashes *sync.Map, wg *sync.WaitGroup) {
+			if !m.Active {
+				return
+			}
 
-		checksum, err := a.connectMember(topic, publisher, m)
-		if err != nil {
-			a.log.Error(fmt.Sprintf(`adding %s as a member failed - %v`, m.Label, err))
-			continue
-		}
-		hashes[m.Label] = checksum
+			checksum, err := a.connectMember(topic, publisher, m)
+			if err != nil {
+				a.log.Error(fmt.Sprintf(`adding %s as a member failed - %v`, m.Label, err))
+				return
+			}
+
+			hashes.Store(m.Label, checksum)
+			wg.Done()
+		}(m, hashes, wg)
 	}
 
+	wg.Wait()
 	if len(group.Members) > 1 {
-		if err = validator.ValidJoin(acceptor, group.Members, hashes); err != nil {
+		hMap := make(map[string]string)
+		hashes.Range(func(key, val any) bool {
+			hMap[key.(string)] = val.(string)
+			return true
+		})
+
+		if err = validator.ValidJoin(acceptor, group.Members, hMap); err != nil {
 			if group.Params.JoinConsistent {
 				return fmt.Errorf(`join failed due to inconsistent view of the group - %v`, err)
 			}

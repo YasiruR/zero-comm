@@ -26,6 +26,7 @@ type runner struct {
 	outChan chan string
 	disCmds uint64 // flag to identify whether output cursor is on basic commands or not
 	pubsub  services.GroupAgent
+	verbose bool
 }
 
 func ParseArgs() *container.Args {
@@ -64,6 +65,7 @@ func Init(c *container.Container) {
 		outChan: c.OutChan,
 		log:     internalLog.NewLogger(c.Cfg.Verbose, 5),
 		pubsub:  c.PubSub,
+		verbose: c.Cfg.Verbose,
 	}
 
 	go r.listen()
@@ -147,6 +149,10 @@ func (r *runner) enableCommands() {
 func (r *runner) listen() {
 	for {
 		text := <-r.outChan
+		if !r.verbose {
+			continue
+		}
+
 		if r.disCmds == 1 {
 			atomic.StoreUint64(&r.disCmds, 0)
 			fmt.Println()

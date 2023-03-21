@@ -25,6 +25,8 @@ var (
 
 // todo test joining with multiple groups
 
+// todo join to all connected members
+
 func Join(testBuf int64, usr, keyPath string) {
 	testLatencyBuf = time.Duration(testBuf)
 	for _, size := range groupSizes {
