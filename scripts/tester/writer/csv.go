@@ -31,7 +31,7 @@ func writeJoin(gc group.Config, results []float64) {
 	}
 
 	if len(rows) == 0 {
-		if err = w.Write([]string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `latency_ms`}); err != nil {
+		if err = w.Write([]string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `init_connected`, `latency_ms`}); err != nil {
 			log.Fatalln(`writing join headers failed -`, err)
 		}
 	}
@@ -43,6 +43,7 @@ func writeJoin(gc group.Config, results []float64) {
 			gc.Mode,
 			fmt.Sprintf(`%t`, gc.ConsistntJoin),
 			fmt.Sprintf(`%t`, gc.Ordered),
+			fmt.Sprintf(`%t`, gc.InitConnectedAll),
 			fmt.Sprintf(`%f`, r),
 		}); err != nil {
 			log.Fatalln(`writing join results failed -`, err)

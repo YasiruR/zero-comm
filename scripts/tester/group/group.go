@@ -11,11 +11,12 @@ import (
 )
 
 type Config struct {
-	Topic         string
-	InitSize      int64
-	Mode          string
-	ConsistntJoin bool
-	Ordered       bool
+	Topic            string
+	InitSize         int64
+	Mode             string
+	ConsistntJoin    bool
+	Ordered          bool
+	InitConnectedAll bool // true if tester is initially connected to all members
 }
 
 type Member struct {
