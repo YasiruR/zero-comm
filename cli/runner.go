@@ -32,7 +32,6 @@ func ParseArgs() *container.Args {
 	n := flag.String(`label`, ``, `agent's name'`)
 	p := flag.Int(`port`, 0, `agent's port'`)
 	pub := flag.Int(`pub_port`, 0, `agent's publishing port'`)
-	bufLat := flag.Int(`buf`, 500, `latency buffer for zmq in milli-seconds`)
 	mocker := flag.Bool(`mock`, true, `enables mocking functions`)
 	mockPort := flag.Int(`mock_port`, 0, `port for mocking functions`)
 	v := flag.Bool(`v`, false, `logging`)
@@ -47,7 +46,6 @@ func ParseArgs() *container.Args {
 		Name:     *n,
 		Port:     *p,
 		PubPort:  *pub,
-		ZmqBufMs: *bufLat,
 		Mocker:   *mocker,
 		MockPort: *mockPort,
 		Verbose:  *v,
@@ -216,9 +214,11 @@ func (r *runner) discover() {
 func (r *runner) createGroup() {
 	topic := r.input(`Topic`)
 	strPub := r.input(`Publisher (Y/N)`)
-	mode := r.input(`Group mode (single/multiple[default])`)
+	mode := r.input(`Group queue mode [single,multiple] (S/M)`)
 	strJoinConsist := r.input(`Strict consistency for join operation (Y/N)`)
 	strOrdrd := r.input(`Causal consistency for group messages (Y/N)`)
+
+	//mode, strJoinConsist, strOrdrd, strPub = `s`, `y`, `y`, `y`
 
 	publisher, err := r.validBool(strPub)
 	if err != nil {
@@ -238,8 +238,15 @@ func (r *runner) createGroup() {
 		return
 	}
 
+	var gm domain.GroupMode
+	if mode == `s` || mode == `S` {
+		gm = domain.SingleQueueMode
+	} else {
+		gm = domain.MultipleQueueMode
+	}
+
 	if err = r.pubsub.Create(topic, publisher,
-		models.GroupParams{OrderEnabled: ordrd, JoinConsistent: joinConsist, Mode: domain.GroupMode(mode)},
+		models.GroupParams{OrderEnabled: ordrd, JoinConsistent: joinConsist, Mode: gm},
 	); err != nil {
 		r.error(`create group failed`, err)
 		return

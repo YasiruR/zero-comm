@@ -16,20 +16,22 @@ import (
 
 // processor implements the handlers functions for incoming messages
 type processor struct {
-	myLabel string
-	probr   servicesPkg.Agent
-	log     log.Logger
-	outChan chan string
+	myLabel     string
+	pubEndpoint string
+	outChan     chan string
+	probr       servicesPkg.Agent
+	log         log.Logger
 	*internals
 }
 
-func newProcessor(label string, c *container.Container, in *internals) *processor {
+func newProcessor(label, pubEndpoint string, c *container.Container, in *internals) *processor {
 	return &processor{
-		myLabel:   label,
-		probr:     c.Prober,
-		internals: in,
-		log:       c.Log,
-		outChan:   c.OutChan,
+		myLabel:     label,
+		pubEndpoint: pubEndpoint,
+		probr:       c.Prober,
+		internals:   in,
+		log:         c.Log,
+		outChan:     c.OutChan,
 	}
 }
 
@@ -143,9 +145,18 @@ func (p *processor) state(_, msg string) error {
 		return fmt.Errorf(`status update is not intended to this member`)
 	}
 
-	_, strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
+	sender, strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
 	if err != nil {
 		return fmt.Errorf(`reading status didcomm message failed - %v`, err)
+	}
+
+	// return ack if hello protocol
+	if strAuthMsg == domain.HelloPrefix {
+		if err = p.probr.SendMessage(models.TypStatusAck, sender, p.pubEndpoint); err != nil {
+			return fmt.Errorf(`sending hello ack failed - %v`, err)
+		}
+		p.log.Debug(fmt.Sprintf(`sent ack to hello protocol of %s`, sender))
+		return nil
 	}
 
 	var m models.Member

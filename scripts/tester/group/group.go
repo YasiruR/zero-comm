@@ -16,7 +16,6 @@ type Config struct {
 	Mode          string
 	ConsistntJoin bool
 	Ordered       bool
-	ZmqBuf        int64
 }
 
 type Member struct {
@@ -39,7 +38,7 @@ func InitGroup(cfg Config, testBuf time.Duration, usr, keyPath string) []Member 
 		ordr = `not_ordered`
 	}
 
-	initCmd := exec.Command(`/bin/bash`, `init.sh`, strconv.FormatInt(cfg.InitSize, 10), strconv.FormatInt(cfg.ZmqBuf, 10), usr, keyPath)
+	initCmd := exec.Command(`/bin/bash`, `init.sh`, strconv.FormatInt(cfg.InitSize, 10), usr, keyPath)
 	initOut, err := initCmd.CombinedOutput()
 	if err != nil {
 		log.Fatalln(`initializing members failed -`, err, string(initOut))

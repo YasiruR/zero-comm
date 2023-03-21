@@ -8,6 +8,7 @@ const (
 
 const (
 	TopicPrefix = `urn:didcomm-queue:`
+	HelloPrefix = `hello_`
 )
 
 type ConsistencyLevel string

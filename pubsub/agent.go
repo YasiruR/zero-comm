@@ -9,6 +9,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
 	"github.com/YasiruR/didcomm-prober/pubsub/stores"
+	"github.com/YasiruR/didcomm-prober/pubsub/transport"
 	"github.com/YasiruR/didcomm-prober/pubsub/validator"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
@@ -17,6 +18,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
+)
+
+const (
+	helloProtocolBuf = 500
 )
 
 type state struct {
@@ -40,15 +45,15 @@ type internals struct {
 	compactr *compactor
 	gs       *stores.Group
 	subs     *stores.Subscriber
+	peers    *transport.Peers
 }
 
 type Agent struct {
 	*state
 	*internals
 	*services
-	proc     *processor
-	outChan  chan string
-	zmqBufms int
+	proc    *processor
+	outChan chan string
 }
 
 func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
@@ -70,9 +75,8 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
 			client: c.Client,
 			log:    c.Log,
 		},
-		proc:     newProcessor(c.Cfg.Name, c, in),
-		outChan:  c.OutChan,
-		zmqBufms: c.Cfg.ZmqBufMs,
+		proc:    newProcessor(c.Cfg.Name, c.Cfg.PubEndpoint, c, in),
+		outChan: c.OutChan,
 	}
 
 	a.start(c.Server)
@@ -87,7 +91,7 @@ func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, 
 		return nil, fmt.Errorf(`initializing compressor failed - %v`, err)
 	}
 
-	transport, err := newZmqTransport(zmqCtx, gs, c)
+	tr, err := newZmqTransport(zmqCtx, gs, c)
 	if err != nil {
 		return nil, fmt.Errorf(`zmq transport init for group agent failed - %v`, err)
 	}
@@ -97,11 +101,11 @@ func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, 
 		return nil, fmt.Errorf(`initializing zmq authenticator failed - %v`, err)
 	}
 
-	if err = authn.setPubAuthn(transport.pub); err != nil {
+	if err = authn.setPubAuthn(tr.pub); err != nil {
 		return nil, fmt.Errorf(`setting authentication on pub socket failed - %v`, err)
 	}
 
-	if err = transport.start(c.Cfg.PubEndpoint); err != nil {
+	if err = tr.start(c.Cfg.PubEndpoint); err != nil {
 		return nil, fmt.Errorf(`starting zmq transport failed - %v`, err)
 	}
 
@@ -109,10 +113,11 @@ func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, 
 		subs:     stores.NewSubStore(),
 		gs:       gs,
 		auth:     authn,
-		zmq:      transport,
+		zmq:      tr,
 		compactr: compctr,
 		syncr:    newSyncer(gs),
 		packr:    newPacker(c),
+		peers:    transport.InitPeerStore(c),
 	}, nil
 }
 
@@ -234,22 +239,68 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`adding group members failed - %v`, err)
 	}
 
-	// buffer for zmq subscription latency
-	time.Sleep(time.Duration(a.zmqBufms) * time.Millisecond)
+	if err = a.waitForConns(topic, group.Members); err != nil {
+		return fmt.Errorf(`waiting for connections failed - %v`, err)
+	}
 
+	// publish status - idempotent tx
+	if err = a.notifyAll(topic, true, publisher); err != nil {
+		return fmt.Errorf(`publishing active status failed - %v`, err)
+	}
+
+	return nil
+}
+
+func (a *Agent) waitForConns(topic string, grp []models.Member) error {
 	// wait till didcomm connections are established with all group members
-	for _, m := range group.Members {
+	for _, m := range grp {
 	checkPeer:
-		_, err = a.probr.Peer(m.Label)
+		_, err := a.probr.Peer(m.Label)
 		if err != nil {
 			goto checkPeer
 			// can use sleep to reduce resource utilization
 		}
 	}
 
-	// publish status
-	if err = a.notifyAll(topic, true, publisher); err != nil {
-		return fmt.Errorf(`publishing active status failed - %v`, err)
+	// pack hello msgs for each peer
+	sm := messages.Status{Id: uuid.New().String(), Type: messages.HelloProtocolV1, Topic: topic, AuthMsgs: map[string]string{}}
+	for _, m := range grp {
+		pr, err := a.probr.Peer(m.Label)
+		if err != nil {
+			return fmt.Errorf(`fetching peer failed for %s - %v`, m.Label, err)
+		}
+
+		s, err := a.probr.Service(domain.ServcGroupJoin, m.Label)
+		if err != nil {
+			return fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
+		}
+
+		pkdMsg, err := a.packr.pack(m.Label, s.PubKey, []byte(domain.HelloPrefix))
+		if err != nil {
+			return fmt.Errorf(`packing hello message for %s failed - %v`, m.Label, err)
+		}
+		sm.AuthMsgs[pr.ExchangeThId] = string(pkdMsg)
+	}
+
+	encodedStatus, err := json.Marshal(sm)
+	if err != nil {
+		return fmt.Errorf(`marshalling status message failed - %v`, err)
+	}
+
+	// compressing status msg with hello texts as analogous to default status msg
+	cmprsd := a.compactr.zEncodr.EncodeAll(encodedStatus, make([]byte, 0, len(encodedStatus)))
+
+	// wait till zmq pub-sub socket connections are established
+retry:
+	if err = a.zmq.publish(a.zmq.stateTopic(topic), cmprsd); err != nil {
+		return fmt.Errorf(`publishing hello message failed - %v`, err)
+	}
+
+	for _, m := range grp {
+		if !a.peers.Connected(m.PubEndpoint) {
+			time.Sleep(helloProtocolBuf * time.Millisecond)
+			goto retry
+		}
 	}
 
 	return nil

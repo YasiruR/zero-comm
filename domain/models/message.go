@@ -11,6 +11,7 @@ const (
 	TypGroupJoin
 	TypGroupStatus
 	TypGroupMsg
+	TypStatusAck
 )
 
 func (m MsgType) String() string {
@@ -29,6 +30,8 @@ func (m MsgType) String() string {
 		return `join-request`
 	case TypGroupStatus:
 		return `status-message`
+	case TypStatusAck:
+		return `hello-ack`
 	default:
 		return `undefined`
 	}

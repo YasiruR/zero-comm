@@ -14,16 +14,11 @@ const (
 
 func main() {
 	args := os.Args
-	if len(args) != 6 {
+	if len(args) != 5 {
 		log.Fatalln(`incorrect number of arguments`)
 	}
 
-	typ, strZmqBuf, strTestBuf, usr, keyPath := args[1], args[2], args[3], args[4], args[5]
-	zmqBuf, err := strconv.ParseInt(strZmqBuf, 10, 64)
-	if err != nil {
-		log.Fatalln(`invalid zmq buffer`)
-	}
-
+	typ, strTestBuf, usr, keyPath := args[1], args[2], args[3], args[4]
 	testBuf, err := strconv.ParseInt(strTestBuf, 10, 64)
 	if err != nil {
 		log.Fatalln(`invalid zmq buffer`)
@@ -32,7 +27,7 @@ func main() {
 	fmt.Println(`----- START -----`)
 	switch typ {
 	case testJoin:
-		tests.Join(zmqBuf, testBuf, usr, keyPath)
+		tests.Join(testBuf, usr, keyPath)
 	default:
 		log.Fatalln(`invalid test method`)
 	}

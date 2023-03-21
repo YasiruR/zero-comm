@@ -11,4 +11,5 @@ const (
 	JoinRequestV1        = `https://didcomm.org/pub-sub/1.0/join-request`
 	JoinResponseV1       = `https://didcomm.org/pub-sub/1.0/join-response`
 	MemberStatusV1       = `https://didcomm.org/pub-sub/1.0/status`
+	HelloProtocolV1      = `https://didcomm.org/pub-sub/1.0/hello`
 )

@@ -19,13 +19,12 @@ import (
 	"strconv"
 )
 
-func InitAgent(name string, port, pubPort, buf int) *container.Container {
+func InitAgent(name string, port, pubPort int) *container.Container {
 	return initContainer(setConfigs(&container.Args{
-		Name:     name,
-		Port:     port,
-		Verbose:  false,
-		PubPort:  pubPort,
-		ZmqBufMs: buf,
+		Name:    name,
+		Port:    port,
+		Verbose: false,
+		PubPort: pubPort,
 	}))
 }
 

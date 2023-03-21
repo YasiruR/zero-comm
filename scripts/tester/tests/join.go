@@ -25,60 +25,59 @@ var (
 
 // todo test joining with multiple groups
 
-func Join(zmqBuf, testBuf int64, usr, keyPath string) {
+func Join(testBuf int64, usr, keyPath string) {
 	testLatencyBuf = time.Duration(testBuf)
 	for _, size := range groupSizes {
-		fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d, buffer=%d] \n", size, zmqBuf)
-		joinTest(`sq-c-o-topic`, `single-queue`, true, true, int64(size), zmqBuf, usr, keyPath)
+		fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d] \n", size)
+		joinTest(`sq-c-o-topic`, `single-queue`, true, true, int64(size), usr, keyPath)
 
-		//fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d, buffer=%d] \n", size, zmqBuf)
-		//joinTest(`mq-c-o-topic`, `multiple-queue`, true, true, int64(size), zmqBuf, usr, keyPath)
+		//fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d] \n", size)
+		//joinTest(`mq-c-o-topic`, `multiple-queue`, true, true, int64(size), usr, keyPath)
 		//
-		//fmt.Printf("\n[single-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, zmqBuf)
-		//joinTest(`sq-i-o-topic`, `single-queue`, false, true, int64(size), zmqBuf, usr, keyPath)
+		//fmt.Printf("\n[single-queue, join-inconsistent, ordered, size=%d] \n", size)
+		//joinTest(`sq-i-o-topic`, `single-queue`, false, true, int64(size), usr, keyPath)
 		//
-		//fmt.Printf("\n[multiple-queue, join-inconsistent, ordered, size=%d, buffer=%d] \n", size, zmqBuf)
-		//joinTest(`mq-i-o-topic`, `multiple-queue`, false, true, int64(size), zmqBuf, usr, keyPath)
+		//fmt.Printf("\n[multiple-queue, join-inconsistent, ordered, size=%d] \n", size)
+		//joinTest(`mq-i-o-topic`, `multiple-queue`, false, true, int64(size), usr, keyPath)
 		//
-		//fmt.Printf("\n[single-queue, join-consistent, not-ordered, size=%d, buffer=%d] \n", size, zmqBuf)
-		//joinTest(`sq-c-no-topic`, `single-queue`, true, false, int64(size), zmqBuf, usr, keyPath)
+		//fmt.Printf("\n[single-queue, join-consistent, not-ordered, size=%d] \n", size)
+		//joinTest(`sq-c-no-topic`, `single-queue`, true, false, int64(size), usr, keyPath)
 		//
-		//fmt.Printf("\n[multiple-queue, join-consistent, not-ordered, size=%d, buffer=%d] \n", size, zmqBuf)
-		//joinTest(`mq-c-no-topic`, `multiple-queue`, true, false, int64(size), zmqBuf, usr, keyPath)
+		//fmt.Printf("\n[multiple-queue, join-consistent, not-ordered, size=%d] \n", size)
+		//joinTest(`mq-c-no-topic`, `multiple-queue`, true, false, int64(size), usr, keyPath)
 		//
-		//fmt.Printf("\n[single-queue, join-inconsistent, not-ordered, size=%d, buffer=%d] \n", size, zmqBuf)
-		//joinTest(`sq-i-no-topic`, `single-queue`, false, false, int64(size), zmqBuf, usr, keyPath)
+		//fmt.Printf("\n[single-queue, join-inconsistent, not-ordered, size=%d] \n", size)
+		//joinTest(`sq-i-no-topic`, `single-queue`, false, false, int64(size), usr, keyPath)
 		//
-		//fmt.Printf("\n[multiple-queue, join-inconsistent, not-ordered, size=%d, buffer=%d] \n", size, zmqBuf)
-		//joinTest(`mq-i-no-topic`, `multiple-queue`, false, false, int64(size), zmqBuf, usr, keyPath)
+		//fmt.Printf("\n[multiple-queue, join-inconsistent, not-ordered, size=%d] \n", size)
+		//joinTest(`mq-i-no-topic`, `multiple-queue`, false, false, int64(size), usr, keyPath)
 	}
 }
 
-func joinTest(topic, mode string, consistntJoin, ordrd bool, size, zmqBuf int64, usr, keyPath string) {
+func joinTest(topic, mode string, consistntJoin, ordrd bool, size int64, usr, keyPath string) {
 	cfg := group.Config{
 		Topic:         topic,
 		InitSize:      size,
 		Mode:          mode,
 		ConsistntJoin: consistntJoin,
 		Ordered:       ordrd,
-		ZmqBuf:        zmqBuf,
 	}
 
 	grp := group.InitGroup(cfg, testLatencyBuf, usr, keyPath)
 	time.Sleep(testLatencyBuf * time.Second)
 
 	fmt.Println("# Test debug logs:")
-	latList := join(cfg.Topic, int(zmqBuf), true, grp)
+	latList := join(cfg.Topic, true, grp)
 	writer.Persist(`join`, cfg, latList)
 
 	fmt.Printf("# Average join-latency (ms): %f\n", avg(latList))
 	group.Purge()
 }
 
-func join(topic string, buf int, pub bool, grp []group.Member) (latList []float64) {
+func join(topic string, pub bool, grp []group.Member) (latList []float64) {
 	for i := 0; i < numTests; i++ {
 		// init agent
-		c := group.InitAgent(fmt.Sprintf(`tester-%d`, i+1), firstAgentPort+i, firstPubPort+i, buf)
+		c := group.InitAgent(fmt.Sprintf(`tester-%d`, i+1), firstAgentPort+i, firstPubPort+i)
 		fmt.Printf("	Tester agent initialized (name: %s, port: %d, pub-endpoint: %s)\n", c.Cfg.Name, c.Cfg.Port, c.Cfg.PubEndpoint)
 
 		go group.Listen(c)

@@ -12,7 +12,6 @@ type Args struct {
 	Name     string
 	Port     int
 	PubPort  int
-	ZmqBufMs int
 	Mocker   bool
 	MockPort int
 	Verbose  bool
