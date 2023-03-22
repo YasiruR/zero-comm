@@ -117,6 +117,7 @@ func (a *auth) remvKeys(peer string) error {
 	return nil
 }
 
+// modified pebbe/zmq4/auth.go with a mutex since key maps are not concurrent-safe
 func (a *auth) addClientPubKey(key string) {
 	a.Lock()
 	defer a.Unlock()

@@ -7,17 +7,17 @@ import (
 	"github.com/YasiruR/didcomm-prober/reqrep/mock"
 	"github.com/YasiruR/didcomm-prober/scripts/tester/group"
 	"github.com/YasiruR/didcomm-prober/scripts/tester/writer"
+	"github.com/tryfix/log"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
 var (
 	numTests int
 	//groupSizes     = []int{1, 2, 5, 10, 20, 50, 100}
-	groupSizes                   = []int{1, 2, 5, 10}
-	testBatchSizes               = []int{2, 5, 10}
+	groupSizes                   = []int{5, 10}
+	testBatchSizes               = []int{5, 10}
 	agentPort                    = 6140
 	pubPort                      = 6540
 	testLatencyBuf time.Duration = 0
@@ -80,68 +80,6 @@ func initJoinTest(topic, mode string, consistntJoin, ordrd, conctd bool, size in
 	group.Purge()
 }
 
-//func join(topic string, pub, conctd bool, grp []group.Member) (latList []float64) {
-//	for i := 0; i < numTests; i++ {
-//		// init agent
-//		c := group.InitAgent(fmt.Sprintf(`tester-%d`, i+1), agentPort+i, pubPort+i)
-//		fmt.Printf("	Tester agent initialized (name: %s, port: %d, pub-endpoint: %s)\n", c.Cfg.Name, c.Cfg.Port, c.Cfg.PubEndpoint)
-//
-//		go group.Listen(c)
-//		go func(c *container.Container) {
-//			if err := c.Server.Start(); err != nil {
-//				c.Log.Fatal(`failed to start the server`, err)
-//			}
-//		}(c)
-//
-//		// generate inv
-//		url, err := c.Prober.Invite()
-//		if err != nil {
-//			c.Log.Fatal(fmt.Sprintf(`failed generating inv - %s`, err))
-//		}
-//
-//		wg := &sync.WaitGroup{}
-//		for j, m := range grp {
-//			if !conctd && j == 1 {
-//				break
-//			}
-//
-//			wg.Add(1)
-//			go func(m group.Member) {
-//				if _, err = http.DefaultClient.Post(m.MockEndpoint+mock.ConnectEndpoint, `application/octet-stream`, bytes.NewBufferString(url)); err != nil {
-//					c.Log.Fatal(err)
-//				}
-//				wg.Done()
-//			}(m)
-//		}
-//
-//		wg.Wait()
-//		time.Sleep(testLatencyBuf * time.Second)
-//
-//		// start measuring time
-//		start := time.Now()
-//
-//		// connect to group
-//		if err = c.PubSub.Join(topic, grp[0].Name, pub); err != nil {
-//			c.Log.Fatal(err)
-//		}
-//
-//		elapsed := time.Since(start).Milliseconds()
-//		fmt.Printf("	Attempt %d: %d ms\n", i+1, elapsed)
-//		latList = append(latList, float64(elapsed))
-//
-//		if err = c.PubSub.Leave(topic); err != nil {
-//			c.Log.Fatal(err)
-//		}
-//
-//		time.Sleep(testLatencyBuf * time.Second)
-//	}
-//
-//	// can remove by making constant
-//	agentPort += numTests
-//	pubPort += numTests
-//	return latList
-//}
-
 func join(topic string, pub, conctd bool, grp []group.Member, count int) (latList []float64) {
 	for i := 0; i < numTests; i++ {
 		// init agents
@@ -184,55 +122,32 @@ func join(topic string, pub, conctd bool, grp []group.Member, count int) (latLis
 
 		time.Sleep(testLatencyBuf * time.Second)
 		wg := &sync.WaitGroup{}
-		var totalLat int64
+		accptrs := acceptors(count, len(grp), conctd)
 
-		for joinrId, c := range contList {
+		start := time.Now()
+		for j, c := range contList {
 			wg.Add(1)
-			go func(c *container.Container, joinrId int) {
-				defer func(topic string) {
-					if err := c.PubSub.Leave(topic); err != nil {
-						c.Log.Error(fmt.Sprintf(`leaving group failed for %s`, c.Cfg.Name), err)
-					}
-					wg.Done()
-				}(topic)
-
-				// send join requests to different members if joiner is connected to all
-				if conctd {
-					// changing acceptor based on the joiner
-					accptrId := joinrId
-					if joinrId > len(grp)-1 {
-						accptrId = joinrId % len(grp)
-					}
-
-					// connect to group
-					start := time.Now()
-					if err := c.PubSub.Join(topic, grp[accptrId].Name, pub); err != nil {
-						c.Log.Error(fmt.Sprintf(`join failed for %s`, c.Cfg.Name), err)
-						return
-					}
-					atomic.AddInt64(&totalLat, time.Since(start).Milliseconds())
-					fmt.Printf("%s JOINED GROUP\n", c.Cfg.Name)
-					return
+			go func(accptrId int, c *container.Container, wg *sync.WaitGroup) {
+				if err := c.PubSub.Join(topic, grp[accptrId].Name, pub); err != nil {
+					log.Error(fmt.Sprintf(`join failed for %s`, c.Cfg.Name), err)
 				}
-
-				// requests only from the first member if joiner is not connected to the rest of the group
-				start := time.Now()
-				if err := c.PubSub.Join(topic, grp[0].Name, pub); err != nil {
-					c.Log.Error(fmt.Sprintf(`join failed for %s`, c.Cfg.Name), err)
-					return
-				}
-				atomic.AddInt64(&totalLat, time.Since(start).Milliseconds())
-				fmt.Printf("%s JOINED GROUP\n", c.Cfg.Name)
-			}(c, joinrId)
+				wg.Done()
+			}(accptrs[j], c, wg)
 		}
 
 		wg.Wait()
+		latency := time.Since(start).Milliseconds()
+		fmt.Printf("	Attempt %d: %d ms\n", i+1, latency)
 
 		// check if group has correct #members? will have to use leave afterwards
 
-		fmt.Printf("	Attempt %d: %d ms\n", i+1, totalLat)
-		latList = append(latList, float64(totalLat))
+		for _, c := range contList {
+			if err := c.PubSub.Leave(topic); err != nil {
+				log.Error(fmt.Sprintf(`leaving group failed for %s`, c.Cfg.Name), err)
+			}
+		}
 
+		latList = append(latList, float64(latency))
 		time.Sleep(testLatencyBuf * time.Second)
 	}
 
@@ -248,4 +163,23 @@ func avg(latList []float64) float64 {
 	}
 
 	return total / float64(len(latList))
+}
+
+func acceptors(joinrCount, grpSize int, conctd bool) (ids []int) {
+	for joinrId := 0; joinrId < joinrCount; joinrId++ {
+		// send join requests to different members if joiner is connected to all
+		if conctd && joinrCount > 1 {
+			// changing acceptor based on the joiner
+			accptrId := joinrId
+			if joinrId > grpSize-1 {
+				accptrId = joinrId % grpSize
+			}
+
+			ids = append(ids, accptrId)
+		} else {
+			ids = append(ids, 0)
+		}
+	}
+
+	return ids
 }

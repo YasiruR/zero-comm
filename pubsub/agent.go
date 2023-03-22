@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	helloProtocolBuf = 100
+	helloProtocolIntervalMs = 100
 )
 
 type state struct {
@@ -312,7 +312,7 @@ retry:
 
 	for _, m := range grp {
 		if !a.peers.Connected(m.PubEndpoint) {
-			time.Sleep(helloProtocolBuf * time.Millisecond)
+			time.Sleep(helloProtocolIntervalMs * time.Millisecond)
 			goto retry
 		}
 	}
@@ -532,9 +532,11 @@ func (a *Agent) process(inChan chan models.Message, handlerFunc func(msg *models
 	go func() {
 		for {
 			msg := <-inChan
-			if err := handlerFunc(&msg); err != nil {
-				a.log.Error(fmt.Sprintf(`processing message by handler failed - %v`, err))
-			}
+			go func(msg models.Message) {
+				if err := handlerFunc(&msg); err != nil {
+					a.log.Error(fmt.Sprintf(`processing message by handler failed - %v`, err))
+				}
+			}(msg)
 		}
 	}()
 }

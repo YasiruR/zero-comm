@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"golang.org/x/crypto/nacl/box"
+	"sync"
 )
 
 type keys struct {
@@ -15,14 +16,12 @@ type keys struct {
 type KeyManager struct {
 	invPubKey *[32]byte
 	invPrvKey *[32]byte
-
-	// can use sync.Map
-	store   map[string]keys // key: peer label
-	invKeys map[string]keys // key: topic
+	keyStore  *sync.Map       // key: peer label
+	invKeys   map[string]keys // key: topic
 }
 
 func NewKeyManager() *KeyManager {
-	return &KeyManager{store: make(map[string]keys)}
+	return &KeyManager{keyStore: &sync.Map{}}
 }
 
 func (k *KeyManager) GenerateKeys(peer string) error {
@@ -32,37 +31,45 @@ func (k *KeyManager) GenerateKeys(peer string) error {
 		return err
 	}
 
-	k.store[peer] = keys{pub: pubKey, prv: prvKey}
+	k.keyStore.Store(peer, keys{pub: pubKey, prv: prvKey})
 	return nil
 }
 
 func (k *KeyManager) PrivateKey(peer string) ([]byte, error) {
-	key, ok := k.store[peer]
+	val, ok := k.keyStore.Load(peer)
 	if !ok {
 		return nil, fmt.Errorf(`no private key found for the connection with %s`, peer)
 	}
+	key := val.(keys)
 
 	tmpPrvKey := *key.prv
 	return tmpPrvKey[:], nil
 }
 
 func (k *KeyManager) PublicKey(peer string) ([]byte, error) {
-	key, ok := k.store[peer]
+	val, ok := k.keyStore.Load(peer)
 	if !ok {
 		return nil, fmt.Errorf(`no public key found for the connection with %s`, peer)
 	}
+	key := val.(keys)
 
 	tmpPubKey := *key.pub
 	return tmpPubKey[:], nil
 }
 
 func (k *KeyManager) Peer(pubKey []byte) (name string, err error) {
-	for n, _ := range k.store {
-		// omitting error
+	k.keyStore.Range(func(key, val any) bool {
+		n := key.(string)
 		storePubKey, _ := k.PublicKey(n)
 		if string(storePubKey) == string(pubKey) {
-			return n, nil
+			name = n
+			return false
 		}
+		return true
+	})
+
+	if name != `` {
+		return name, nil
 	}
 
 	return ``, fmt.Errorf(`could not find the requested public key (base64-encoded: %s)`, base64.StdEncoding.EncodeToString(pubKey))

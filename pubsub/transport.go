@@ -230,10 +230,12 @@ func (z *zmq) listen(st sktType, handlerFunc func(topic, msg string) error) {
 				continue
 			}
 
-			data := frames[1]
-			if err = handlerFunc(frames[0], data); err != nil {
-				z.log.Error(fmt.Sprintf(`processing received message failed - %v`, err))
-			}
+			topic, data := frames[0], frames[1]
+			go func(topic, data string) {
+				if err = handlerFunc(topic, data); err != nil {
+					z.log.Error(fmt.Sprintf(`processing received message failed - %v`, err))
+				}
+			}(topic, data)
 		}
 	}()
 }
