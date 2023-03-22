@@ -30,8 +30,7 @@ type Prober struct {
 	conn            services.Connector
 	oob             services.OutOfBand
 	peers           *peers
-	myDidDocs       map[string]messages.DIDDocument
-	dids            map[string]string
+	didStore        *didStore
 	outChan         chan string
 	log             log.Logger
 	client          services.Client
@@ -52,8 +51,7 @@ func NewProber(c *container.Container) (p *Prober, err error) {
 		outChan:         c.OutChan,
 		label:           c.Cfg.Args.Name,
 		peers:           initPeerStore(c.Log),
-		myDidDocs:       map[string]messages.DIDDocument{},
-		dids:            map[string]string{},
+		didStore:        initDIDStore(),
 		client:          c.Client,
 		syncConns:       map[string]chan bool{},
 	}
@@ -140,8 +138,13 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 		return ``, fmt.Errorf(`setting up prerequisites for connection with %s failed - %v`, inv.Label, err)
 	}
 
+	did, doc, err := p.didStore.get(inv.Label)
+	if err != nil {
+		return ``, fmt.Errorf(`fetching dids failed - %v`, err)
+	}
+
 	// marshals did doc to proceed with packing process
-	docBytes, err := json.Marshal(p.myDidDocs[inv.Label])
+	docBytes, err := json.Marshal(doc)
 	if err != nil {
 		return ``, fmt.Errorf(`marshalling did doc failed - %v`, err)
 	}
@@ -154,7 +157,7 @@ func (p *Prober) Accept(encodedInv string) (sender string, err error) {
 
 	// todo check how concurrent conn requests go along (since same invitation and hence pthid)
 	// creates connection request
-	connReq, err := p.conn.CreateConnReq(p.label, inv.Id, p.dids[inv.Label], encDoc)
+	connReq, err := p.conn.CreateConnReq(p.label, inv.Id, did, encDoc)
 	if err != nil {
 		return ``, fmt.Errorf(`creating connection request failed - %v`, err)
 	}
@@ -197,8 +200,13 @@ func (p *Prober) processConnReq(msg models.Message) error {
 		return fmt.Errorf(`setting up prerequisites for connection with %s failed - %v`, peerLabel, err)
 	}
 
+	did, doc, err := p.didStore.get(peerLabel)
+	if err != nil {
+		return fmt.Errorf(`fetching did-doc failed - %v`, err)
+	}
+
 	// marshals own did doc to proceed with packing process
-	docBytes, err := json.Marshal(p.myDidDocs[peerLabel])
+	docBytes, err := json.Marshal(doc)
 	if err != nil {
 		return fmt.Errorf(`marshalling did doc failed - %v`, err)
 	}
@@ -209,7 +217,7 @@ func (p *Prober) processConnReq(msg models.Message) error {
 		return fmt.Errorf(`encrypting did doc failed - %v`, err)
 	}
 
-	connRes, err := p.conn.CreateConnRes(exchId, p.dids[peerLabel], encDidDoc)
+	connRes, err := p.conn.CreateConnRes(exchId, did, encDidDoc)
 	if err != nil {
 		return fmt.Errorf(`creating connection response failed - %v`, err)
 	}
@@ -397,8 +405,7 @@ func (p *Prober) setConnPrereqs(peer string) (pubKey, prvKey []byte, err error) 
 		return nil, nil, fmt.Errorf(`creating peer did failed - %v`, err)
 	}
 
-	p.myDidDocs[peer] = didDoc
-	p.dids[peer] = did
+	p.didStore.add(peer, did, didDoc)
 	return pubKey, prvKey, nil
 }
 
