@@ -38,6 +38,7 @@ func (p *peers) peerByLabel(label string) (models.Peer, error) {
 	return pr, nil
 }
 
+// todo check
 func (p *peers) peerByExchId(exchId string) (name string, pr models.Peer, exists bool) {
 	p.store.Range(func(key, val any) bool {
 		tmpPr, ok := val.(models.Peer)

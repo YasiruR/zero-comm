@@ -39,14 +39,13 @@ type services struct {
 }
 
 type internals struct {
-	zmq      *zmq
-	auth     *auth
 	packr    *packer
 	syncr    *syncer
 	compactr *compactor
 	gs       *stores.Group
 	subs     *stores.Subscriber
 	peers    *transport.Peers
+	zmq      *transport.Zmq
 }
 
 type Agent struct {
@@ -80,7 +79,13 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
 		outChan: c.OutChan,
 	}
 
+	tr, err := transport.NewZmqTransport(zmqCtx, in.gs, c, a.proc.state, a.proc.data)
+	if err != nil {
+		return nil, fmt.Errorf(`zmq transport init for group agent failed - %v`, err)
+	}
+	a.zmq = tr
 	a.start(c.Server)
+
 	return a, nil
 }
 
@@ -92,29 +97,22 @@ func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, 
 		return nil, fmt.Errorf(`initializing compressor failed - %v`, err)
 	}
 
-	tr, err := newZmqTransport(zmqCtx, gs, c)
-	if err != nil {
-		return nil, fmt.Errorf(`zmq transport init for group agent failed - %v`, err)
-	}
-
-	authn, err := authenticator(c.Cfg.Name, c.Cfg.Verbose)
-	if err != nil {
-		return nil, fmt.Errorf(`initializing zmq authenticator failed - %v`, err)
-	}
-
-	if err = authn.setPubAuthn(tr.pub); err != nil {
-		return nil, fmt.Errorf(`setting authentication on pub socket failed - %v`, err)
-	}
-
-	if err = tr.start(c.Cfg.PubEndpoint); err != nil {
-		return nil, fmt.Errorf(`starting zmq transport failed - %v`, err)
-	}
+	//authn, err := authenticator(c.Cfg.Name, c.Cfg.Verbose)
+	//if err != nil {
+	//	return nil, fmt.Errorf(`initializing zmq authenticator failed - %v`, err)
+	//}
+	//
+	//if err = authn.setPubAuthn(tr.pub); err != nil {
+	//	return nil, fmt.Errorf(`setting authentication on pub socket failed - %v`, err)
+	//}
+	//
+	//if err = tr.start(c.Cfg.PubEndpoint); err != nil {
+	//	return nil, fmt.Errorf(`starting zmq transport failed - %v`, err)
+	//}
 
 	return &internals{
 		subs:     stores.NewSubStore(),
 		gs:       gs,
-		auth:     authn,
-		zmq:      tr,
 		compactr: compctr,
 		syncr:    newSyncer(gs),
 		packr:    newPacker(c),
@@ -140,8 +138,8 @@ func (a *Agent) start(srvr servicesPkg.Server) {
 	a.process(subChan, a.proc.subscriptions)
 
 	// initialize listening on subscriptions on SUB sockets
-	a.zmq.listen(typStateSkt, a.proc.state)
-	a.zmq.listen(typMsgSkt, a.proc.data)
+	//a.zmq.listen(typStateSkt, a.proc.state)
+	//a.zmq.listen(typMsgSkt, a.proc.data)
 }
 
 // Create constructs a group including creator's invitation
@@ -306,10 +304,7 @@ func (a *Agent) waitForConns(topic string, grp []models.Member) error {
 
 	// wait till zmq pub-sub socket connections are established
 retry:
-	if err = a.zmq.publish(a.zmq.stateTopic(topic), cmprsd); err != nil {
-		return fmt.Errorf(`publishing hello message failed - %v`, err)
-	}
-
+	a.zmq.PubChan <- transport.PublishMsg{Topic: a.zmq.StateTopic(topic), Data: cmprsd}
 	for _, m := range grp {
 		if !a.peers.Connected(m.PubEndpoint) {
 			time.Sleep(helloProtocolIntervalMs * time.Millisecond)
@@ -330,8 +325,11 @@ func (a *Agent) connectMember(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
 	}
 
-	if err = a.zmq.connect(domain.RoleSubscriber, a.myLabel, topic, m); err != nil {
-		return ``, fmt.Errorf(`transport connection failed - %v`, err)
+	a.zmq.ConChan <- transport.ConnectMsg{
+		Connect:   true,
+		Initiator: transport.Initiator{Role: domain.RoleSubscriber, Label: a.myLabel},
+		Topic:     topic,
+		Peer:      m,
 	}
 
 	if !publisher {
@@ -420,10 +418,7 @@ func (a *Agent) Send(topic, msg string) error {
 			return fmt.Errorf(`packing data message for %s failed - %v`, sub, err)
 		}
 
-		if err = a.zmq.publish(a.zmq.dataTopic(topic, a.myLabel, sub), data); err != nil {
-			return fmt.Errorf(`zmq transport error - %v`, err)
-		}
-
+		a.zmq.PubChan <- transport.PublishMsg{Topic: a.zmq.DataTopic(topic, a.myLabel, sub), Data: data}
 		published = true
 		a.log.Trace(fmt.Sprintf(`published %s to %s of %s`, msg, topic, sub))
 	}
@@ -481,8 +476,8 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 			PubEndpoint: a.pubEndpoint,
 		},
 		Transport: messages.Transport{
-			ServrPubKey:  a.auth.servr.pub,
-			ClientPubKey: a.auth.client.pub,
+			ServrPubKey:  a.zmq.ServrPubKey(),
+			ClientPubKey: a.zmq.ClientPubKey(),
 		},
 	}
 
@@ -516,13 +511,24 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
 	}
 
-	var sktMsgs *zmqPkg.Socket = nil
+	//var sktMsgs *zmqPkg.Socket = nil
+	//if resSm.Publisher {
+	//	sktMsgs = a.zmq.msgs
+	//}
+	//
+	//if err = a.auth.setPeerAuthn(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, a.zmq.state, sktMsgs); err != nil {
+	//	return ``, fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
+	//}
+	//
+	var dataAuth bool
 	if resSm.Publisher {
-		sktMsgs = a.zmq.msgs
+		dataAuth = true
 	}
-
-	if err = a.auth.setPeerAuthn(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, a.zmq.state, sktMsgs); err != nil {
-		return ``, fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
+	a.zmq.AuthChan <- transport.AuthMsg{
+		Label:        m.Label,
+		ServrPubKey:  resSm.Transport.ServrPubKey,
+		ClientPubKey: resSm.Transport.ClientPubKey,
+		Data:         dataAuth,
 	}
 
 	return resSm.Checksum, nil
@@ -550,9 +556,7 @@ func (a *Agent) notifyAll(topic string, active, publisher bool) error {
 		return fmt.Errorf(`compress status failed - %v`, err)
 	}
 
-	if err = a.zmq.publish(a.zmq.stateTopic(topic), comprsd); err != nil {
-		return fmt.Errorf(`zmq transport error for status - %v`, err)
-	}
+	a.zmq.PubChan <- transport.PublishMsg{Topic: a.zmq.StateTopic(topic), Data: comprsd}
 
 	a.log.Debug(fmt.Sprintf(`published status (topic: %s, active: %t, publisher: %t)`, topic, active, publisher))
 	return nil
@@ -606,8 +610,13 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 }
 
 func (a *Agent) Leave(topic string) error {
-	if err := a.zmq.unsubscribeAll(a.myLabel, topic); err != nil {
-		return fmt.Errorf(`zmw unsubsription failed - %v`, err)
+	a.zmq.SubChan <- transport.SubscribeMsg{
+		Subscribe: false,
+		UnsubAll:  true,
+		MyLabel:   a.myLabel,
+		Topic:     topic,
+		State:     true,
+		Data:      true,
 	}
 
 	membrs := a.gs.Membrs(topic)
@@ -651,9 +660,10 @@ func (a *Agent) Info(topic string) (gp models.GroupParams, mems []models.Member)
 }
 
 func (a *Agent) Close() error {
-	if err := a.auth.close(); err != nil {
-		return fmt.Errorf(`closing authenticator failed - %v`, err)
-	}
-
-	return a.zmq.close()
+	//if err := a.auth.close(); err != nil {
+	//	return fmt.Errorf(`closing authenticator failed - %v`, err)
+	//}
+	//
+	//return a.zmq.close()
+	return nil
 }

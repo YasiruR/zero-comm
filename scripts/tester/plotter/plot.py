@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 from matplotlib import pyplot as plt
-import pandas as pd
 import csv
 
 # add error bars
@@ -9,7 +8,7 @@ import csv
 
 def readData(fileName, topic):
     init_sizes = []
-    bufs = []
+    conctd = []
     latency = []
     with open(fileName) as file:        
         reader = csv.reader(file)
@@ -17,12 +16,12 @@ def readData(fileName, topic):
         for row in reader:
             if line_index > 0:
                 init_sizes.append(int(row[1]))
-                bufs.append(int(row[5]))
+                conctd.append(row[5])
                 latency.append(float(row[6]))
             line_index += 1
-    return init_sizes, bufs, latency
+    return init_sizes, conctd, latency
 
-def plot(filtr, init_sizes, buf, latency):
+def plot(filtr, init_sizes, conctd, latency):
     sizes = []
     avg_lat_list = []
     tmp_size = init_sizes[0]
@@ -43,12 +42,11 @@ def plot(filtr, init_sizes, buf, latency):
     plt.legend()
     plt.xlabel('initial group size')
     plt.ylabel('average time (ms)')
-    plt.axhline(y=buf, color='r', linestyle='--', label='zmq-buffer')
     
 #    plt.savefig('get_line.pdf', bbox_inches="tight")
     plt.show()
 
 topic = 'sq-c-o-topic'
-init_sizes, bufs, latency = readData('../results/join.csv', topic)
-plot(topic, init_sizes, bufs[0], latency)
+init_sizes, conctd, latency = readData('../results/join.csv', topic)
+plot(topic, init_sizes, conctd, latency)
 

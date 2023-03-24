@@ -247,7 +247,7 @@ func (p *Prober) processConnRes(msg models.Message) error {
 
 	name, pr, ok := p.peers.peerByExchId(pthId)
 	if !ok {
-		return fmt.Errorf(`fetching peer by exchange id failed - %v`, err)
+		return fmt.Errorf(`peer does not exist for exchange id %s`, pthId)
 	}
 
 	ownPubKey, err := p.ks.PublicKey(name)

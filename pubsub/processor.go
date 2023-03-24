@@ -8,9 +8,9 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
+	"github.com/YasiruR/didcomm-prober/pubsub/transport"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
-	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 )
 
@@ -101,13 +101,24 @@ func (p *processor) subscriptions(msg *models.Message) error {
 		return fmt.Errorf(`requester (%s) is not eligible`, sm.Member.Label)
 	}
 
-	var sktMsgs *zmqPkg.Socket = nil
-	if sm.Member.Publisher {
-		sktMsgs = p.zmq.msgs
-	}
+	//var sktMsgs *zmqPkg.Socket = nil
+	//if sm.Member.Publisher {
+	//	sktMsgs = p.zmq.msgs
+	//}
+	//
+	//if err = p.auth.setPeerAuthn(sm.Member.Label, sm.Transport.ServrPubKey, sm.Transport.ClientPubKey, p.zmq.state, sktMsgs); err != nil {
+	//	return fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
+	//}
 
-	if err = p.auth.setPeerAuthn(sm.Member.Label, sm.Transport.ServrPubKey, sm.Transport.ClientPubKey, p.zmq.state, sktMsgs); err != nil {
-		return fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
+	var dataAuth bool
+	if sm.Member.Publisher {
+		dataAuth = true
+	}
+	p.zmq.AuthChan <- transport.AuthMsg{
+		Label:        sm.Member.Label,
+		ServrPubKey:  sm.Transport.ServrPubKey,
+		ClientPubKey: sm.Transport.ClientPubKey,
+		Data:         dataAuth,
 	}
 
 	// send response back to subscriber along with zmq server pub-key of this node
@@ -115,8 +126,11 @@ func (p *processor) subscriptions(msg *models.Message) error {
 		return fmt.Errorf(`sending subscribe response failed - %v`, err)
 	}
 
-	if err = p.zmq.connect(domain.RoleSubscriber, p.myLabel, sm.Topic, sm.Member); err != nil {
-		return fmt.Errorf(`zmq connection failed - %v`, err)
+	p.zmq.ConChan <- transport.ConnectMsg{
+		Connect:   true,
+		Initiator: transport.Initiator{Role: domain.RoleSubscriber, Label: p.myLabel},
+		Topic:     sm.Topic,
+		Peer:      sm.Member,
 	}
 
 	sk := base58.Decode(sm.PubKey)
@@ -165,14 +179,26 @@ func (p *processor) state(_, msg string) error {
 	}
 
 	if !m.Active {
-		if err = p.zmq.disconnectStatus(m.PubEndpoint); err != nil {
-			return fmt.Errorf(`disconnect failed - %v`, err)
+		p.zmq.ConChan <- transport.ConnectMsg{
+			Connect:   false,
+			Initiator: transport.Initiator{},
+			Topic:     "",
+			Peer:      m,
 		}
 
 		if m.Publisher {
-			if err = p.zmq.unsubscribeData(p.myLabel, status.Topic, m); err != nil {
-				return fmt.Errorf(`unsubscribing data topic failed - %v`, err)
+			p.zmq.SubChan <- transport.SubscribeMsg{
+				Subscribe: false,
+				UnsubAll:  false,
+				MyLabel:   p.myLabel,
+				Topic:     status.Topic,
+				State:     false,
+				Data:      true,
+				Peer:      m,
 			}
+			//if err = p.zmq.unsubscribeData(p.myLabel, status.Topic, m); err != nil {
+			//	return fmt.Errorf(`unsubscribing data topic failed - %v`, err)
+			//}
 		}
 
 		p.subs.Delete(status.Topic, m.Label)
@@ -180,7 +206,7 @@ func (p *processor) state(_, msg string) error {
 			return fmt.Errorf(`deleting member failed - %v`, err)
 		}
 
-		if err = p.auth.remvKeys(m.Label); err != nil {
+		if err = p.zmq.RemvKeys(m.Label); err != nil {
 			return fmt.Errorf(`removing zmq transport keys failed - %v`, err)
 		}
 		p.outChan <- m.Label + ` left group ` + status.Topic
@@ -196,7 +222,7 @@ func (p *processor) state(_, msg string) error {
 }
 
 func (p *processor) data(zmqTopic, msg string) error {
-	topic := p.zmq.groupNameByDataTopic(zmqTopic)
+	topic := p.zmq.GroupNameByDataTopic(zmqTopic)
 	sender, data, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupMsg, Data: []byte(msg)})
 	if err != nil {
 		if p.gs.Mode(topic) == domain.SingleQueueMode {
@@ -238,8 +264,8 @@ func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.
 
 	resByts, err := json.Marshal(messages.ResSubscribe{
 		Transport: messages.Transport{
-			ServrPubKey:  p.auth.servr.pub,
-			ClientPubKey: p.auth.client.pub,
+			ServrPubKey:  p.zmq.ServrPubKey(),
+			ClientPubKey: p.zmq.ClientPubKey(),
 		},
 		Publisher: curntMembr.Publisher,
 		Checksum:  p.gs.Checksum(topic),

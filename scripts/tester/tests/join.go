@@ -16,7 +16,7 @@ import (
 var (
 	numTests int
 	//groupSizes     = []int{1, 2, 5, 10, 20, 50, 100}
-	groupSizes                   = []int{5, 10}
+	groupSizes                   = []int{5, 10, 20, 25}
 	testBatchSizes               = []int{5, 10}
 	agentPort                    = 6140
 	pubPort                      = 6540
@@ -59,24 +59,24 @@ func initJoinTest(topic, mode string, consistntJoin, ordrd, conctd bool, size in
 	grp := group.InitGroup(cfg, testLatencyBuf, usr, keyPath)
 	time.Sleep(testLatencyBuf * time.Second)
 
-	//fmt.Println("# Test debug logs (latency):")
-	//numTests = 3
-	//latList := join(cfg.Topic, true, conctd, grp, 1)
-	//writer.Persist(`join-latency`, cfg, nil, latList)
+	fmt.Println("# Test debug logs (latency):")
+	numTests = 3
+	latList := join(cfg.Topic, true, conctd, grp, 1)
+	writer.Persist(`join-latency`, cfg, nil, latList)
 
-	numTests = 1
-	var thrLatList []float64
-	for _, bs := range testBatchSizes {
-		fmt.Printf("# Test debug logs (throughput) [batch-size=%d]:\n", bs)
-		thrLatList = append(thrLatList, join(cfg.Topic, true, conctd, grp, bs)[0])
-	}
-	writer.Persist(`join-throughput`, cfg, testBatchSizes, thrLatList)
+	//numTests = 1
+	//var thrLatList []float64
+	//for _, bs := range testBatchSizes {
+	//	fmt.Printf("# Test debug logs (throughput) [batch-size=%d]:\n", bs)
+	//	thrLatList = append(thrLatList, join(cfg.Topic, true, conctd, grp, bs)[0])
+	//}
+	//writer.Persist(`join-throughput`, cfg, testBatchSizes, thrLatList)
 
-	//fmt.Printf("# Average join-latency (ms): %f\n", avg(latList))
-	out := `# Load test results [batch-size, latency(ms)]: `
-	for i, lat := range thrLatList {
-		out += fmt.Sprintf(`%d:%f `, testBatchSizes[i], lat)
-	}
+	fmt.Printf("# Average join-latency (ms): %f\n", avg(latList))
+	//out := `# Load test results [batch-size, latency(ms)]: `
+	//for i, lat := range thrLatList {
+	//	out += fmt.Sprintf(`%d:%f `, testBatchSizes[i], lat)
+	//}
 	group.Purge()
 }
 
