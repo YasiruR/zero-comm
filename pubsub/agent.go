@@ -192,8 +192,6 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`requesting group state from %s failed - %v`, acceptor, err)
 	}
 
-	fmt.Println("STATE: ", group)
-
 	// adding this node as a member
 	joiner := models.Member{
 		Active:      true,
@@ -226,8 +224,6 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 				return
 			}
 
-			fmt.Println("CONNECTED TO", m.Label)
-
 			hashes.Store(m.Label, checksum)
 			wg.Done()
 		}(m, hashes, wg)
@@ -255,13 +251,9 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`adding group members failed - %v`, err)
 	}
 
-	fmt.Println("ADDED MEMS")
-
 	if err = a.waitForConns(topic, group.Members); err != nil {
 		return fmt.Errorf(`waiting for connections failed - %v`, err)
 	}
-
-	fmt.Println("SYNCED ZMQ")
 
 	// publish status - idempotent tx
 	if err = a.notifyAll(topic, true, publisher); err != nil {
@@ -319,10 +311,8 @@ retry:
 		return fmt.Errorf(`zmq publish failed - %v`, err)
 	}
 
-	fmt.Println("SENT HELLO MSG TO", a.zmq.StateTopic(topic))
 	for _, m := range grp {
 		if !a.peers.Connected(m.PubEndpoint) {
-			fmt.Println("NOT CONNECTED TO", m.PubEndpoint)
 			time.Sleep(helloProtocolIntervalMs * time.Millisecond)
 			goto retry
 		}
@@ -336,14 +326,10 @@ func (a *Agent) connectMember(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
 	}
 
-	fmt.Println("CONNECTED DIDCOMM", m.Label)
-
 	checksum, err = a.subscribeData(topic, publisher, m)
 	if err != nil {
 		return ``, fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
 	}
-
-	fmt.Println("SUBSCRIBED", m.Label)
 
 	stateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
 	dataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
@@ -552,18 +538,6 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
 	}
 
-	//var sktMsgs *zmqPkg.Socket = nil
-	//if resSm.Publisher {
-	//	sktMsgs = a.zmq.msgs
-	//}
-	//
-	//if err = a.auth.setPeerAuthn(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, a.zmq.state, sktMsgs); err != nil {
-	//	return ``, fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
-	//}
-	//
-
-	fmt.Println("SENT SUB MSG TO", m.Label)
-
 	var dataAuth bool
 	if resSm.Publisher {
 		dataAuth = true
@@ -590,8 +564,6 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 	if err != nil {
 		return ``, fmt.Errorf(`zmq state authenticate failed - %v`, err)
 	}
-
-	fmt.Println("SENT INTERNAL AUTH MSG")
 
 	return resSm.Checksum, nil
 }

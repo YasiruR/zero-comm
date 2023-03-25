@@ -77,7 +77,6 @@ func (z *Zmq) initConnector(zmqCtx *zmqPkg.Context) {
 	for {
 		select {
 		case cm := <-z.ConChan:
-			fmt.Println("ZMQ RECEIVED CM", cm.Peer.Label)
 			z.ReplyChans[cm.Reply.State.Id] = cm.Reply.State.Chan
 			z.ReplyChans[cm.Reply.Data.Id] = cm.Reply.Data.Chan
 			data, err := json.Marshal(cm)
@@ -89,8 +88,6 @@ func (z *Zmq) initConnector(zmqCtx *zmqPkg.Context) {
 			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s %v`, typConnect, string(data))); err != nil {
 				log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(data), err))
 			}
-
-			fmt.Println("ZMQ PUBLISHED CONNECT INTERNAL MSG")
 		case sm := <-z.SubChan:
 			z.ReplyChans[sm.Reply.State.Id] = sm.Reply.State.Chan
 			z.ReplyChans[sm.Reply.Data.Id] = sm.Reply.Data.Chan
@@ -149,8 +146,6 @@ func (z *Zmq) listenState(zmqCtx *zmqPkg.Context, handlerFunc func(topic, msg st
 		}
 		topic, data := frames[0], frames[1]
 
-		fmt.Println("ZMQ INTERNAL STATE CHAN", frames[0])
-
 		if topic == typConnect {
 			var cm ConnectMsg
 			if err = json.Unmarshal([]byte(data), &cm); err != nil {
@@ -177,7 +172,30 @@ func (z *Zmq) listenState(zmqCtx *zmqPkg.Context, handlerFunc func(topic, msg st
 			}
 
 			z.ReplyChans[cm.Reply.State.Id] <- nil
-			fmt.Println("ZMQ CONNECTED STATE OF", z.StateTopic(cm.Topic), cm.Peer.PubEndpoint)
+			continue
+		}
+
+		if topic == typSubscribe {
+			var sm SubscribeMsg
+			if err = json.Unmarshal([]byte(data), &sm); err != nil {
+				z.ReplyChans[sm.Reply.State.Id] <- fmt.Errorf(`unmarshalling internal state subscribe message failed - %v`, err)
+				//z.log.Error(fmt.Sprintf(`unmarshalling internal state authenticate message failed - %v`, err))
+				continue
+			}
+
+			if !sm.State {
+				z.ReplyChans[sm.Reply.State.Id] <- nil
+				continue
+			}
+
+			if !sm.Subscribe {
+				if err = z.unsubscribeState(sm.MyLabel, sm.Topic, sktState); err != nil {
+					z.ReplyChans[sm.Reply.State.Id] <- fmt.Errorf(`unsubscribing state failed - %v`, err)
+					continue
+				}
+			}
+
+			z.ReplyChans[sm.Reply.State.Id] <- nil
 			continue
 		}
 
@@ -196,7 +214,6 @@ func (z *Zmq) listenState(zmqCtx *zmqPkg.Context, handlerFunc func(topic, msg st
 			}
 
 			z.ReplyChans[am.Reply.State.Id] <- nil
-			fmt.Println("ZMQ AUTHENTICATED STATE OF", am.Label)
 			continue
 		}
 
@@ -237,8 +254,6 @@ func (z *Zmq) listenData(zmqCtx *zmqPkg.Context, handlerFunc func(topic, msg str
 			continue
 		}
 		topic, data := frames[0], frames[1]
-
-		fmt.Println("ZMQ INTERNAL DATA CHAN", frames[0])
 
 		if topic == typConnect {
 			var cm ConnectMsg

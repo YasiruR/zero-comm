@@ -224,7 +224,7 @@ func (r *runner) createGroup() {
 	strJoinConsist := r.input(`Strict consistency for join operation (Y/N)`)
 	strOrdrd := r.input(`Causal consistency for group messages (Y/N)`)
 
-	mode, strJoinConsist, strOrdrd, strPub = `s`, `y`, `y`, `y`
+	//mode, strJoinConsist, strOrdrd, strPub = `s`, `y`, `y`, `y`
 
 	publisher, err := r.validBool(strPub)
 	if err != nil {

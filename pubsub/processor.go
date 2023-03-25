@@ -142,8 +142,6 @@ func (p *processor) subscriptions(msg *models.Message) error {
 		return fmt.Errorf(`sending subscribe response failed - %v`, err)
 	}
 
-	fmt.Println("SENT SUB RES TO", sm.Member)
-
 	conStateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
 	conDataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
 	p.zmq.ConChan <- transport.ConnectMsg{
@@ -166,8 +164,6 @@ func (p *processor) subscriptions(msg *models.Message) error {
 		return fmt.Errorf(`zmq data connection failed - %v`, err)
 	}
 
-	fmt.Println("WITH SUB REQ, CONNECTED TO", sm.Topic)
-
 	sk := base58.Decode(sm.PubKey)
 	p.subs.Add(sm.Topic, sm.Member.Label, sk)
 	p.log.Debug(`processed subscription request`, sm)
@@ -176,7 +172,6 @@ func (p *processor) subscriptions(msg *models.Message) error {
 }
 
 func (p *processor) state(_, msg string) error {
-	fmt.Println("RECVD STATE MSG")
 	status, err := p.extractStatus(msg)
 	if err != nil {
 		return fmt.Errorf(`extracting status message failed - %v`, err)
@@ -199,8 +194,6 @@ func (p *processor) state(_, msg string) error {
 	if err != nil {
 		return fmt.Errorf(`reading status didcomm message failed - %v`, err)
 	}
-
-	fmt.Println("STATE MSG: ", strAuthMsg)
 
 	// return ack if hello protocol
 	if strAuthMsg == domain.HelloPrefix {
