@@ -16,7 +16,7 @@ import (
 var (
 	numTests int
 	//groupSizes     = []int{1, 2, 5, 10, 20, 50, 100}
-	groupSizes                   = []int{5, 10, 20, 25}
+	groupSizes                   = []int{10, 20, 25}
 	testBatchSizes               = []int{5, 10}
 	agentPort                    = 6140
 	pubPort                      = 6540
@@ -28,7 +28,7 @@ var (
 func Join(testBuf int64, usr, keyPath string) {
 	testLatencyBuf = time.Duration(testBuf)
 	for _, size := range groupSizes {
-		conctd := false
+		conctd := true
 		for i := 0; i < 2; i++ {
 			// when initial group size is 1, connected-to-all will have no impact
 			if size == 1 && i == 1 {
@@ -41,7 +41,7 @@ func Join(testBuf int64, usr, keyPath string) {
 			//fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d connected=%t] \n", size, conctd)
 			//initJoinTest(`mq-c-o-topic`, `multiple-queue`, true, true, conctd, int64(size), usr, keyPath)
 
-			conctd = true
+			conctd = false
 		}
 	}
 }

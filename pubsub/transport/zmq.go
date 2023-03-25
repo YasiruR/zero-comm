@@ -10,12 +10,8 @@ import (
 	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 	"strings"
+	"sync"
 )
-
-type sktType int
-
-// todo check all zmq sockets in solution
-//	- should not be used outside the thread it was created
 
 type endpoints struct {
 	state string
@@ -23,11 +19,12 @@ type endpoints struct {
 }
 
 type Zmq struct {
-	ConChan    chan ConnectMsg // todo check if error should be returned
+	ConChan    chan ConnectMsg
 	PubChan    chan PublishMsg
 	SubChan    chan SubscribeMsg
 	AuthChan   chan AuthMsg
-	ReplyChans map[string]chan error // todo check if thread safe
+	ReplyChans map[string]chan error
+	ReplyLock  *sync.RWMutex
 	gs         *stores.Group
 	log        log.Logger
 	endpts     endpoints
@@ -46,6 +43,7 @@ func NewZmqTransport(zmqCtx *zmqPkg.Context, gs *stores.Group, c *container.Cont
 		SubChan:    make(chan SubscribeMsg),
 		AuthChan:   make(chan AuthMsg),
 		ReplyChans: map[string]chan error{},
+		ReplyLock:  &sync.RWMutex{},
 		gs:         gs,
 		auth:       authn,
 		log:        c.Log,
@@ -77,39 +75,36 @@ func (z *Zmq) initConnector(zmqCtx *zmqPkg.Context) {
 	for {
 		select {
 		case cm := <-z.ConChan:
-			z.ReplyChans[cm.Reply.State.Id] = cm.Reply.State.Chan
-			z.ReplyChans[cm.Reply.Data.Id] = cm.Reply.Data.Chan
+			z.addRepChan(cm.Reply.State.Id, cm.Reply.Data.Id, cm.Reply.State.Chan, cm.Reply.Data.Chan)
 			data, err := json.Marshal(cm)
 			if err != nil {
 				log.Error(fmt.Sprintf(`marshalling internal connect message failed - %v`, err))
 				continue
 			}
 
-			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s %v`, typConnect, string(data))); err != nil {
+			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s %v`, topicConnect, string(data))); err != nil {
 				log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(data), err))
 			}
 		case sm := <-z.SubChan:
-			z.ReplyChans[sm.Reply.State.Id] = sm.Reply.State.Chan
-			z.ReplyChans[sm.Reply.Data.Id] = sm.Reply.Data.Chan
+			z.addRepChan(sm.Reply.State.Id, sm.Reply.Data.Id, sm.Reply.State.Chan, sm.Reply.Data.Chan)
 			data, err := json.Marshal(sm)
 			if err != nil {
 				log.Error(fmt.Sprintf(`marshalling internal subscribe message failed - %v`, err))
 				continue
 			}
 
-			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s %v`, typSubscribe, string(data))); err != nil {
+			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s %v`, topicSubscribe, string(data))); err != nil {
 				log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(data), err))
 			}
 		case am := <-z.AuthChan:
-			z.ReplyChans[am.Reply.State.Id] = am.Reply.State.Chan
-			z.ReplyChans[am.Reply.Data.Id] = am.Reply.Data.Chan
+			z.addRepChan(am.Reply.State.Id, am.Reply.Data.Id, am.Reply.State.Chan, am.Reply.Data.Chan)
 			data, err := json.Marshal(am)
 			if err != nil {
 				log.Error(fmt.Sprintf(`marshalling internal authenticate message failed - %v`, err))
 				continue
 			}
 
-			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s %v`, typAuthenticate, string(data))); err != nil {
+			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s %v`, topicAuthenticate, string(data))); err != nil {
 				log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(data), err))
 			}
 		}
@@ -146,74 +141,68 @@ func (z *Zmq) listenState(zmqCtx *zmqPkg.Context, handlerFunc func(topic, msg st
 		}
 		topic, data := frames[0], frames[1]
 
-		if topic == typConnect {
+		if topic == topicConnect {
 			var cm ConnectMsg
 			if err = json.Unmarshal([]byte(data), &cm); err != nil {
-				z.ReplyChans[cm.Reply.State.Id] <- fmt.Errorf(`unmarshalling internal connect state message failed - %v`, err)
-				//z.log.Error(fmt.Sprintf(`unmarshalling internal connect state message failed - %v`, err))
+				z.replyErr(cm.Reply.State.Id, fmt.Errorf(`unmarshalling internal connect state message failed - %v`, err))
 				continue
 			}
 
 			if !cm.Connect {
 				if err = z.disconnectStatus(cm.Peer.PubEndpoint, sktState); err != nil {
-					z.ReplyChans[cm.Reply.State.Id] <- fmt.Errorf(`disconnecting state socket failed - %v`, err)
+					z.replyErr(cm.Reply.State.Id, fmt.Errorf(`disconnecting state socket failed - %v`, err))
 					continue
-					//z.log.Error(fmt.Sprintf(`disconnecting state socket failed - %v`, err))
 				}
 
-				z.ReplyChans[cm.Reply.State.Id] <- nil
+				z.replyErr(cm.Reply.State.Id, nil)
 				continue
 			}
 
 			if err = z.connectState(cm, sktState); err != nil {
-				z.ReplyChans[cm.Reply.State.Id] <- fmt.Errorf(`connecting to state socket failed - %v`, err)
+				z.replyErr(cm.Reply.State.Id, fmt.Errorf(`connecting to state socket failed - %v`, err))
 				continue
-				//z.log.Error(fmt.Sprintf(`connecting to state socket failed - %v`, err))
 			}
 
-			z.ReplyChans[cm.Reply.State.Id] <- nil
+			z.replyErr(cm.Reply.State.Id, nil)
 			continue
 		}
 
-		if topic == typSubscribe {
+		if topic == topicSubscribe {
 			var sm SubscribeMsg
 			if err = json.Unmarshal([]byte(data), &sm); err != nil {
-				z.ReplyChans[sm.Reply.State.Id] <- fmt.Errorf(`unmarshalling internal state subscribe message failed - %v`, err)
-				//z.log.Error(fmt.Sprintf(`unmarshalling internal state authenticate message failed - %v`, err))
+				z.replyErr(sm.Reply.State.Id, fmt.Errorf(`unmarshalling internal state subscribe message failed - %v`, err))
 				continue
 			}
 
 			if !sm.State {
-				z.ReplyChans[sm.Reply.State.Id] <- nil
+				z.replyErr(sm.Reply.State.Id, nil)
 				continue
 			}
 
 			if !sm.Subscribe {
 				if err = z.unsubscribeState(sm.MyLabel, sm.Topic, sktState); err != nil {
-					z.ReplyChans[sm.Reply.State.Id] <- fmt.Errorf(`unsubscribing state failed - %v`, err)
+					z.replyErr(sm.Reply.State.Id, fmt.Errorf(`unsubscribing state failed - %v`, err))
 					continue
 				}
 			}
 
-			z.ReplyChans[sm.Reply.State.Id] <- nil
+			z.replyErr(sm.Reply.State.Id, nil)
 			continue
 		}
 
-		if topic == typAuthenticate {
+		if topic == topicAuthenticate {
 			var am AuthMsg
 			if err = json.Unmarshal([]byte(data), &am); err != nil {
-				z.ReplyChans[am.Reply.State.Id] <- fmt.Errorf(`unmarshalling internal state authenticate message failed - %v`, err)
-				//z.log.Error(fmt.Sprintf(`unmarshalling internal state authenticate message failed - %v`, err))
+				z.replyErr(am.Reply.State.Id, fmt.Errorf(`unmarshalling internal state authenticate message failed - %v`, err))
 				continue
 			}
 
 			if err = z.setPeerStateAuthn(am.Label, am.ServrPubKey, am.ClientPubKey, sktState); err != nil {
-				z.ReplyChans[am.Reply.State.Id] <- fmt.Errorf(`setting state authentication failed - %v`, err)
+				z.replyErr(am.Reply.State.Id, fmt.Errorf(`setting state authentication failed - %v`, err))
 				continue
-				//z.log.Error(fmt.Sprintf(`setting state authentication failed - %v`, err))
 			}
 
-			z.ReplyChans[am.Reply.State.Id] <- nil
+			z.replyErr(am.Reply.State.Id, nil)
 			continue
 		}
 
@@ -255,80 +244,73 @@ func (z *Zmq) listenData(zmqCtx *zmqPkg.Context, handlerFunc func(topic, msg str
 		}
 		topic, data := frames[0], frames[1]
 
-		if topic == typConnect {
+		if topic == topicConnect {
 			var cm ConnectMsg
 			if err = json.Unmarshal([]byte(data), &cm); err != nil {
-				z.ReplyChans[cm.Reply.Data.Id] <- fmt.Errorf(`unmarshalling internal connect data message failed - %v`, err)
-				//z.log.Error(fmt.Sprintf(`unmarshalling internal connect data message failed - %v`, err))
+				z.replyErr(cm.Reply.Data.Id, fmt.Errorf(`unmarshalling internal connect data message failed - %v`, err))
 				continue
 			}
 
 			if cm.Connect {
 				if err = z.connectData(cm, sktData); err != nil {
-					z.ReplyChans[cm.Reply.Data.Id] <- fmt.Errorf(`connecting to data socket failed - %v`, err)
+					z.replyErr(cm.Reply.Data.Id, fmt.Errorf(`connecting to data socket failed - %v`, err))
 					continue
-					//z.log.Error(fmt.Sprintf(`connecting to data socket failed - %v`, err))
 				}
 			}
 
-			z.ReplyChans[cm.Reply.Data.Id] <- nil
+			z.replyErr(cm.Reply.Data.Id, nil)
 			continue
 		}
 
-		if topic == typSubscribe {
+		if topic == topicSubscribe {
 			var sm SubscribeMsg
 			if err = json.Unmarshal([]byte(data), &sm); err != nil {
-				z.ReplyChans[sm.Reply.Data.Id] <- fmt.Errorf(`unmarshalling internal subscribe message failed - %v`, err)
-				//z.log.Error(fmt.Sprintf(`unmarshalling internal subscribe message failed - %v`, err))
+				z.replyErr(sm.Reply.Data.Id, fmt.Errorf(`unmarshalling internal subscribe message failed - %v`, err))
 				continue
 			}
 
 			if sm.Subscribe == false {
 				if sm.UnsubAll == true && sm.Data == true {
 					if err = z.unsubscribeAllData(sm.MyLabel, sm.Topic, sktData); err != nil {
-						z.ReplyChans[sm.Reply.Data.Id] <- fmt.Errorf(`unsubscribing all data topics failed - %v`, err)
+						z.replyErr(sm.Reply.Data.Id, fmt.Errorf(`unsubscribing all data topics failed - %v`, err))
 						continue
-						//z.log.Error(fmt.Sprintf(`unsubscribing all data topics failed - %v`, err))
 					}
 
-					z.ReplyChans[sm.Reply.Data.Id] <- nil
+					z.replyErr(sm.Reply.Data.Id, nil)
 					continue
 				}
 
 				if sm.Data == true {
 					// todo pass only sm
 					if err = z.unsubscribeData(sm.MyLabel, sm.Topic, sm.Peer, sktData); err != nil {
-						z.ReplyChans[sm.Reply.Data.Id] <- fmt.Errorf(`unsubscribing data topic failed - %v`, err)
+						z.replyErr(sm.Reply.Data.Id, fmt.Errorf(`unsubscribing data topic failed - %v`, err))
 						continue
-						//z.log.Error(fmt.Sprintf(`unsubscribing data topic failed - %v`, err))
 					}
 				}
 			}
 
-			z.ReplyChans[sm.Reply.Data.Id] <- nil
+			z.replyErr(sm.Reply.Data.Id, nil)
 			continue
 		}
 
-		if topic == typAuthenticate {
+		if topic == topicAuthenticate {
 			var am AuthMsg
 			if err = json.Unmarshal([]byte(data), &am); err != nil {
-				z.ReplyChans[am.Reply.Data.Id] <- fmt.Errorf(`unmarshalling internal data authenticate message failed - %v`, err)
-				//z.log.Error(fmt.Sprintf(`unmarshalling internal data authenticate message failed - %v`, err))
+				z.replyErr(am.Reply.Data.Id, fmt.Errorf(`unmarshalling internal data authenticate message failed - %v`, err))
 				continue
 			}
 
 			if !am.Data {
-				z.ReplyChans[am.Reply.Data.Id] <- nil
+				z.replyErr(am.Reply.Data.Id, nil)
 				continue
 			}
 
 			if err = z.setPeerDataAuthn(am.ServrPubKey, sktData); err != nil {
-				z.ReplyChans[am.Reply.Data.Id] <- fmt.Errorf(`setting data authentication failed - %v`, err)
+				z.replyErr(am.Reply.Data.Id, fmt.Errorf(`setting data authentication failed - %v`, err))
 				continue
-				//z.log.Error(fmt.Sprintf(`setting data authentication failed - %v`, err))
 			}
 
-			z.ReplyChans[am.Reply.Data.Id] <- nil
+			z.replyErr(am.Reply.Data.Id, nil)
 			continue
 		}
 
@@ -396,7 +378,6 @@ func (z *Zmq) publisher(zmqCtx *zmqPkg.Context, externalEndpoint string) {
 		if _, err = sktPub.SendMessage(fmt.Sprintf(`%s %s`, pm.Topic, string(pm.Data))); err != nil {
 			pm.Reply.Chan <- fmt.Errorf(`publishing message (%s) failed - %v`, string(pm.Data), err)
 			continue
-			//z.log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(pm.Data), err))
 		}
 		pm.Reply.Chan <- nil
 	}
@@ -442,7 +423,7 @@ func (z *Zmq) unsubscribeAllData(label, topic string, sktData *zmqPkg.Socket) er
 		}
 
 		if err := sktData.Disconnect(m.PubEndpoint); err != nil {
-			return fmt.Errorf(`disconnecting data endpoint failed - %v`, err)
+			return fmt.Errorf(`disconnecting data endpoint (%s) failed - %v`, m.PubEndpoint, err)
 		}
 	}
 
@@ -467,37 +448,6 @@ func (z *Zmq) unsubscribeState(label, topic string, sktState *zmqPkg.Socket) err
 	return nil
 }
 
-//func (z *Zmq) unsubscribeAll(label, topic string, sktState, sktData *zmqPkg.Socket) error {
-//	if err := sktState.SetUnsubscribe(z.StateTopic(topic)); err != nil {
-//		return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, z.StateTopic(topic), err)
-//	}
-//
-//	for _, m := range z.gs.Membrs(topic) {
-//		if m.Label == label {
-//			continue
-//		}
-//
-//		if err := sktState.Disconnect(m.PubEndpoint); err != nil {
-//			return fmt.Errorf(`disconnecting state endpoint (%s) failed - %v`, m.PubEndpoint, err)
-//		}
-//
-//		if !m.Publisher {
-//			continue
-//		}
-//
-//		dt := z.DataTopic(topic, m.Label, label)
-//		if err := sktData.SetUnsubscribe(dt); err != nil {
-//			return fmt.Errorf(`unsubscribing %s via zmq socket failed - %v`, dt, err)
-//		}
-//
-//		if err := sktData.Disconnect(m.PubEndpoint); err != nil {
-//			return fmt.Errorf(`disconnecting data endpoint failed - %v`, err)
-//		}
-//	}
-//
-//	return nil
-//}
-
 // unsubscribeData includes disconnecting status socket since the function
 // is called only when removing an inactive member
 func (z *Zmq) unsubscribeData(label, topic string, m models.Member, sktData *zmqPkg.Socket) error {
@@ -519,14 +469,6 @@ func (z *Zmq) disconnectStatus(endpoint string, sktState *zmqPkg.Socket) error {
 	}
 	return nil
 }
-
-// todo check if this needs to be done after unsubscribe
-//func (z *Zmq) disconnectData(endpoint string, sktData *zmqPkg.Socket) error {
-//	if err := sktData.Disconnect(endpoint); err != nil {
-//		return fmt.Errorf(`disconnecting data endpoint failed - %v`, err)
-//	}
-//	return nil
-//}
 
 func (z *Zmq) topicExists(topic string) bool {
 	if len(z.gs.Membrs(topic)) < 2 {
@@ -555,6 +497,25 @@ func (z *Zmq) GroupNameByDataTopic(topic string) string {
 	}
 
 	return parts[2]
+}
+
+func (z *Zmq) addRepChan(stateId, dataId string, stateChan, dataChan chan error) {
+	z.ReplyLock.Lock()
+	defer z.ReplyLock.Unlock()
+	if stateId != `` {
+		z.ReplyChans[stateId] = stateChan
+	}
+
+	if dataId != `` {
+		z.ReplyChans[dataId] = dataChan
+	}
+}
+
+func (z *Zmq) replyErr(id string, err error) {
+	z.ReplyLock.RLock()
+	c := z.ReplyChans[id]
+	z.ReplyLock.RUnlock()
+	c <- err
 }
 
 func (z *Zmq) close(pub, state, msgs *zmqPkg.Socket) error {

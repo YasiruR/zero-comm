@@ -101,15 +101,6 @@ func (p *processor) subscriptions(msg *models.Message) error {
 		return fmt.Errorf(`requester (%s) is not eligible`, sm.Member.Label)
 	}
 
-	//var sktMsgs *zmqPkg.Socket = nil
-	//if sm.Member.Publisher {
-	//	sktMsgs = p.zmq.msgs
-	//}
-	//
-	//if err = p.auth.setPeerAuthn(sm.Member.Label, sm.Transport.ServrPubKey, sm.Transport.ClientPubKey, p.zmq.state, sktMsgs); err != nil {
-	//	return fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
-	//}
-
 	var dataAuth bool
 	if sm.Member.Publisher {
 		dataAuth = true
@@ -142,26 +133,8 @@ func (p *processor) subscriptions(msg *models.Message) error {
 		return fmt.Errorf(`sending subscribe response failed - %v`, err)
 	}
 
-	conStateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	conDataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	p.zmq.ConChan <- transport.ConnectMsg{
-		Connect:   true,
-		Initiator: transport.Initiator{Role: domain.RoleSubscriber, Label: p.myLabel},
-		Topic:     sm.Topic,
-		Peer:      sm.Member,
-		Reply: struct {
-			State transport.Reply `json:"state"`
-			Data  transport.Reply `json:"data"`
-		}{State: conStateRep, Data: conDataRep},
-	}
-	err = <-conStateRep.Chan
-	if err != nil {
-		return fmt.Errorf(`zmq state connection failed - %v`, err)
-	}
-
-	err = <-conDataRep.Chan
-	if err != nil {
-		return fmt.Errorf(`zmq data connection failed - %v`, err)
+	if err = p.sendConnect(true, domain.RoleSubscriber, p.myLabel, sm.Topic, sm.Member); err != nil {
+		return fmt.Errorf(`sending connect message failed - %v`, err)
 	}
 
 	sk := base58.Decode(sm.PubKey)
@@ -210,56 +183,14 @@ func (p *processor) state(_, msg string) error {
 	}
 
 	if !m.Active {
-		conStateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-		conDataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-		p.zmq.ConChan <- transport.ConnectMsg{
-			Connect:   false,
-			Initiator: transport.Initiator{},
-			Topic:     "",
-			Peer:      m,
-			Reply: struct {
-				State transport.Reply `json:"state"`
-				Data  transport.Reply `json:"data"`
-			}{State: conStateRep, Data: conDataRep},
-		}
-		err = <-conStateRep.Chan
-		if err != nil {
-			return fmt.Errorf(`zmq state connection failed - %v`, err)
-		}
-
-		err = <-conDataRep.Chan
-		if err != nil {
-			return fmt.Errorf(`zmq data connection failed - %v`, err)
+		if err = p.sendConnect(false, domain.RoleNull, ``, ``, m); err != nil {
+			return fmt.Errorf(`sending connect message failed - %v`, err)
 		}
 
 		if m.Publisher {
-			subStateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-			subDataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-			p.zmq.SubChan <- transport.SubscribeMsg{
-				Subscribe: false,
-				UnsubAll:  false,
-				MyLabel:   p.myLabel,
-				Topic:     status.Topic,
-				State:     false,
-				Data:      true,
-				Peer:      m,
-				Reply: struct {
-					State transport.Reply `json:"state"`
-					Data  transport.Reply `json:"data"`
-				}{State: subStateRep, Data: subDataRep},
+			if err = p.sendSubscribe(false, false, false, true, status.Topic, p.myLabel, m); err != nil {
+				return fmt.Errorf(`sending internal subscribe message failed - %v`, err)
 			}
-			err = <-subStateRep.Chan
-			if err != nil {
-				return fmt.Errorf(`zmq state subscribe failed - %v`, err)
-			}
-
-			err = <-subDataRep.Chan
-			if err != nil {
-				return fmt.Errorf(`zmq data subscribe failed - %v`, err)
-			}
-			//if err = p.zmq.unsubscribeData(p.myLabel, status.Topic, m); err != nil {
-			//	return fmt.Errorf(`unsubscribing data topic failed - %v`, err)
-			//}
 		}
 
 		p.subs.Delete(status.Topic, m.Label)
@@ -347,6 +278,76 @@ func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.
 // dummy validation for PoC
 func (p *processor) validJoiner(label string) bool {
 	return true
+}
+
+/* internal channel functions */
+
+func (p *processor) sendPublish(topic string, data []byte) error {
+	rep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	p.zmq.PubChan <- transport.PublishMsg{Topic: topic, Data: data, Reply: rep}
+	err := <-rep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq publish failed - %v`, err)
+	}
+
+	return nil
+}
+
+func (p *processor) sendConnect(connect bool, initRole domain.Role, initLabel, topic string, m models.Member) error {
+	stateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	dataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	p.zmq.ConChan <- transport.ConnectMsg{
+		Connect:   connect,
+		Initiator: transport.Initiator{Role: initRole, Label: initLabel},
+		Topic:     topic,
+		Peer:      m,
+		Reply: struct {
+			State transport.Reply `json:"state"`
+			Data  transport.Reply `json:"data"`
+		}{State: stateRep, Data: dataRep},
+	}
+
+	err := <-stateRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq state connection failed - %v`, err)
+	}
+
+	err = <-dataRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq data connection failed - %v`, err)
+	}
+
+	return nil
+}
+
+func (p *processor) sendSubscribe(subscribe, unsubAll, state, data bool, topic, label string, m models.Member) error {
+	stateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	dataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	p.zmq.SubChan <- transport.SubscribeMsg{
+		Subscribe: subscribe,
+		UnsubAll:  unsubAll,
+		MyLabel:   label,
+		Topic:     topic,
+		State:     state,
+		Data:      data,
+		Peer:      m,
+		Reply: struct {
+			State transport.Reply `json:"state"`
+			Data  transport.Reply `json:"data"`
+		}{State: stateRep, Data: dataRep},
+	}
+
+	err := <-stateRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq state subscribe failed - %v`, err)
+	}
+
+	err = <-dataRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq data subscribe failed - %v`, err)
+	}
+
+	return nil
 }
 
 //func (p *processor) addIntruder(topic string) []models.Member {

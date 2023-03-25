@@ -36,6 +36,7 @@ type Role int
 const (
 	RolePublisher Role = iota
 	RoleSubscriber
+	RoleNull
 )
 
 type GroupMode string

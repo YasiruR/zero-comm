@@ -1,9 +1,9 @@
 package transport
 
 const (
-	typConnect      = `connect`
-	typSubscribe    = `subscribe`
-	typAuthenticate = `authenticate`
+	topicConnect      = `internal-connect`
+	topicSubscribe    = `internal-subscribe`
+	topicAuthenticate = `internal-authenticate`
 )
 
-var internalTopics = []string{typConnect, typSubscribe, typAuthenticate}
+var internalTopics = []string{topicConnect, topicSubscribe, topicAuthenticate}

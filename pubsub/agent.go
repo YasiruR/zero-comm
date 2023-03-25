@@ -304,11 +304,8 @@ func (a *Agent) waitForConns(topic string, grp []models.Member) error {
 
 	// wait till zmq pub-sub socket connections are established
 retry:
-	rep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	a.zmq.PubChan <- transport.PublishMsg{Topic: a.zmq.StateTopic(topic), Data: cmprsd, Reply: rep}
-	err = <-rep.Chan
-	if err != nil {
-		return fmt.Errorf(`zmq publish failed - %v`, err)
+	if err = a.proc.sendPublish(a.zmq.StateTopic(topic), cmprsd); err != nil {
+		return fmt.Errorf(`sending publish internal message failed - %v`, err)
 	}
 
 	for _, m := range grp {
@@ -331,26 +328,8 @@ func (a *Agent) connectMember(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
 	}
 
-	stateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	dataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	a.zmq.ConChan <- transport.ConnectMsg{
-		Connect:   true,
-		Initiator: transport.Initiator{Role: domain.RoleSubscriber, Label: a.myLabel},
-		Topic:     topic,
-		Peer:      m,
-		Reply: struct {
-			State transport.Reply `json:"state"`
-			Data  transport.Reply `json:"data"`
-		}{State: stateRep, Data: dataRep},
-	}
-	err = <-stateRep.Chan
-	if err != nil {
-		return ``, fmt.Errorf(`zmq state connection failed - %v`, err)
-	}
-
-	err = <-dataRep.Chan
-	if err != nil {
-		return ``, fmt.Errorf(`zmq data connection failed - %v`, err)
+	if err = a.proc.sendConnect(true, domain.RoleSubscriber, a.myLabel, topic, m); err != nil {
+		return ``, fmt.Errorf(`sending connect message failed - %v`, err)
 	}
 
 	if !publisher {
@@ -439,11 +418,8 @@ func (a *Agent) Send(topic, msg string) error {
 			return fmt.Errorf(`packing data message for %s failed - %v`, sub, err)
 		}
 
-		rep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-		a.zmq.PubChan <- transport.PublishMsg{Topic: a.zmq.DataTopic(topic, a.myLabel, sub), Data: data, Reply: rep}
-		err = <-rep.Chan
-		if err != nil {
-			return fmt.Errorf(`zmq publish failed - %v`, err)
+		if err = a.proc.sendPublish(a.zmq.DataTopic(topic, a.myLabel, sub), data); err != nil {
+			return fmt.Errorf(`sending internal publish message failed - %v`, err)
 		}
 
 		published = true
@@ -590,11 +566,8 @@ func (a *Agent) notifyAll(topic string, active, publisher bool) error {
 		return fmt.Errorf(`compress status failed - %v`, err)
 	}
 
-	rep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	a.zmq.PubChan <- transport.PublishMsg{Topic: a.zmq.StateTopic(topic), Data: comprsd, Reply: rep}
-	err = <-rep.Chan
-	if err != nil {
-		return fmt.Errorf(`zmq publish failed - %v`, err)
+	if err = a.proc.sendPublish(a.zmq.StateTopic(topic), comprsd); err != nil {
+		return fmt.Errorf(`sending internal publish message failed - %v`, err)
 	}
 
 	a.log.Debug(fmt.Sprintf(`published status (topic: %s, active: %t, publisher: %t)`, topic, active, publisher))
@@ -649,28 +622,8 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 }
 
 func (a *Agent) Leave(topic string) error {
-	stateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	dataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	a.zmq.SubChan <- transport.SubscribeMsg{
-		Subscribe: false,
-		UnsubAll:  true,
-		MyLabel:   a.myLabel,
-		Topic:     topic,
-		State:     true,
-		Data:      true,
-		Reply: struct {
-			State transport.Reply `json:"state"`
-			Data  transport.Reply `json:"data"`
-		}{State: stateRep, Data: dataRep},
-	}
-	err := <-stateRep.Chan
-	if err != nil {
-		return fmt.Errorf(`zmq state subscribe failed - %v`, err)
-	}
-
-	err = <-dataRep.Chan
-	if err != nil {
-		return fmt.Errorf(`zmq data subscribe failed - %v`, err)
+	if err := a.proc.sendSubscribe(false, true, true, true, topic, a.myLabel, models.Member{}); err != nil {
+		return fmt.Errorf(`sending internal subscribe message failed - %v`, err)
 	}
 
 	membrs := a.gs.Membrs(topic)
@@ -685,7 +638,7 @@ func (a *Agent) Leave(topic string) error {
 		}
 	}
 
-	if err = a.notifyAll(topic, false, publisher); err != nil {
+	if err := a.notifyAll(topic, false, publisher); err != nil {
 		return fmt.Errorf(`publishing inactive status failed - %v`, err)
 	}
 
