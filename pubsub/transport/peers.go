@@ -52,6 +52,7 @@ func (p *Peers) listen(ackChan chan models.Message) {
 				continue
 			}
 			p.endpoints.Store(endpoint, true)
+			fmt.Println("PEER MSG RECEIVED AND STORED", endpoint)
 		}
 	}()
 }

@@ -33,3 +33,31 @@ func main() {
 
 	cli.Init(c)
 }
+
+//type test struct {
+//	Name    string       `json:"name"`
+//	RepChan *chan string `json:"-"`
+//}
+//
+//func main() {
+//	c := make(chan string)
+//	t := test{
+//		Name:    "a",
+//		RepChan: &c,
+//	}
+//	data, err := json.Marshal(t)
+//	if err != nil {
+//		log.Fatalln(err)
+//	}
+//
+//	send(data)
+//	fmt.Println("OK")
+//}
+//
+//func send(data []byte) {
+//	var n test
+//	err := json.Unmarshal(data, &n)
+//	if err != nil {
+//		log.Fatalln(err)
+//	}
+//}
