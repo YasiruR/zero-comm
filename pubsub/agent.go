@@ -199,35 +199,40 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		a.syncr.init(topic)
 	}
 
-	hashes := &sync.Map{}
 	wg := &sync.WaitGroup{}
 	for _, m := range group.Members {
 		wg.Add(1)
-		go func(m models.Member, hashes *sync.Map, wg *sync.WaitGroup) {
+		go func(m models.Member, wg *sync.WaitGroup) {
 			if !m.Active {
 				return
 			}
 
-			checksum, err := a.connectMember(topic, publisher, m)
-			if err != nil {
-				a.log.Error(fmt.Sprintf(`adding %s as a member failed - %v`, m.Label, err))
+			if err = a.connectDIDComm(m); err != nil {
+				a.log.Error(fmt.Sprintf(`connecting to %s failed - %v`, m.Label, err))
 				return
 			}
 
-			hashes.Store(m.Label, checksum)
 			wg.Done()
-		}(m, hashes, wg)
+		}(m, wg)
+	}
+	wg.Wait()
+
+	hashMap := make(map[string]string)
+	for _, m := range group.Members {
+		if !m.Active {
+			continue
+		}
+
+		checksum, err := a.connectMember(topic, publisher, m)
+		if err != nil {
+			return fmt.Errorf(`adding %s as a member failed - %v`, m.Label, err)
+		}
+
+		hashMap[m.Label] = checksum
 	}
 
-	wg.Wait()
 	if len(group.Members) > 1 {
-		hMap := make(map[string]string)
-		hashes.Range(func(key, val any) bool {
-			hMap[key.(string)] = val.(string)
-			return true
-		})
-
-		if err = validator.ValidJoin(acceptor, group.Members, hMap); err != nil {
+		if err = validator.ValidJoin(acceptor, group.Members, hashMap); err != nil {
 			if group.Params.JoinConsistent {
 				return fmt.Errorf(`join failed due to inconsistent view of the group - %v`, err)
 			}
@@ -309,10 +314,6 @@ retry:
 }
 
 func (a *Agent) connectMember(topic string, publisher bool, m models.Member) (checksum string, err error) {
-	if err = a.connectDIDComm(m); err != nil {
-		return ``, fmt.Errorf(`connecting to %s failed - %v`, m.Label, err)
-	}
-
 	checksum, err = a.subscribeData(topic, publisher, m)
 	if err != nil {
 		return ``, fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
