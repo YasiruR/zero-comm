@@ -111,8 +111,7 @@ func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, 
 }
 
 // start initializes handlers for subscribe and join requests (async),
-// and listeners for all incoming messages eg: join requests,
-// subscriptions, state changes (active/inactive) and data messages.
+// and listeners for all incoming messages eg: join requests, subscriptions
 func (a *Agent) start(srvr servicesPkg.Server) {
 	// add handler for subscribe messages
 	subChan := make(chan models.Message)
@@ -126,10 +125,6 @@ func (a *Agent) start(srvr servicesPkg.Server) {
 	// initialize internal handlers for zmq requests on REQ sockets
 	a.process(joinChan, a.proc.joinReqs)
 	a.process(subChan, a.proc.subscriptions)
-
-	// initialize listening on subscriptions on SUB sockets
-	//a.zmq.listen(typStateSkt, a.proc.state)
-	//a.zmq.listen(typMsgSkt, a.proc.data)
 }
 
 // Create constructs a group including creator's invitation
@@ -200,9 +195,11 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	}
 
 	wg := &sync.WaitGroup{}
+	resSmMap := &sync.Map{}
 	for _, m := range group.Members {
 		wg.Add(1)
 		go func(m models.Member, wg *sync.WaitGroup) {
+			defer wg.Done()
 			if !m.Active {
 				return
 			}
@@ -212,23 +209,36 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 				return
 			}
 
-			wg.Done()
+			resSm, err := a.subscribeData(topic, publisher, m)
+			if err != nil {
+				a.log.Error(fmt.Sprintf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err))
+				return
+			}
+			resSmMap.Store(m.Label, resSm)
 		}(m, wg)
 	}
 	wg.Wait()
 
 	hashMap := make(map[string]string)
 	for _, m := range group.Members {
+		val, ok := resSmMap.Load(m.Label)
+		if !ok {
+			a.log.Error(fmt.Sprintf(`subscribe response does not exist for %s`, m.Label))
+		}
+
+		resSm, ok := val.(messages.ResSubscribe)
+		if !ok {
+			a.log.Error(fmt.Sprintf(`invalid value (%v) found for subscribe response of %s`, val, m.Label))
+		}
+		hashMap[m.Label] = resSm.Checksum
+
 		if !m.Active {
 			continue
 		}
 
-		checksum, err := a.connectMember(topic, publisher, m)
-		if err != nil {
+		if err = a.connectMember(topic, publisher, m, resSm); err != nil {
 			return fmt.Errorf(`adding %s as a member failed - %v`, m.Label, err)
 		}
-
-		hashMap[m.Label] = checksum
 	}
 
 	if len(group.Members) > 1 {
@@ -313,27 +323,26 @@ retry:
 	return nil
 }
 
-func (a *Agent) connectMember(topic string, publisher bool, m models.Member) (checksum string, err error) {
-	checksum, err = a.subscribeData(topic, publisher, m)
-	if err != nil {
-		return ``, fmt.Errorf(`subscribing to topic %s with %s failed - %v`, topic, m.Label, err)
+func (a *Agent) connectMember(topic string, publisher bool, m models.Member, resSm messages.ResSubscribe) error {
+	if err := a.proc.sendAuth(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, resSm.Publisher); err != nil {
+		return fmt.Errorf(`sending internal auth message failed - %v`, err)
 	}
 
-	if err = a.proc.sendConnect(true, domain.RoleSubscriber, a.myLabel, topic, m); err != nil {
-		return ``, fmt.Errorf(`sending connect message failed - %v`, err)
+	if err := a.proc.sendConnect(true, domain.RoleSubscriber, a.myLabel, topic, m); err != nil {
+		return fmt.Errorf(`sending connect message failed - %v`, err)
 	}
 
 	if !publisher {
-		return checksum, nil
+		return nil
 	}
 
 	s, err := a.probr.Service(domain.ServcGroupJoin, m.Label)
 	if err != nil {
-		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
+		return fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
 	a.subs.Add(topic, m.Label, s.PubKey)
 
-	return checksum, nil
+	return nil
 }
 
 // reqState checks if requester has already connected with acceptor
@@ -448,11 +457,11 @@ func (a *Agent) connectDIDComm(m models.Member) error {
 // If the member is a publisher, it proceeds with sending a subscription
 // didcomm message and subscribing to message topic via zmqPkg. A checksum
 // of the group maintained by the added group member is returned.
-func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (checksum string, err error) {
+func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (resSm messages.ResSubscribe, err error) {
 	// get my public key corresponding to this member
 	subPublcKey, err := a.km.PublicKey(m.Label)
 	if err != nil {
-		return ``, fmt.Errorf(`fetching public key for the connection failed - %v`, err)
+		return messages.ResSubscribe{}, fmt.Errorf(`fetching public key for the connection failed - %v`, err)
 	}
 
 	// B sends agent subscribe msg to member
@@ -477,39 +486,38 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 
 	byts, err := json.Marshal(sm)
 	if err != nil {
-		return ``, fmt.Errorf(`marshalling subscribe message failed - %v`, err)
+		return messages.ResSubscribe{}, fmt.Errorf(`marshalling subscribe message failed - %v`, err)
 	}
 
 	s, err := a.probr.Service(domain.ServcGroupJoin, m.Label)
 	if err != nil {
-		return ``, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
+		return messages.ResSubscribe{}, fmt.Errorf(`fetching service info failed for peer %s - %v`, m.Label, err)
 	}
 
 	data, err := a.packr.pack(m.Label, s.PubKey, byts)
 	if err != nil {
-		return ``, fmt.Errorf(`packing subscribe request for %s failed - %v`, m.Label, err)
+		return messages.ResSubscribe{}, fmt.Errorf(`packing subscribe request for %s failed - %v`, m.Label, err)
 	}
 
 	res, err := a.client.Send(models.TypSubscribe, data, s.Endpoint)
 	if err != nil {
-		return ``, fmt.Errorf(`sending subscribe message failed - %v`, err)
+		return messages.ResSubscribe{}, fmt.Errorf(`sending subscribe message failed - %v`, err)
 	}
 
 	_, unpackedMsg, err := a.probr.ReadMessage(models.Message{Type: models.TypSubscribe, Data: []byte(res), Reply: nil})
 	if err != nil {
-		return ``, fmt.Errorf(`reading subscribe didcomm response failed - %v`, err)
+		return messages.ResSubscribe{}, fmt.Errorf(`reading subscribe didcomm response failed - %v`, err)
 	}
 
-	var resSm messages.ResSubscribe
 	if err = json.Unmarshal([]byte(unpackedMsg), &resSm); err != nil {
-		return ``, fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
+		return messages.ResSubscribe{}, fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
 	}
 
-	if err = a.proc.sendAuth(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, resSm.Publisher); err != nil {
-		return ``, fmt.Errorf(`sending internal auth message failed - %v`, err)
-	}
+	//if err = a.proc.sendAuth(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, resSm.Publisher); err != nil {
+	//	return ``, fmt.Errorf(`sending internal auth message failed - %v`, err)
+	//}
 
-	return resSm.Checksum, nil
+	return resSm, nil
 }
 
 func (a *Agent) process(inChan chan models.Message, handlerFunc func(msg *models.Message) error) {
