@@ -16,7 +16,7 @@ import (
 var (
 	numTests int
 	//groupSizes     = []int{1, 2, 5, 10, 20, 50, 100}
-	groupSizes                   = []int{10, 20, 25}
+	groupSizes                   = []int{2, 5, 10, 20, 25}
 	testBatchSizes               = []int{5, 10}
 	agentPort                    = 6140
 	pubPort                      = 6540
@@ -109,14 +109,13 @@ func join(topic string, pub, conctd bool, grp []group.Member, count int) (latLis
 				}
 
 				wg.Add(1)
-				go func(m group.Member) {
+				go func(m group.Member, wg *sync.WaitGroup) {
 					if _, err = http.DefaultClient.Post(m.MockEndpoint+mock.ConnectEndpoint, `application/octet-stream`, bytes.NewBufferString(url)); err != nil {
-						c.Log.Fatal(err)
+						log.Fatal(err)
 					}
 					wg.Done()
-				}(m)
+				}(m, wg)
 			}
-
 			wg.Wait()
 		}
 
@@ -139,7 +138,7 @@ func join(topic string, pub, conctd bool, grp []group.Member, count int) (latLis
 		latency := time.Since(start).Milliseconds()
 		fmt.Printf("	Attempt %d: %d ms\n", i+1, latency)
 
-		// check if group has correct #members? will have to use leave afterwards
+		// check if group has correct #members?
 
 		for _, c := range contList {
 			if err := c.PubSub.Leave(topic); err != nil {

@@ -23,7 +23,7 @@ func InitAgent(name string, port, pubPort int) *container.Container {
 	return initContainer(setConfigs(&container.Args{
 		Name:    name,
 		Port:    port,
-		Verbose: false,
+		Verbose: true,
 		PubPort: pubPort,
 	}))
 }
@@ -54,7 +54,7 @@ func setConfigs(args *container.Args) *container.Config {
 }
 
 func initContainer(cfg *container.Config) *container.Container {
-	logger := log.NewLogger(cfg.Args.Verbose, 2)
+	logger := log.NewLogger(cfg.Args.Verbose, 2, log.LevelError)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
 	ctx, err := zmq.NewContext()

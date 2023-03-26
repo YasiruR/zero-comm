@@ -198,7 +198,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 	resSmMap := &sync.Map{}
 	for _, m := range group.Members {
 		wg.Add(1)
-		go func(m models.Member, wg *sync.WaitGroup) {
+		go func(m models.Member, resSmMap *sync.Map, wg *sync.WaitGroup) {
 			defer wg.Done()
 			if !m.Active {
 				return
@@ -215,12 +215,16 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 				return
 			}
 			resSmMap.Store(m.Label, resSm)
-		}(m, wg)
+		}(m, resSmMap, wg)
 	}
 	wg.Wait()
 
 	hashMap := make(map[string]string)
 	for _, m := range group.Members {
+		if !m.Active {
+			continue
+		}
+
 		val, ok := resSmMap.Load(m.Label)
 		if !ok {
 			a.log.Error(fmt.Sprintf(`subscribe response does not exist for %s`, m.Label))
@@ -231,10 +235,6 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 			a.log.Error(fmt.Sprintf(`invalid value (%v) found for subscribe response of %s`, val, m.Label))
 		}
 		hashMap[m.Label] = resSm.Checksum
-
-		if !m.Active {
-			continue
-		}
 
 		if err = a.connectMember(topic, publisher, m, resSm); err != nil {
 			return fmt.Errorf(`adding %s as a member failed - %v`, m.Label, err)
@@ -644,10 +644,5 @@ func (a *Agent) Info(topic string) (gp models.GroupParams, mems []models.Member)
 }
 
 func (a *Agent) Close() error {
-	//if err := a.auth.close(); err != nil {
-	//	return fmt.Errorf(`closing authenticator failed - %v`, err)
-	//}
-	//
-	//return a.zmq.close()
-	return nil
+	return a.zmq.Close()
 }

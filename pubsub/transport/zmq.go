@@ -7,6 +7,7 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/pubsub/stores"
+	"github.com/google/uuid"
 	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 	"strings"
@@ -28,11 +29,12 @@ type Zmq struct {
 	gs         *stores.Group
 	log        log.Logger
 	endpts     endpoints
+	closeChan  chan bool
 	*auth
 }
 
 func NewZmqTransport(zmqCtx *zmqPkg.Context, gs *stores.Group, c *container.Container, stateFunc, dataFunc func(topic, msg string) error) (*Zmq, error) {
-	authn, err := authenticator(c.Cfg.Name, c.Cfg.Verbose)
+	authn, err := authenticator(c.Cfg.Name, false)
 	if err != nil {
 		return nil, fmt.Errorf(`initializing zmq authenticator failed - %v`, err)
 	}
@@ -47,7 +49,9 @@ func NewZmqTransport(zmqCtx *zmqPkg.Context, gs *stores.Group, c *container.Cont
 		gs:         gs,
 		auth:       authn,
 		log:        c.Log,
-		endpts:     endpoints{state: `ipc://state-` + c.Cfg.Name + `.ipc`, data: `ipc://data-` + c.Cfg.Name + `.ipc`},
+		//endpts:     endpoints{state: `ipc://state-` + c.Cfg.Name + uuid.New().String() + `.ipc`, data: `ipc://data-` + c.Cfg.Name + uuid.New().String() + `.ipc`},
+		endpts:    endpoints{state: `inproc://state-` + c.Cfg.Name + uuid.New().String(), data: `inproc://data-` + c.Cfg.Name + uuid.New().String()},
+		closeChan: make(chan bool),
 	}
 
 	go z.initConnector(zmqCtx)
@@ -78,34 +82,43 @@ func (z *Zmq) initConnector(zmqCtx *zmqPkg.Context) {
 			z.addRepChan(cm.Reply.State.Id, cm.Reply.Data.Id, cm.Reply.State.Chan, cm.Reply.Data.Chan)
 			data, err := json.Marshal(cm)
 			if err != nil {
-				log.Error(fmt.Sprintf(`marshalling internal connect message failed - %v`, err))
+				z.log.Error(fmt.Sprintf(`marshalling internal connect message failed - %v`, err))
 				continue
 			}
 
 			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s %v`, topicConnect, string(data))); err != nil {
-				log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(data), err))
+				z.log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(data), err))
 			}
 		case sm := <-z.SubChan:
 			z.addRepChan(sm.Reply.State.Id, sm.Reply.Data.Id, sm.Reply.State.Chan, sm.Reply.Data.Chan)
 			data, err := json.Marshal(sm)
 			if err != nil {
-				log.Error(fmt.Sprintf(`marshalling internal subscribe message failed - %v`, err))
+				z.log.Error(fmt.Sprintf(`marshalling internal subscribe message failed - %v`, err))
 				continue
 			}
 
 			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s %v`, topicSubscribe, string(data))); err != nil {
-				log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(data), err))
+				z.log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(data), err))
 			}
 		case am := <-z.AuthChan:
 			z.addRepChan(am.Reply.State.Id, am.Reply.Data.Id, am.Reply.State.Chan, am.Reply.Data.Chan)
 			data, err := json.Marshal(am)
 			if err != nil {
-				log.Error(fmt.Sprintf(`marshalling internal authenticate message failed - %v`, err))
+				z.log.Error(fmt.Sprintf(`marshalling internal authenticate message failed - %v`, err))
 				continue
 			}
 
 			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s %v`, topicAuthenticate, string(data))); err != nil {
-				log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(data), err))
+				z.log.Error(fmt.Sprintf(`publishing message (%s) failed - %v`, string(data), err))
+				continue
+			}
+		case <-z.closeChan:
+			if _, err = intrnlPub.SendMessage(fmt.Sprintf(`%s`, topicAuthenticate)); err != nil {
+				z.log.Error(fmt.Sprintf(`publishing terminate intenal message failed - %v`, err))
+			}
+
+			if err = intrnlPub.Close(); err != nil {
+				z.log.Error(fmt.Sprintf(`closing internal publisher failed - %v`, err))
 			}
 		}
 	}
@@ -203,6 +216,13 @@ func (z *Zmq) listenState(zmqCtx *zmqPkg.Context, handlerFunc func(topic, msg st
 			}
 
 			z.replyErr(am.Reply.State.Id, nil)
+			continue
+		}
+
+		if topic == topicTerm {
+			if err = sktState.Close(); err != nil {
+				z.log.Error(fmt.Sprintf(`closing state socket failed - %v`, err))
+			}
 			continue
 		}
 
@@ -314,6 +334,13 @@ func (z *Zmq) listenData(zmqCtx *zmqPkg.Context, handlerFunc func(topic, msg str
 			continue
 		}
 
+		if topic == topicTerm {
+			if err = sktData.Close(); err != nil {
+				z.log.Error(fmt.Sprintf(`closing data socket failed - %v`, err))
+			}
+			continue
+		}
+
 		go func(topic, data string) {
 			if err = handlerFunc(topic, data); err != nil {
 				z.log.Error(fmt.Sprintf(`processing received message failed - %v`, err))
@@ -375,6 +402,13 @@ func (z *Zmq) publisher(zmqCtx *zmqPkg.Context, externalEndpoint string) {
 
 	for {
 		pm := <-z.PubChan
+		if pm.Topic == topicTerm {
+			if err = sktPub.Close(); err != nil {
+				z.log.Error(fmt.Sprintf(`closing publisher socket failed - %v`, err))
+			}
+			continue
+		}
+
 		if _, err = sktPub.SendMessage(fmt.Sprintf(`%s %s`, pm.Topic, string(pm.Data))); err != nil {
 			pm.Reply.Chan <- fmt.Errorf(`publishing message (%s) failed - %v`, string(pm.Data), err)
 			continue
@@ -518,18 +552,10 @@ func (z *Zmq) replyErr(id string, err error) {
 	c <- err
 }
 
-func (z *Zmq) close(pub, state, msgs *zmqPkg.Socket) error {
-	if err := pub.Close(); err != nil {
-		return fmt.Errorf(`closing publisher socket failed - %v`, err)
-	}
-
-	if err := state.Close(); err != nil {
-		return fmt.Errorf(`closing state socket failed - %v`, err)
-	}
-
-	if err := msgs.Close(); err != nil {
-		return fmt.Errorf(`closing data socket failed - %v`, err)
-	}
+func (z *Zmq) Close() error {
+	z.auth.close()
+	z.closeChan <- true
+	z.PubChan <- PublishMsg{Topic: topicTerm}
 
 	return nil
 }

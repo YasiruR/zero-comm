@@ -63,7 +63,7 @@ func Init(c *container.Container) {
 		prober:  c.Prober,
 		disc:    discovery.NewDiscoverer(c),
 		outChan: c.OutChan,
-		log:     internalLog.NewLogger(c.Cfg.Verbose, 5),
+		log:     internalLog.NewLogger(c.Cfg.Verbose, 5, internalLog.LevelTrace),
 		pubsub:  c.PubSub,
 		verbose: c.Cfg.Verbose,
 	}
@@ -223,8 +223,7 @@ func (r *runner) createGroup() {
 	mode := r.input(`Group queue mode [single,multiple] (S/M)`)
 	strJoinConsist := r.input(`Strict consistency for join operation (Y/N)`)
 	strOrdrd := r.input(`Causal consistency for group messages (Y/N)`)
-
-	mode, strJoinConsist, strOrdrd, strPub = `m`, `y`, `y`, `y`
+	//mode, strJoinConsist, strOrdrd, strPub = `m`, `y`, `y`, `y`
 
 	publisher, err := r.validBool(strPub)
 	if err != nil {

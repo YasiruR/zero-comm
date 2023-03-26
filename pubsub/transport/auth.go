@@ -79,25 +79,6 @@ func (a *auth) setPubAuthn(skt *zmqPkg.Socket) error {
 	return nil
 }
 
-//func (a *auth) setPeerAuthn(peer, servPubKey, clientPubKey string, sktState, sktMsgs *zmqPkg.Socket) error {
-//	a.addClientPubKey(clientPubKey)
-//	if err := sktState.ClientAuthCurve(servPubKey, a.client.pub, a.client.prvt); err != nil {
-//		return fmt.Errorf(`setting curve client authentication to zmq state socket failed - %v`, err)
-//	}
-//
-//	if sktMsgs != nil {
-//		if err := sktMsgs.ClientAuthCurve(servPubKey, a.client.pub, a.client.prvt); err != nil {
-//			return fmt.Errorf(`setting curve client authentication to zmq data socket failed - %v`, err)
-//		}
-//	}
-//
-//	a.Lock()
-//	defer a.Unlock()
-//	a.keys.Store(peer, zmqPeerKeys{servr: servPubKey, client: clientPubKey})
-//
-//	return nil
-//}
-
 func (a *auth) setPeerStateAuthn(peer, servPubKey, clientPubKey string, sktState *zmqPkg.Socket) error {
 	a.addClientPubKey(clientPubKey)
 	if err := sktState.ClientAuthCurve(servPubKey, a.client.pub, a.client.prvt); err != nil {

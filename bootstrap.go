@@ -46,7 +46,7 @@ func setConfigs(args *container.Args) *container.Config {
 }
 
 func initContainer(cfg *container.Config) *container.Container {
-	logger := log.NewLogger(cfg.Args.Verbose, 3)
+	logger := log.NewLogger(cfg.Args.Verbose, 3, log.LevelTrace)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
 	ctx, err := zmq.NewContext()
