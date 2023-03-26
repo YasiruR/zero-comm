@@ -332,6 +332,7 @@ func (z *Zmq) connectState(cm ConnectMsg, sktState *zmqPkg.Socket) error {
 		return fmt.Errorf(`subscribing to status topic of %s failed - %v`, cm.Topic, err)
 	}
 
+	fmt.Println("CONNECTED TO STATES OF", cm.Peer.Label, cm.Peer.PubEndpoint)
 	return nil
 }
 
@@ -340,6 +341,7 @@ func (z *Zmq) connectData(cm ConnectMsg, sktData *zmqPkg.Socket) error {
 		if err := sktData.Connect(cm.Peer.PubEndpoint); err != nil {
 			return fmt.Errorf(`connecting to publisher message socket failed - %v`, err)
 		}
+		fmt.Println("CONNECTED TO DATA OF", cm.Peer, cm.Peer.PubEndpoint)
 
 		var pub, sub string
 		switch cm.Initiator.Role {
@@ -393,6 +395,7 @@ func (z *Zmq) subscribeStatus(topic string, sktState *zmqPkg.Socket) error {
 		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, z.StateTopic(topic), err)
 	}
 
+	fmt.Println("SUBSCRIBED STATE", z.StateTopic(topic))
 	return nil
 }
 
@@ -404,6 +407,7 @@ func (z *Zmq) subscribeData(topic, pub, sub string, sktData *zmqPkg.Socket) erro
 		return fmt.Errorf(`setting zmq subscription failed for topic %s - %v`, dt, err)
 	}
 
+	fmt.Println("SUBSCRIBED TO DATA", dt)
 	return nil
 }
 

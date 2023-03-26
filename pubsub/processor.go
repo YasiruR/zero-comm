@@ -101,31 +101,8 @@ func (p *processor) subscriptions(msg *models.Message) error {
 		return fmt.Errorf(`requester (%s) is not eligible`, sm.Member.Label)
 	}
 
-	var dataAuth bool
-	if sm.Member.Publisher {
-		dataAuth = true
-	}
-
-	authStateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	authDataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	p.zmq.AuthChan <- transport.AuthMsg{
-		Label:        sm.Member.Label,
-		ServrPubKey:  sm.Transport.ServrPubKey,
-		ClientPubKey: sm.Transport.ClientPubKey,
-		Data:         dataAuth,
-		Reply: struct {
-			State transport.Reply `json:"state"`
-			Data  transport.Reply `json:"data"`
-		}{State: authStateRep, Data: authDataRep},
-	}
-	err = <-authStateRep.Chan
-	if err != nil {
-		return fmt.Errorf(`zmq state authenticate failed - %v`, err)
-	}
-
-	err = <-authDataRep.Chan
-	if err != nil {
-		return fmt.Errorf(`zmq data authenticate failed - %v`, err)
+	if err = p.sendAuth(sm.Member.Label, sm.Transport.ServrPubKey, sm.Transport.ClientPubKey, sm.Member.Publisher); err != nil {
+		return fmt.Errorf(`sending internal auth message failed - %v`, err)
 	}
 
 	// send response back to subscriber along with zmq server pub-key of this node
@@ -345,6 +322,38 @@ func (p *processor) sendSubscribe(subscribe, unsubAll, state, data bool, topic, 
 	err = <-dataRep.Chan
 	if err != nil {
 		return fmt.Errorf(`zmq data subscribe failed - %v`, err)
+	}
+
+	return nil
+}
+
+func (p *processor) sendAuth(label, srvrPubK, clientPubK string, publisher bool) error {
+	var dataAuth bool
+	if publisher {
+		dataAuth = true
+	}
+
+	authStateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	authDataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	p.zmq.AuthChan <- transport.AuthMsg{
+		Label:        label,
+		ServrPubKey:  srvrPubK,
+		ClientPubKey: clientPubK,
+		Data:         dataAuth,
+		Reply: struct {
+			State transport.Reply `json:"state"`
+			Data  transport.Reply `json:"data"`
+		}{State: authStateRep, Data: authDataRep},
+	}
+
+	err := <-authStateRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq state authenticate failed - %v`, err)
+	}
+
+	err = <-authDataRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq data authenticate failed - %v`, err)
 	}
 
 	return nil

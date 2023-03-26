@@ -25,6 +25,9 @@ const (
 	helloProtocolIntervalMs = 100
 )
 
+// todo init all 5 agents. Disconnect carol, then david, then eve. David joins through alice as a pub. Disconnect alice. Join carol through david
+// - sub req is sent to alice as well
+
 type state struct {
 	myLabel     string
 	pubEndpoint string
@@ -96,19 +99,6 @@ func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, 
 	if err != nil {
 		return nil, fmt.Errorf(`initializing compressor failed - %v`, err)
 	}
-
-	//authn, err := authenticator(c.Cfg.Name, c.Cfg.Verbose)
-	//if err != nil {
-	//	return nil, fmt.Errorf(`initializing zmq authenticator failed - %v`, err)
-	//}
-	//
-	//if err = authn.setPubAuthn(tr.pub); err != nil {
-	//	return nil, fmt.Errorf(`setting authentication on pub socket failed - %v`, err)
-	//}
-	//
-	//if err = tr.start(c.Cfg.PubEndpoint); err != nil {
-	//	return nil, fmt.Errorf(`starting zmq transport failed - %v`, err)
-	//}
 
 	return &internals{
 		subs:     stores.NewSubStore(),
@@ -514,31 +504,8 @@ func (a *Agent) subscribeData(topic string, publisher bool, m models.Member) (ch
 		return ``, fmt.Errorf(`unmarshalling didcomm message into subscribe response struct failed - %v`, err)
 	}
 
-	var dataAuth bool
-	if resSm.Publisher {
-		dataAuth = true
-	}
-
-	stateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	dataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
-	a.zmq.AuthChan <- transport.AuthMsg{
-		Label:        m.Label,
-		ServrPubKey:  resSm.Transport.ServrPubKey,
-		ClientPubKey: resSm.Transport.ClientPubKey,
-		Data:         dataAuth,
-		Reply: struct {
-			State transport.Reply `json:"state"`
-			Data  transport.Reply `json:"data"`
-		}{State: stateRep, Data: dataRep},
-	}
-	err = <-stateRep.Chan
-	if err != nil {
-		return ``, fmt.Errorf(`zmq state authenticate failed - %v`, err)
-	}
-
-	err = <-dataRep.Chan
-	if err != nil {
-		return ``, fmt.Errorf(`zmq state authenticate failed - %v`, err)
+	if err = a.proc.sendAuth(m.Label, resSm.Transport.ServrPubKey, resSm.Transport.ClientPubKey, resSm.Publisher); err != nil {
+		return ``, fmt.Errorf(`sending internal auth message failed - %v`, err)
 	}
 
 	return resSm.Checksum, nil
@@ -635,6 +602,7 @@ func (a *Agent) Leave(topic string) error {
 	for _, m := range membrs {
 		if m.Label == a.myLabel {
 			publisher = m.Publisher
+			break
 		}
 	}
 

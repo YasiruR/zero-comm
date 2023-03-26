@@ -46,7 +46,10 @@ def plot(filtr, init_sizes, conctd, latency):
 #    plt.savefig('get_line.pdf', bbox_inches="tight")
     plt.show()
 
-topic = 'sq-c-o-topic'
-init_sizes, conctd, latency = readData('../results/join.csv', topic)
-plot(topic, init_sizes, conctd, latency)
+#topic = 'sq-c-o-topic'
+#init_sizes, conctd, latency = readData('../results/join.csv', topic)
+#plot(topic, init_sizes, conctd, latency)
+
+print('test')
+
 
