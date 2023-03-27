@@ -27,14 +27,3 @@ type Server interface {
 	RemoveHandler(msgType string)
 	Stop() error
 }
-
-/* message queue functions */
-
-type GroupAgent interface {
-	Create(topic string, publisher bool, gp models.GroupParams) error
-	Join(topic, acceptor string, publisher bool) error
-	Send(topic, msg string) error
-	Leave(topic string) error
-	Info(topic string) (models.GroupParams, []models.Member)
-	Close() error
-}

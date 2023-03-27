@@ -12,26 +12,21 @@ import (
 func Persist(test string, gc group.Config, batchSizes []int, results []float64) {
 	switch test {
 	case `join-latency`:
-		writeJoinLatency(
-			readFile(`../tester/results/join_latency.csv`, []string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `init_connected`, `latency_ms`}),
-			gc,
-			results)
+		f, w := readFile(`results/join_latency.csv`, []string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `init_connected`, `latency_ms`})
+		writeJoinLatency(f, w, gc, results)
 	case `join-throughput`:
-		writeJoinThroughput(
-			readFile(`../tester/results/join_throughput.csv`, []string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `init_connected`, `batch_size`, `latency_ms`}),
-			gc,
-			batchSizes,
-			results)
+		f, w := readFile(`results/join_throughput.csv`, []string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `init_connected`, `batch_size`, `latency_ms`})
+		writeJoinThroughput(f, w, gc, batchSizes, results)
+	default:
+		fmt.Printf("# Skipped persisting results (test=%s)\n", test)
 	}
 }
 
-func readFile(path string, headers []string) *csv.Writer {
-	//const path = `../tester/results/join.csv`
+func readFile(path string, headers []string) (*os.File, *csv.Writer) {
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		log.Fatalln(`opening or creating join.csv failed -`, err)
 	}
-	defer file.Close()
 
 	w := csv.NewWriter(file)
 	rows, err := csv.NewReader(file).ReadAll()
@@ -45,10 +40,10 @@ func readFile(path string, headers []string) *csv.Writer {
 		}
 	}
 
-	return w
+	return file, w
 }
 
-func writeJoinThroughput(w *csv.Writer, gc group.Config, batchSizes []int, results []float64) {
+func writeJoinThroughput(f *os.File, w *csv.Writer, gc group.Config, batchSizes []int, results []float64) {
 	for i, r := range results {
 		if err := w.Write([]string{
 			gc.Topic,
@@ -64,9 +59,10 @@ func writeJoinThroughput(w *csv.Writer, gc group.Config, batchSizes []int, resul
 		}
 	}
 	w.Flush()
+	f.Close()
 }
 
-func writeJoinLatency(w *csv.Writer, gc group.Config, results []float64) {
+func writeJoinLatency(f *os.File, w *csv.Writer, gc group.Config, results []float64) {
 	for _, r := range results {
 		if err := w.Write([]string{
 			gc.Topic,
@@ -81,4 +77,5 @@ func writeJoinLatency(w *csv.Writer, gc group.Config, results []float64) {
 		}
 	}
 	w.Flush()
+	f.Close()
 }

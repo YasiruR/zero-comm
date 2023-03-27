@@ -228,7 +228,7 @@ func (z *Zmq) listenState(zmqCtx *zmqPkg.Context, handlerFunc func(topic, msg st
 
 		go func(topic, data string) {
 			if err = handlerFunc(topic, data); err != nil {
-				z.log.Error(fmt.Sprintf(`processing received message failed - %v`, err))
+				z.log.Error(fmt.Sprintf(`processing received message (topic=%s) failed - %v`, topic, err))
 			}
 		}(topic, data)
 	}
@@ -343,7 +343,7 @@ func (z *Zmq) listenData(zmqCtx *zmqPkg.Context, handlerFunc func(topic, msg str
 
 		go func(topic, data string) {
 			if err = handlerFunc(topic, data); err != nil {
-				z.log.Error(fmt.Sprintf(`processing received message failed - %v`, err))
+				z.log.Error(fmt.Sprintf(`processing received message (topic=%s) failed - %v`, topic, err))
 			}
 		}(topic, data)
 	}

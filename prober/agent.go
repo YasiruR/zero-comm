@@ -343,7 +343,7 @@ func (p *Prober) SendMessage(mt models.MsgType, to, text string) error {
 	}
 
 	if _, err = p.client.Send(mt, data, prMsgEndpnt); err != nil {
-		return fmt.Errorf(`sending siscomm message failed - %v`, err)
+		return fmt.Errorf(`sending didcomm message failed - %v`, err)
 	}
 
 	if mt == models.TypData {
