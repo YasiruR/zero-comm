@@ -21,6 +21,9 @@ type processor struct {
 	outChan     chan string
 	probr       servicesPkg.Agent
 	log         log.Logger
+	// sync map may not be required as rarely updated by multiple go-routines
+	// and always read only by one go-routine
+	ackChans map[string]chan string
 	*internals
 }
 
@@ -206,6 +209,10 @@ func (p *processor) data(zmqTopic, msg string) error {
 		return fmt.Errorf(`parsing data message via syncer failed - %v`, err)
 	}
 
+	if p.ackChans[sender] != nil {
+		p.ackChans[sender] <- data
+	}
+
 	p.outChan <- fmt.Sprintf(`%s sent in group '%s': %s`, sender, topic, data)
 	return nil
 }
@@ -357,6 +364,14 @@ func (p *processor) sendAuth(label, srvrPubK, clientPubK string, publisher bool)
 	}
 
 	return nil
+}
+
+func (p *processor) acker(register bool, label string, ackr chan string) {
+	if register {
+		p.ackChans[label] = ackr
+		return
+	}
+	delete(p.ackChans, label)
 }
 
 //func (p *processor) addIntruder(topic string) []models.Member {

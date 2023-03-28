@@ -24,11 +24,9 @@ for label in "${labels[@]}"; do
     break
   fi
 
-  echo "startingg"
-  echo "ssh -i ""$key_path"" ""$user"@"${ips[$counter]}"""
-
 #  screen -d -m -S "$label" ./didcomm-prober -label="${labels[$counter]}" -port="${ports[$counter]}" -pub_port="${pub_ports[$counter]}" -mock_port="${mock_ports[$counter]}" -v
   screen -d -m -S "$label" ssh -i "$key_path" "$user@${ips[$counter]}" "cd agent/ && ./didcomm-prober -label=${labels[$counter]} -port=${ports[$counter]} -pub_port=${pub_ports[$counter]} -mock_port=${mock_ports[$counter]}"
+#  ssh -f -i "$key_path" "$user@${ips[$counter]}" "cd agent/ && ./didcomm-prober -label=${labels[$counter]} -port=${ports[$counter]} -pub_port=${pub_ports[$counter]} -mock_port=${mock_ports[$counter]}"
 
   node="${ips[$counter]}:${mock_ports[$counter]}"
   echo "$label - $node started"

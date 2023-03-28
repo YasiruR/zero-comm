@@ -1,26 +1,13 @@
 package tests
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain/container"
-	"github.com/YasiruR/didcomm-prober/reqrep/mock"
 	"github.com/YasiruR/didcomm-prober/scripts/tester/group"
 	"github.com/YasiruR/didcomm-prober/scripts/tester/writer"
 	"github.com/tryfix/log"
-	"net/http"
 	"sync"
 	"time"
-)
-
-var (
-	numTests            int
-	latncygrpSizes                    = []int{1, 2, 4, 8, 16, 32, 64}
-	thrptGrpSizes                     = []int{4, 16, 32}
-	thrptTestBatchSizes               = []int{4, 16}
-	agentPort                         = 6140
-	pubPort                           = 6540
-	testLatencyBuf      time.Duration = 0
 )
 
 // todo test joining with multiple groups
@@ -102,41 +89,42 @@ func joinThroughput(cfg group.Config, conctd bool, grp []group.Member) {
 func join(topic string, pub, conctd bool, grp []group.Member, count int) (latList []float64) {
 	for i := 0; i < numTests; i++ {
 		// init agents
-		var contList []*container.Container
-		for k := 0; k < count; k++ {
-			c := group.InitAgent(fmt.Sprintf(`tester-%d`, (count*i)+k+1), agentPort+(count*i)+k, pubPort+(count*i)+k)
-			fmt.Printf("	Tester agent initialized (name: %s, port: %d, pub-endpoint: %s)\n", c.Cfg.Name, c.Cfg.Port, c.Cfg.PubEndpoint)
-			contList = append(contList, c)
-
-			go group.Listen(c)
-			go func(c *container.Container) {
-				if err := c.Server.Start(); err != nil {
-					c.Log.Fatal(`failed to start the server`, err)
-				}
-			}(c)
-
-			// generate inv
-			url, err := c.Prober.Invite()
-			if err != nil {
-				c.Log.Fatal(fmt.Sprintf(`failed generating inv - %s`, err))
-			}
-
-			wg := &sync.WaitGroup{}
-			for j, m := range grp {
-				if !conctd && j == 1 {
-					break
-				}
-
-				wg.Add(1)
-				go func(m group.Member, wg *sync.WaitGroup) {
-					if _, err = http.DefaultClient.Post(m.MockEndpoint+mock.ConnectEndpoint, `application/octet-stream`, bytes.NewBufferString(url)); err != nil {
-						log.Fatal(err)
-					}
-					wg.Done()
-				}(m, wg)
-			}
-			wg.Wait()
-		}
+		//var contList []*container.Container
+		//for k := 0; k < count; k++ {
+		//	c := group.InitAgent(fmt.Sprintf(`tester-%d`, (count*i)+k+1), agentPort+(count*i)+k, pubPort+(count*i)+k)
+		//	fmt.Printf("	Tester agent initialized (name: %s, port: %d, pub-endpoint: %s)\n", c.Cfg.Name, c.Cfg.Port, c.Cfg.PubEndpoint)
+		//	contList = append(contList, c)
+		//
+		//	go group.Listen(c)
+		//	go func(c *container.Container) {
+		//		if err := c.Server.Start(); err != nil {
+		//			c.Log.Fatal(`failed to start the server`, err)
+		//		}
+		//	}(c)
+		//
+		//	// generate inv
+		//	url, err := c.Prober.Invite()
+		//	if err != nil {
+		//		c.Log.Fatal(fmt.Sprintf(`failed generating inv - %s`, err))
+		//	}
+		//
+		//	wg := &sync.WaitGroup{}
+		//	for j, m := range grp {
+		//		if !conctd && j == 1 {
+		//			break
+		//		}
+		//
+		//		wg.Add(1)
+		//		go func(m group.Member, wg *sync.WaitGroup) {
+		//			if _, err = http.DefaultClient.Post(m.MockEndpoint+mock.ConnectEndpoint, `application/octet-stream`, bytes.NewBufferString(url)); err != nil {
+		//				log.Fatal(err)
+		//			}
+		//			wg.Done()
+		//		}(m, wg)
+		//	}
+		//	wg.Wait()
+		//}
+		contList := initTestAgents(i, count, grp, conctd)
 
 		time.Sleep(testLatencyBuf * time.Second)
 		wg := &sync.WaitGroup{}
@@ -172,15 +160,6 @@ func join(topic string, pub, conctd bool, grp []group.Member, count int) (latLis
 	agentPort += count * numTests
 	pubPort += count * numTests
 	return latList
-}
-
-func avg(latList []float64) float64 {
-	var total float64
-	for _, l := range latList {
-		total += l
-	}
-
-	return total / float64(len(latList))
 }
 
 func acceptors(joinrCount, grpSize int, conctd bool) (ids []int) {

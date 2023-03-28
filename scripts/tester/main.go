@@ -26,6 +26,8 @@ func main() {
 		tests.Join(tests.JoinLatency, testBuf, usr, keyPath)
 	case tests.JoinThroughput:
 		tests.Join(tests.JoinThroughput, testBuf, usr, keyPath)
+	case tests.PublishLatency:
+		tests.Send(testBuf, usr, keyPath)
 	default:
 		log.Fatalln(`invalid test method`)
 	}

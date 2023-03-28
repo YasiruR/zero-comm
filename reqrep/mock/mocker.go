@@ -25,11 +25,13 @@ func Start(c *container.Container) {
 	}
 
 	r := mux.NewRouter()
+	r.HandleFunc(PingEndpoint, m.handlePing).Methods(http.MethodGet)
 	r.HandleFunc(InvEndpoint, m.handleInv).Methods(http.MethodGet)
 	r.HandleFunc(ConnectEndpoint, m.handleConnect).Methods(http.MethodPost)
 	r.HandleFunc(CreateEndpoint, m.handleCreate).Methods(http.MethodPost)
 	r.HandleFunc(JoinEndpoint, m.handleJoin).Methods(http.MethodPost)
 	r.HandleFunc(KillEndpoint, m.handleKill).Methods(http.MethodPost)
+	r.HandleFunc(GrpMsgAckEndpoint, m.handleGrpMsgListnr).Methods(http.MethodPost)
 
 	go func(mockPort int, r *mux.Router) {
 		if err := http.ListenAndServe(":"+strconv.Itoa(mockPort), r); err != nil {
@@ -38,6 +40,10 @@ func Start(c *container.Container) {
 	}(c.Cfg.MockPort, r)
 
 	c.Log.Info(fmt.Sprintf(`mock server initialized and started listening on %d`, c.Cfg.MockPort))
+}
+
+func (m *mocker) handlePing(_ http.ResponseWriter, _ *http.Request) {
+	return
 }
 
 func (m *mocker) handleInv(w http.ResponseWriter, _ *http.Request) {
@@ -115,6 +121,38 @@ func (m *mocker) handleJoin(_ http.ResponseWriter, r *http.Request) {
 
 	if err = m.ctr.PubSub.Join(req.Topic, req.Acceptor, req.Publisher); err != nil {
 		m.log.Error(err)
+	}
+}
+
+func (m *mocker) handleGrpMsgListnr(_ http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	data, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		m.log.Error(fmt.Sprintf(`reading body failed - %v`, err))
+		return
+	}
+
+	var req ReqRegAck
+	if err = json.Unmarshal(data, &req); err != nil {
+		m.log.Error(fmt.Sprintf(`unmarshalling error - %v`, err))
+		return
+	}
+
+	var count int
+	ackChan := make(chan string)
+	m.ctr.PubSub.RegisterAck(req.Peer, ackChan)
+	defer m.ctr.PubSub.UnregisterAck(req.Peer)
+	for {
+		msg := <-ackChan
+		if msg != req.Msg {
+			continue
+		}
+
+		count++
+		if count == req.Count {
+			m.log.Debug(fmt.Sprintf(`reached message count registered by tester (label=%s, count=%s)`, req.Peer, req.Count))
+			return
+		}
 	}
 }
 

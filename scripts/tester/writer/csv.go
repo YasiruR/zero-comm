@@ -17,6 +17,9 @@ func Persist(test string, gc group.Config, batchSizes []int, results []float64) 
 	case `join-throughput`:
 		f, w := readFile(`results/join_throughput.csv`, []string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `init_connected`, `batch_size`, `latency_ms`})
 		writeJoinThroughput(f, w, gc, batchSizes, results)
+	case `publish-latency`:
+		f, w := readFile(`results/join_throughput.csv`, []string{`name`, `initial_size`, `batch_size`, `latency_ms`})
+		writePublishLatency(f, w, gc, batchSizes, results)
 	default:
 		fmt.Printf("# Skipped persisting results (test=%s)\n", test)
 	}
@@ -71,6 +74,21 @@ func writeJoinLatency(f *os.File, w *csv.Writer, gc group.Config, results []floa
 			fmt.Sprintf(`%t`, gc.ConsistntJoin),
 			fmt.Sprintf(`%t`, gc.Ordered),
 			fmt.Sprintf(`%t`, gc.InitConnectedAll),
+			fmt.Sprintf(`%f`, r),
+		}); err != nil {
+			log.Fatalln(`writing join results failed -`, err)
+		}
+	}
+	w.Flush()
+	f.Close()
+}
+
+func writePublishLatency(f *os.File, w *csv.Writer, gc group.Config, batchSizes []int, results []float64) {
+	for i, r := range results {
+		if err := w.Write([]string{
+			gc.Topic,
+			strconv.FormatInt(gc.InitSize, 10),
+			fmt.Sprintf(`%d`, batchSizes[i]),
 			fmt.Sprintf(`%f`, r),
 		}); err != nil {
 			log.Fatalln(`writing join results failed -`, err)

@@ -204,6 +204,8 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 				return
 			}
 
+			fmt.Println("	TRYING", m.Label)
+
 			if err = a.connectDIDComm(m); err != nil {
 				a.log.Error(fmt.Sprintf(`connecting to %s failed - %v`, m.Label, err))
 				return
@@ -215,9 +217,13 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 				return
 			}
 			resSmMap.Store(m.Label, resSm)
+
+			fmt.Println("	DONE", m.Label)
 		}(m, resSmMap, wg)
 	}
 	wg.Wait()
+
+	fmt.Println("	ALL DONE!!")
 
 	hashMap := make(map[string]string)
 	for _, m := range group.Members {
@@ -641,6 +647,15 @@ func (a *Agent) Info(topic string) (gp models.GroupParams, mems []models.Member)
 	}
 
 	return *params, mems
+}
+
+func (a *Agent) RegisterAck(label string, ackChan chan string) {
+	a.proc.acker(true, label, ackChan)
+	a.log.Info(fmt.Sprintf(`%s registered an ack responder for group messages`, label))
+}
+
+func (a *Agent) UnregisterAck(label string) {
+	a.proc.acker(false, label, nil)
 }
 
 func (a *Agent) Close() error {

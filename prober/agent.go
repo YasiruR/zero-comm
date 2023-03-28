@@ -380,7 +380,7 @@ func (p *Prober) ReadMessage(msg models.Message) (sender, text string, err error
 	if msg.Type == models.TypData {
 		p.outChan <- `Message received: '` + string(textBytes) + `'`
 	} else {
-		p.log.Trace(fmt.Sprintf(`message received for type '%s' - %s`, msg.Type, string(textBytes)))
+		p.log.Trace(fmt.Sprintf(`message received for type '%s' by %s - %s`, msg.Type, peerName, string(textBytes)))
 	}
 
 	return peerName, string(textBytes), nil
