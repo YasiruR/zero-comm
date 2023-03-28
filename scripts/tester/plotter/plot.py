@@ -33,7 +33,7 @@ def parseJoinLatency(filtrConctd, init_sizes, conctd, latency):
     for i in range(len(latency)):
         if conctd[i] != filtrConctd:
             continue
-        if tmp_size != init_sizes[i] or i == len(latency)-1:
+        if tmp_size != init_sizes[i]:
             avg_lat_list.append(np.mean(tmp_lat_list))
             err_list.append(np.std(tmp_lat_list))
             sizes.append(tmp_size)
@@ -42,6 +42,9 @@ def parseJoinLatency(filtrConctd, init_sizes, conctd, latency):
         else:
             tmp_lat_list.append(latency[i])
     
+    avg_lat_list.append(np.mean(tmp_lat_list))
+    err_list.append(np.std(tmp_lat_list))
+    sizes.append(tmp_size)
     return sizes, avg_lat_list, err_list
 
 def plotJoinLatency(sizes_con, sizes_ncon, avg_lat_list_con, avg_lat_list_ncon, err_list_con, err_list_ncon):
@@ -56,9 +59,12 @@ def plotJoinLatency(sizes_con, sizes_ncon, avg_lat_list_con, avg_lat_list_ncon, 
     plt.show()
 
 topic = 'sc-c-o-topic'
-init_sizes, conctd, latency = readJoinLatency('../results/join.csv', topic)
+init_sizes, conctd, latency = readJoinLatency('../results/join_latency.csv', topic)
 sizes_con, avg_lat_list_con, err_list_con = parseJoinLatency('true', init_sizes, conctd, latency)
 sizes_ncon, avg_lat_list_ncon, err_list_ncon = parseJoinLatency('false', init_sizes, conctd, latency)
 plotJoinLatency(sizes_con, sizes_ncon, avg_lat_list_con, avg_lat_list_ncon, err_list_con, err_list_ncon)
 
-
+print(init_sizes)
+print(conctd)
+print(sizes_ncon)
+print(avg_lat_list_ncon)

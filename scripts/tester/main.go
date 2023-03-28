@@ -8,10 +8,6 @@ import (
 	"strconv"
 )
 
-const (
-	testJoin = `join`
-)
-
 func main() {
 	args := os.Args
 	if len(args) != 5 {
@@ -25,9 +21,11 @@ func main() {
 	}
 
 	fmt.Println(`----- START -----`)
-	switch typ {
-	case testJoin:
-		tests.Join(testBuf, usr, keyPath)
+	switch tests.TestMode(typ) {
+	case tests.JoinLatency:
+		tests.Join(tests.JoinLatency, testBuf, usr, keyPath)
+	case tests.JoinThroughput:
+		tests.Join(tests.JoinThroughput, testBuf, usr, keyPath)
 	default:
 		log.Fatalln(`invalid test method`)
 	}

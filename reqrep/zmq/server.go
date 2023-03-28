@@ -58,7 +58,7 @@ func (s *Server) Start() error {
 		}
 
 		if len(msg) != 2 {
-			s.sendAck(fmt.Errorf(`received an empty/invalid message (%s)`, msg))
+			s.sendAck(fmt.Errorf(`received an empty/invalid message with length=%d (%s)`, len(msg), msg))
 			continue
 		}
 

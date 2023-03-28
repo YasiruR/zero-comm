@@ -14,20 +14,27 @@ import (
 )
 
 var (
-	numTests int
-	//groupSizes     = []int{1, 2, 5, 10, 20, 50, 100}
-	groupSizes                   = []int{1, 2, 5, 10, 25}
-	testBatchSizes               = []int{5, 10}
-	agentPort                    = 6140
-	pubPort                      = 6540
-	testLatencyBuf time.Duration = 0
+	numTests            int
+	latncygrpSizes                    = []int{1, 2, 4, 8, 16, 32, 64}
+	thrptGrpSizes                     = []int{4, 16, 32}
+	thrptTestBatchSizes               = []int{4, 16}
+	agentPort                         = 6140
+	pubPort                           = 6540
+	testLatencyBuf      time.Duration = 0
 )
 
 // todo test joining with multiple groups
 
-func Join(testBuf int64, usr, keyPath string) {
+func Join(typ TestMode, testBuf int64, usr, keyPath string) {
+	var grpSizes []int
+	if typ == JoinLatency {
+		grpSizes = latncygrpSizes
+	} else {
+		grpSizes = thrptGrpSizes
+	}
+
 	testLatencyBuf = time.Duration(testBuf)
-	for _, size := range groupSizes {
+	for _, size := range grpSizes {
 		conctd := true
 		for i := 0; i < 2; i++ {
 			// when initial group size is 1, connected-to-all will have no impact
@@ -36,17 +43,17 @@ func Join(testBuf int64, usr, keyPath string) {
 			}
 
 			fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d connected=%t] \n", size, conctd)
-			initJoinTest(`sq-c-o-topic`, `single-queue`, true, true, conctd, int64(size), usr, keyPath)
+			initJoinTest(typ, `sq-c-o-topic`, `single-queue`, true, true, conctd, int64(size), usr, keyPath)
 
 			//fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d connected=%t] \n", size, conctd)
-			//initJoinTest(`mq-c-o-topic`, `multiple-queue`, true, true, conctd, int64(size), usr, keyPath)
+			//initJoinTest(typ, `mq-c-o-topic`, `multiple-queue`, true, true, conctd, int64(size), usr, keyPath)
 
 			conctd = false
 		}
 	}
 }
 
-func initJoinTest(topic, mode string, consistntJoin, ordrd, conctd bool, size int64, usr, keyPath string) {
+func initJoinTest(typ TestMode, topic, mode string, consistntJoin, ordrd, conctd bool, size int64, usr, keyPath string) {
 	cfg := group.Config{
 		Topic:            topic,
 		InitSize:         size,
@@ -59,26 +66,37 @@ func initJoinTest(topic, mode string, consistntJoin, ordrd, conctd bool, size in
 	grp := group.InitGroup(cfg, testLatencyBuf, usr, keyPath)
 	time.Sleep(testLatencyBuf * time.Second)
 
+	if typ == JoinLatency {
+		joinLatency(cfg, conctd, grp)
+	} else {
+		joinThroughput(cfg, conctd, grp)
+	}
+
+	group.Purge()
+}
+
+func joinLatency(cfg group.Config, conctd bool, grp []group.Member) {
 	fmt.Println("# Test debug logs (latency):")
 	numTests = 3
 	latList := join(cfg.Topic, true, conctd, grp, 1)
 	writer.Persist(`join-latency`, cfg, nil, latList)
+	fmt.Printf("# Average join-latency (ms): %f\n", avg(latList))
+}
 
+func joinThroughput(cfg group.Config, conctd bool, grp []group.Member) {
 	numTests = 1
 	var thrLatList []float64
-	for _, bs := range testBatchSizes {
+	for _, bs := range thrptTestBatchSizes {
 		fmt.Printf("# Test debug logs (throughput) [batch-size=%d]:\n", bs)
 		thrLatList = append(thrLatList, join(cfg.Topic, true, conctd, grp, bs)[0])
 	}
-	writer.Persist(`join-throughput`, cfg, testBatchSizes, thrLatList)
+	writer.Persist(`join-throughput`, cfg, thrptTestBatchSizes, thrLatList)
 
-	fmt.Printf("# Average join-latency (ms): %f\n", avg(latList))
 	out := `# Load test results [batch-size, latency(ms)]: `
 	for i, lat := range thrLatList {
-		out += fmt.Sprintf(`%d:%f `, testBatchSizes[i], lat)
+		out += fmt.Sprintf(`%d:%f `, thrptTestBatchSizes[i], lat)
 	}
 	fmt.Println(out)
-	group.Purge()
 }
 
 func join(topic string, pub, conctd bool, grp []group.Member, count int) (latList []float64) {
