@@ -14,7 +14,8 @@ import (
 func initTestAgents(testId, count int, grp []group.Member, conctd bool) []*container.Container {
 	var contList []*container.Container
 	for k := 0; k < count; k++ {
-		c := group.InitAgent(fmt.Sprintf(`tester-%d`, (count*testId)+k+1), agentPort+(count*testId)+k, pubPort+(count*testId)+k)
+		agentId++
+		c := group.InitAgent(fmt.Sprintf(`tester-%d`, agentId), agentPort+(count*testId)+k, pubPort+(count*testId)+k)
 		fmt.Printf("	Tester agent initialized (name: %s, port: %d, pub-endpoint: %s)\n", c.Cfg.Name, c.Cfg.Port, c.Cfg.PubEndpoint)
 		contList = append(contList, c)
 

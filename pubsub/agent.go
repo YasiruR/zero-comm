@@ -25,8 +25,9 @@ const (
 	helloProtocolIntervalMs = 100
 )
 
-// todo init all 5 agents. Disconnect carol, then david, then eve. David joins through alice as a pub. Disconnect alice. Join carol through david
-// - sub req is sent to alice as well
+// todo send terminate msg from stop(), read it in server and return
+// todo make client and server sockets thread-safe
+// todo use domain retry params in prober
 
 type state struct {
 	myLabel     string
@@ -204,7 +205,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 				return
 			}
 
-			fmt.Println("	TRYING", m.Label)
+			//fmt.Println("	TRYING", m.Label)
 
 			if err = a.connectDIDComm(m); err != nil {
 				a.log.Error(fmt.Sprintf(`connecting to %s failed - %v`, m.Label, err))
@@ -218,12 +219,12 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 			}
 			resSmMap.Store(m.Label, resSm)
 
-			fmt.Println("	DONE", m.Label)
+			//fmt.Println("	DONE", m.Label)
 		}(m, resSmMap, wg)
 	}
 	wg.Wait()
 
-	fmt.Println("	ALL DONE!!")
+	//fmt.Println("	ALL DONE!!")
 
 	hashMap := make(map[string]string)
 	for _, m := range group.Members {

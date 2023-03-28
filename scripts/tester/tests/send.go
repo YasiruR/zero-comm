@@ -13,16 +13,21 @@ import (
 	"time"
 )
 
-func Send(testBuf int64, usr, keyPath string) {
+func Send(testBuf int64, usr, keyPath string, manualSize int) {
 	numTests = 3
 	testLatencyBuf = time.Duration(testBuf)
+	if manualSize != 0 {
+		initSendTest(`sq-c-o-topic`, `single-queue`, true, true, true, int64(manualSize), usr, keyPath)
+		return
+	}
+
 	for _, size := range latncygrpSizes {
 		fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d] \n", size)
-		initSendTest(`sq-c-o-topic`, `single-queue`, true, true, int64(size), usr, keyPath)
+		initSendTest(`sq-c-o-topic`, `single-queue`, true, true, false, int64(size), usr, keyPath)
 	}
 }
 
-func initSendTest(topic, mode string, consistntJoin, ordrd bool, size int64, usr, keyPath string) {
+func initSendTest(topic, mode string, consistntJoin, ordrd, manualInit bool, size int64, usr, keyPath string) {
 	cfg := group.Config{
 		Topic:            topic,
 		InitSize:         size,
@@ -32,7 +37,7 @@ func initSendTest(topic, mode string, consistntJoin, ordrd bool, size int64, usr
 		InitConnectedAll: false,
 	}
 
-	grp := group.InitGroup(cfg, testLatencyBuf, usr, keyPath)
+	grp := group.InitGroup(cfg, testLatencyBuf, usr, keyPath, manualInit)
 	time.Sleep(testLatencyBuf * time.Second)
 
 	latList := send(cfg.Topic, grp, 1)

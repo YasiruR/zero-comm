@@ -10,7 +10,7 @@ import (
 
 func main() {
 	args := os.Args
-	if len(args) != 5 {
+	if len(args) != 5 && len(args) != 6 {
 		log.Fatalln(`incorrect number of arguments`)
 	}
 
@@ -20,14 +20,22 @@ func main() {
 		log.Fatalln(`invalid zmq buffer`)
 	}
 
+	var manualSize int
+	if len(args) == 6 {
+		manualSize, err = strconv.Atoi(args[5])
+		if err != nil {
+			log.Fatalln(`invalid optional parameter`)
+		}
+	}
+
 	fmt.Println(`----- START -----`)
 	switch tests.TestMode(typ) {
 	case tests.JoinLatency:
-		tests.Join(tests.JoinLatency, testBuf, usr, keyPath)
+		tests.Join(tests.JoinLatency, testBuf, usr, keyPath, manualSize)
 	case tests.JoinThroughput:
-		tests.Join(tests.JoinThroughput, testBuf, usr, keyPath)
+		tests.Join(tests.JoinThroughput, testBuf, usr, keyPath, manualSize)
 	case tests.PublishLatency:
-		tests.Send(testBuf, usr, keyPath)
+		tests.Send(testBuf, usr, keyPath, manualSize)
 	default:
 		log.Fatalln(`invalid test method`)
 	}

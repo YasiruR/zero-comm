@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
 	"github.com/tryfix/log"
+	"sync"
 	"time"
 )
 
@@ -34,7 +35,7 @@ type Prober struct {
 	outChan         chan string
 	log             log.Logger
 	client          services.Client
-	syncConns       map[string]chan bool
+	syncCons        *sync.Map
 }
 
 func NewProber(c *container.Container) (p *Prober, err error) {
@@ -53,7 +54,7 @@ func NewProber(c *container.Container) (p *Prober, err error) {
 		peers:           initPeerStore(c.Log),
 		didStore:        initDIDStore(),
 		client:          c.Client,
-		syncConns:       map[string]chan bool{},
+		syncCons:        &sync.Map{},
 	}
 
 	p.initHandlers(c.Server)
@@ -119,8 +120,9 @@ func (p *Prober) SyncAccept(encodedInv string) error {
 	}
 
 	// todo set a timeout for waiting
-	p.syncConns[inviter] = make(chan bool)
-	<-p.syncConns[inviter]
+	syncChan := make(chan bool)
+	p.syncCons.Store(inviter, syncChan)
+	<-syncChan
 
 	return nil
 }
@@ -245,8 +247,16 @@ func (p *Prober) processConnRes(msg models.Message) error {
 
 	// todo send complete message
 
+	// todo any better approach?
+	var retryCount int
+retry:
 	name, pr, ok := p.peers.peerByExchId(pthId)
 	if !ok {
+		if retryCount != 3 {
+			retryCount++
+			time.Sleep(500 * time.Millisecond)
+			goto retry
+		}
 		return fmt.Errorf(`peer does not exist for exchange id %s`, pthId)
 	}
 
@@ -267,8 +277,13 @@ func (p *Prober) processConnRes(msg models.Message) error {
 	}
 
 	p.peers.add(name, models.Peer{DID: pr.DID, Services: svcs, ExchangeThId: pthId})
-	if p.syncConns[name] != nil {
-		p.syncConns[name] <- true
+	val, ok := p.syncCons.Load(name)
+	if ok {
+		syncChan, ok := val.(chan bool)
+		if !ok {
+			return fmt.Errorf(`incompatible type for sync channel (%v)`, val)
+		}
+		syncChan <- true
 	}
 
 	p.outChan <- `Connection established with ` + name

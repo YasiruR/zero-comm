@@ -24,7 +24,11 @@ type Member struct {
 	MockEndpoint string
 }
 
-func InitGroup(cfg Config, testBuf time.Duration, usr, keyPath string) []Member {
+func InitGroup(cfg Config, testBuf time.Duration, usr, keyPath string, manual bool) []Member {
+	if manual {
+		return membrs()
+	}
+
 	var consistncy string
 	if cfg.ConsistntJoin {
 		consistncy = `consistent_join`

@@ -55,3 +55,9 @@ func (g GroupMode) Valid() bool {
 	}
 	return false
 }
+
+// retry parameters
+const (
+	RetryCount      = 4
+	RetryIntervalMs = 500
+)
