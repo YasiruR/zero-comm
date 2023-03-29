@@ -22,49 +22,83 @@ func Join(typ TestMode, testBuf int64, usr, keyPath string, manualSize int) {
 
 	testLatencyBuf = time.Duration(testBuf)
 	if manualSize != 0 {
-		fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d] \n", manualSize)
-		initJoinTest(typ, `sq-c-o-topic`, `single-queue`, true, true, true, int64(manualSize), usr, keyPath)
+		fmt.Printf("\n[single-queue, join-consistent, ordered, connected, size=%d] \n", manualSize)
+		initJoinTest(typ, `sq-c-o-topic`, `single-queue`, true, true, true, true, int64(manualSize), usr, keyPath)
+		fmt.Printf("\n[single-queue, join-consistent, ordered, not-connected, size=%d] \n", manualSize)
+		initJoinTest(typ, `sq-c-o-topic`, `single-queue`, true, true, false, true, int64(manualSize), usr, keyPath)
 		return
 	}
 
 	for _, size := range grpSizes {
-		fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d] \n", size)
-		initJoinTest(typ, `sq-c-o-topic`, `single-queue`, true, true, false, int64(size), usr, keyPath)
-		//fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d connected=%t] \n", size, conctd)
-		//initJoinTest(typ, `mq-c-o-topic`, `multiple-queue`, true, true, false, int64(size), usr, keyPath)
+		conctd := true
+		for i := 0; i < 2; i++ {
+			// when initial group size is 1, connected-to-all will have no impact
+			if size == 1 && i == 1 {
+				continue
+			}
+
+			fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d] \n", size)
+			initJoinTest(typ, `sq-c-o-topic`, `single-queue`, true, true, conctd, false, int64(size), usr, keyPath)
+			//fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d connected=%t] \n", size, conctd)
+			//initJoinTest(typ, `mq-c-o-topic`, `multiple-queue`, true, true, conctd, false, int64(size), usr, keyPath)
+
+			conctd = false
+		}
 	}
 }
 
-func initJoinTest(typ TestMode, topic, mode string, consistntJoin, ordrd, manualInit bool, size int64, usr, keyPath string) {
+func initJoinTest(typ TestMode, topic, mode string, consistntJoin, ordrd, conctd, manualInit bool, size int64, usr, keyPath string) {
 	cfg := group.Config{
 		Topic:            topic,
 		InitSize:         size,
 		Mode:             mode,
 		ConsistntJoin:    consistntJoin,
 		Ordered:          ordrd,
-		InitConnectedAll: true,
+		InitConnectedAll: conctd,
 	}
 
 	grp := group.InitGroup(cfg, testLatencyBuf, usr, keyPath, manualInit)
 	time.Sleep(testLatencyBuf * time.Second)
 
-	for i := 0; i < 2; i++ {
-		// when initial group size is 1, connected-to-all will have no impact
-		if size == 1 && i == 1 {
-			continue
-		}
-
-		if typ == JoinLatency {
-			joinLatency(cfg, grp)
-		} else {
-			joinThroughput(cfg, grp)
-		}
-
-		cfg.InitConnectedAll = false
+	if typ == JoinLatency {
+		joinLatency(cfg, grp)
+	} else {
+		joinThroughput(cfg, grp)
 	}
 
 	group.Purge(manualInit)
 }
+
+//func initJoinTest(typ TestMode, topic, mode string, consistntJoin, ordrd, conctd, manualInit bool, size int64, usr, keyPath string) {
+//	cfg := group.Config{
+//		Topic:            topic,
+//		InitSize:         size,
+//		Mode:             mode,
+//		ConsistntJoin:    consistntJoin,
+//		Ordered:          ordrd,
+//		InitConnectedAll: true,
+//	}
+//
+//	grp := group.InitGroup(cfg, testLatencyBuf, usr, keyPath, manualInit)
+//	time.Sleep(testLatencyBuf * time.Second)
+//
+//	for i := 0; i < 2; i++ {
+//		// when initial group size is 1, connected-to-all will have no impact
+//		if size == 1 && i == 1 {
+//			continue
+//		}
+//
+//		if typ == JoinLatency {
+//			joinLatency(cfg, grp)
+//		} else {
+//			joinThroughput(cfg, grp)
+//		}
+//
+//		cfg.InitConnectedAll = false
+//	}
+//
+//	group.Purge(manualInit)
+//}
 
 func joinLatency(cfg group.Config, grp []group.Member) {
 	fmt.Println("# Test debug logs (join-latency):")

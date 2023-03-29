@@ -40,6 +40,4 @@ func main() {
 		log.Fatalln(`invalid test method`)
 	}
 	fmt.Println(`----- END -----`)
-
-	// todo throughput
 }

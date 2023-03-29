@@ -6,8 +6,6 @@ import (
 	"sync"
 )
 
-// todo Operation cannot be accomplished in current state. Check multithreading?
-
 const (
 	domainGlobal = `global`
 )

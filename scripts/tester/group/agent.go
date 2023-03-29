@@ -69,7 +69,7 @@ func initContainer(cfg *container.Config) *container.Container {
 		DidAgent:     did.NewHandler(),
 		Connector:    connection.NewConnector(),
 		OOB:          invitation.NewOOBService(cfg),
-		Client:       reqRepZmq.NewClient(ctx),
+		Client:       reqRepZmq.NewClient(ctx, logger),
 		Log:          logger,
 		ConnDoneChan: make(chan models.Connection),
 		OutChan:      make(chan string),

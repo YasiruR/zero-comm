@@ -13,7 +13,7 @@ const (
 var (
 	numTests            int
 	latncygrpSizes                    = []int{1, 2, 4, 8, 16}
-	thrptGrpSizes                     = []int{4, 16, 32}
+	thrptGrpSizes                     = []int{4, 16}
 	thrptJoinBatchSizes               = []int{4, 16}
 	publishBatchSizes                 = []int{1, 10, 50, 100}
 	agentId                           = 0
