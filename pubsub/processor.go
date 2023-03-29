@@ -35,6 +35,7 @@ func newProcessor(label, pubEndpoint string, c *container.Container, in *interna
 		internals:   in,
 		log:         c.Log,
 		outChan:     c.OutChan,
+		ackChans:    map[string]chan string{},
 	}
 }
 

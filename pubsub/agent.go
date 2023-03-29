@@ -347,7 +347,7 @@ func (a *Agent) connectMember(topic string, publisher bool, m models.Member, res
 // fetched peer's information. Returns the group-join response if both
 // request is successful and requester is eligible.
 func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, error) {
-	s, err := a.probr.Service(domain.ServcGroupJoin, accptr)
+	s, err := a.probr.SyncService(domain.ServcGroupJoin, accptr, domain.InternalTimeoutMs)
 	if err != nil {
 		return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, accptr, err)
 	}

@@ -17,7 +17,7 @@ type Agent interface {
 	Service(name, peer string) (*models.Service, error)
 	// SyncService is a blocking function which does not return until
 	// either of the service information or timeout is received
-	SyncService(name, peer string, timeout int64) (*models.Service, error)
+	SyncService(name, peer string, timeoutMs int64) (*models.Service, error)
 	// ValidConn checks if a peer has been connected by the given exchange ID
 	ValidConn(exchId string) (pr models.Peer, ok bool)
 }

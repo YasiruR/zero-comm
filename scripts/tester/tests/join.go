@@ -67,25 +67,25 @@ func initJoinTest(typ TestMode, topic, mode string, consistntJoin, ordrd, manual
 }
 
 func joinLatency(cfg group.Config, grp []group.Member) {
-	fmt.Println("# Test debug logs (latency):")
+	fmt.Println("# Test debug logs (join-latency):")
 	numTests = 3
 	latList := join(cfg.Topic, true, cfg.InitConnectedAll, grp, 1)
-	writer.Persist(`join-latency`, cfg, nil, latList)
+	writer.Persist(`join-latency`, cfg, nil, latList, nil)
 	fmt.Printf("# Average join-latency (ms) [connected=%t]: %f\n", cfg.InitConnectedAll, avg(latList))
 }
 
 func joinThroughput(cfg group.Config, grp []group.Member) {
 	numTests = 1
 	var thrLatList []float64
-	for _, bs := range thrptTestBatchSizes {
-		fmt.Printf("# Test debug logs (throughput) [batch-size=%d]:\n", bs)
+	for _, bs := range thrptJoinBatchSizes {
+		fmt.Printf("# Test debug logs (join-throughput) [batch-size=%d]:\n", bs)
 		thrLatList = append(thrLatList, join(cfg.Topic, true, cfg.InitConnectedAll, grp, bs)[0])
 	}
-	writer.Persist(`join-throughput`, cfg, thrptTestBatchSizes, thrLatList)
+	writer.Persist(`join-throughput`, cfg, thrptJoinBatchSizes, thrLatList, nil)
 
 	out := fmt.Sprintf(`# Load test results {batch-size, latency(ms)} [connected=%t]: `, cfg.InitConnectedAll)
 	for i, lat := range thrLatList {
-		out += fmt.Sprintf(`%d:%f `, thrptTestBatchSizes[i], lat)
+		out += fmt.Sprintf(`%d:%f `, thrptJoinBatchSizes[i], lat)
 	}
 	fmt.Println(out)
 }

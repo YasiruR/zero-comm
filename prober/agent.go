@@ -489,9 +489,9 @@ func (p *Prober) Service(name, peer string) (*models.Service, error) {
 	return srvc, nil
 }
 
-func (p *Prober) SyncService(name, peer string, timeout int64) (*models.Service, error) {
+func (p *Prober) SyncService(name, peer string, timeoutMs int64) (*models.Service, error) {
 	c := make(chan *models.Service)
-	tickr := time.NewTicker(time.Duration(timeout) * time.Second)
+	tickr := time.NewTicker(time.Duration(timeoutMs) * time.Millisecond)
 
 	go func(c chan *models.Service) {
 		for {

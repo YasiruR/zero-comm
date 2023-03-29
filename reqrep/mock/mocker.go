@@ -150,7 +150,7 @@ func (m *mocker) handleGrpMsgListnr(_ http.ResponseWriter, r *http.Request) {
 
 		count++
 		if count == req.Count {
-			m.log.Debug(fmt.Sprintf(`reached message count registered by tester (label=%s, count=%s)`, req.Peer, req.Count))
+			m.log.Debug(fmt.Sprintf(`reached message count registered by tester (label=%s, count=%d)`, req.Peer, req.Count))
 			return
 		}
 	}

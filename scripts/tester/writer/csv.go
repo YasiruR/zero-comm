@@ -9,17 +9,24 @@ import (
 	"strconv"
 )
 
-func Persist(test string, gc group.Config, batchSizes []int, results []float64) {
+// file names
+const (
+	joinLatFile = `results/join_latency.csv`
+	joinThrFile = `results/join_throughput.csv`
+	pubLatFile  = `results/publish_latency.csv`
+)
+
+func Persist(test string, gc group.Config, batchSizes []int, results []float64, pingLat []int64) {
 	switch test {
 	case `join-latency`:
-		f, w := readFile(`results/join_latency.csv`, []string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `init_connected`, `latency_ms`})
+		f, w := readFile(joinLatFile, []string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `init_connected`, `latency_ms`})
 		writeJoinLatency(f, w, gc, results)
 	case `join-throughput`:
-		f, w := readFile(`results/join_throughput.csv`, []string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `init_connected`, `batch_size`, `latency_ms`})
+		f, w := readFile(joinThrFile, []string{`name`, `initial_size`, `mode`, `consistent_join`, `causally_ordered`, `init_connected`, `batch_size`, `latency_ms`})
 		writeJoinThroughput(f, w, gc, batchSizes, results)
 	case `publish-latency`:
-		f, w := readFile(`results/join_throughput.csv`, []string{`name`, `initial_size`, `batch_size`, `latency_ms`})
-		writePublishLatency(f, w, gc, batchSizes, results)
+		f, w := readFile(pubLatFile, []string{`name`, `initial_size`, `batch_size`, `ping_ms`, `latency_ms`})
+		writePublishLatency(f, w, gc, batchSizes, pingLat, results)
 	default:
 		fmt.Printf("# Skipped persisting results (test=%s)\n", test)
 	}
@@ -83,12 +90,17 @@ func writeJoinLatency(f *os.File, w *csv.Writer, gc group.Config, results []floa
 	f.Close()
 }
 
-func writePublishLatency(f *os.File, w *csv.Writer, gc group.Config, batchSizes []int, results []float64) {
+func writePublishLatency(f *os.File, w *csv.Writer, gc group.Config, batchSizes []int, pingLat []int64, results []float64) {
 	for i, r := range results {
+		var pl int64
+		if pingLat != nil {
+			pl = pingLat[i]
+		}
 		if err := w.Write([]string{
 			gc.Topic,
 			strconv.FormatInt(gc.InitSize, 10),
 			fmt.Sprintf(`%d`, batchSizes[i]),
+			fmt.Sprintf(`%d`, pl),
 			fmt.Sprintf(`%f`, r),
 		}); err != nil {
 			log.Fatalln(`writing join results failed -`, err)

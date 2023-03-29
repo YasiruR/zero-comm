@@ -26,7 +26,7 @@ type Member struct {
 
 func InitGroup(cfg Config, testBuf time.Duration, usr, keyPath string, manual bool) []Member {
 	if manual {
-		return membrs()
+		return membrs(manual)
 	}
 
 	var consistncy string
@@ -56,10 +56,10 @@ func InitGroup(cfg Config, testBuf time.Duration, usr, keyPath string, manual bo
 		log.Fatalln(`creating group failed -`, err, string(out))
 	}
 
-	return membrs()
+	return membrs(manual)
 }
 
-func membrs() []Member {
+func membrs(manual bool) []Member {
 	// read individual members
 	f2, err := os.Open(`started_nodes.csv`)
 	if err != nil {
@@ -77,7 +77,11 @@ func membrs() []Member {
 		group = append(group, Member{Name: row[0], MockEndpoint: `http://` + row[1]})
 	}
 
-	fmt.Printf("# Group initialized: %v\n", group)
+	if manual {
+		fmt.Printf("# Group initialized [Manually]: %v\n", group)
+	} else {
+		fmt.Printf("# Group initialized: %v\n", group)
+	}
 	return group
 }
 

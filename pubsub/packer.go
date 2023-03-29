@@ -27,7 +27,7 @@ func newPacker(c *container.Container) *packer {
 // pack constructs and encodes an authcrypt message to the given receiver
 func (p *packer) pack(receiver string, recPubKey []byte, msg []byte) ([]byte, error) {
 	if recPubKey == nil {
-		s, err := p.probr.SyncService(domain.ServcGroupJoin, receiver, 5)
+		s, err := p.probr.SyncService(domain.ServcGroupJoin, receiver, 5000)
 		if err != nil {
 			return nil, fmt.Errorf(`fetching service info failed for peer %s - %v`, receiver, err)
 		}
