@@ -63,8 +63,3 @@ init_sizes, conctd, latency = readJoinLatency('../results/join_latency.csv', top
 sizes_con, avg_lat_list_con, err_list_con = parseJoinLatency('true', init_sizes, conctd, latency)
 sizes_ncon, avg_lat_list_ncon, err_list_ncon = parseJoinLatency('false', init_sizes, conctd, latency)
 plotJoinLatency(sizes_con, sizes_ncon, avg_lat_list_con, avg_lat_list_ncon, err_list_con, err_list_ncon)
-
-print(init_sizes)
-print(conctd)
-print(sizes_ncon)
-print(avg_lat_list_ncon)

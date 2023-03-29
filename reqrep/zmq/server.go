@@ -3,8 +3,10 @@ package zmq
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
+	"github.com/YasiruR/didcomm-prober/domain/services"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 	"sync"
@@ -16,9 +18,11 @@ type handler struct {
 }
 
 type Server struct {
-	skt     *zmq.Socket
-	handlrs *sync.Map
-	log     log.Logger
+	endpoint string
+	skt      *zmq.Socket
+	handlrs  *sync.Map
+	client   services.Client
+	log      log.Logger
 }
 
 func NewServer(zmqCtx *zmq.Context, c *container.Container) (*Server, error) {
@@ -32,9 +36,11 @@ func NewServer(zmqCtx *zmq.Context, c *container.Container) (*Server, error) {
 	}
 
 	return &Server{
-		skt:     skt,
-		handlrs: &sync.Map{},
-		log:     c.Log,
+		endpoint: c.Cfg.InvEndpoint,
+		skt:      skt,
+		handlrs:  &sync.Map{},
+		client:   c.Client,
+		log:      c.Log,
 	}, nil
 }
 
@@ -66,6 +72,11 @@ func (s *Server) Start() error {
 		if err = json.Unmarshal([]byte(msg[0]), &md); err != nil {
 			s.sendAck(fmt.Errorf(`unmarshalling metadata failed - %v`, err))
 			continue
+		}
+
+		if models.MsgType(md.Type) == models.TypTerminate {
+			s.log.Info(fmt.Sprintf(`shutting down server (%s)`, s.endpoint))
+			return nil
 		}
 
 		m := models.Message{Type: models.MsgType(md.Type), Data: []byte(msg[1])}
@@ -120,5 +131,8 @@ func (s *Server) handlrByTyp(msgTyp models.MsgType) (*handler, error) {
 }
 
 func (s *Server) Stop() error {
+	if _, err := s.client.Send(models.TypTerminate, []byte(domain.MsgTerminate), s.endpoint); err != nil {
+		return fmt.Errorf(`sending internal terminate message failed - %v`, err)
+	}
 	return nil
 }

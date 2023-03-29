@@ -63,7 +63,7 @@ func initJoinTest(typ TestMode, topic, mode string, consistntJoin, ordrd, manual
 		cfg.InitConnectedAll = false
 	}
 
-	group.Purge()
+	group.Purge(manualInit)
 }
 
 func joinLatency(cfg group.Config, grp []group.Member) {

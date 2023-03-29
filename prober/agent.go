@@ -247,14 +247,13 @@ func (p *Prober) processConnRes(msg models.Message) error {
 
 	// todo send complete message
 
-	// todo any better approach?
 	var retryCount int
 retry:
 	name, pr, ok := p.peers.peerByExchId(pthId)
 	if !ok {
-		if retryCount != 3 {
+		if retryCount != domain.RetryCount {
 			retryCount++
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(domain.RetryIntervalMs * time.Millisecond)
 			goto retry
 		}
 		return fmt.Errorf(`peer does not exist for exchange id %s`, pthId)

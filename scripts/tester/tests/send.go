@@ -44,7 +44,7 @@ func initSendTest(topic, mode string, consistntJoin, ordrd, manualInit bool, siz
 	writer.Persist(`publish-latency`, cfg, []int{1}, latList)
 	fmt.Printf("# Average publish-latency (ms): %f\n", avg(latList))
 
-	group.Purge()
+	group.Purge(manualInit)
 }
 
 func send(topic string, grp []group.Member, msgCount int) (latList []float64) {
@@ -79,8 +79,8 @@ func send(topic string, grp []group.Member, msgCount int) (latList []float64) {
 					log.Fatal(fmt.Sprintf(`registration failed (code=%d)`, res.StatusCode))
 				}
 
-				res.Body.Close()
 				wg.Done()
+				res.Body.Close()
 			}(m, wg)
 		}
 
@@ -93,6 +93,14 @@ func send(topic string, grp []group.Member, msgCount int) (latList []float64) {
 		wg.Wait()
 		lat := time.Since(start).Milliseconds()
 		latList = append(latList, float64(lat))
+
+		//for _, m := range grp {
+		//	pingStart := time.Now()
+		//	res, err := http.Get(m.MockEndpoint + mock.PingEndpoint)
+		//	if err != nil {
+		//		log.Error(fmt.Sprintf(`ping request to %s failed - %v`))
+		//	}
+		//}
 	}
 
 	agentPort += numTests

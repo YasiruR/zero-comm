@@ -81,7 +81,11 @@ func membrs() []Member {
 	return group
 }
 
-func Purge() {
+func Purge(manualInit bool) {
+	if manualInit {
+		return
+	}
+
 	cmd := exec.Command(`/bin/bash`, `term.sh`)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

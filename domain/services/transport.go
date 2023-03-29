@@ -15,6 +15,7 @@ type Client interface {
 	// Send transmits the message but marshalling should be independent of the
 	// transport layer to support multiple encoding mechanisms
 	Send(typ models.MsgType, data []byte, endpoint string) (res string, err error)
+	Close() error
 }
 
 type Server interface {

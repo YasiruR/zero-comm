@@ -25,10 +25,6 @@ const (
 	helloProtocolIntervalMs = 100
 )
 
-// todo send terminate msg from stop(), read it in server and return
-// todo make client and server sockets thread-safe
-// todo use domain retry params in prober
-
 type state struct {
 	myLabel     string
 	pubEndpoint string
@@ -61,7 +57,7 @@ type Agent struct {
 }
 
 func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
-	in, err := initInternals(zmqCtx, c)
+	in, err := initInternals(c)
 	if err != nil {
 		return nil, fmt.Errorf(`initializing internal services of group agent failed - %v`, err)
 	}
@@ -94,7 +90,7 @@ func NewAgent(zmqCtx *zmqPkg.Context, c *container.Container) (*Agent, error) {
 }
 
 // initInternals initializes the internal components required by the group agent
-func initInternals(zmqCtx *zmqPkg.Context, c *container.Container) (*internals, error) {
+func initInternals(c *container.Container) (*internals, error) {
 	gs := stores.NewGroupStore()
 	compctr, err := newCompactor()
 	if err != nil {
@@ -205,8 +201,6 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 				return
 			}
 
-			//fmt.Println("	TRYING", m.Label)
-
 			if err = a.connectDIDComm(m); err != nil {
 				a.log.Error(fmt.Sprintf(`connecting to %s failed - %v`, m.Label, err))
 				return
@@ -218,13 +212,9 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 				return
 			}
 			resSmMap.Store(m.Label, resSm)
-
-			//fmt.Println("	DONE", m.Label)
 		}(m, resSmMap, wg)
 	}
 	wg.Wait()
-
-	//fmt.Println("	ALL DONE!!")
 
 	hashMap := make(map[string]string)
 	for _, m := range group.Members {

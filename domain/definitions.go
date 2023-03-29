@@ -7,8 +7,9 @@ const (
 )
 
 const (
-	TopicPrefix = `urn:didcomm-queue:`
-	HelloPrefix = `hello_`
+	TopicPrefix  = `urn:didcomm-queue:`
+	HelloPrefix  = `hello_`
+	MsgTerminate = `terminate-zcomm`
 )
 
 type ConsistencyLevel string
@@ -31,6 +32,8 @@ func (c ConsistencyLevel) Valid() bool {
 	return false
 }
 
+/* Roles of group members*/
+
 type Role int
 
 const (
@@ -38,6 +41,8 @@ const (
 	RoleSubscriber
 	RoleNull
 )
+
+/* Modes of the solution based on data queues */
 
 type GroupMode string
 
@@ -56,7 +61,7 @@ func (g GroupMode) Valid() bool {
 	return false
 }
 
-// retry parameters
+// Retry parameters
 const (
 	RetryCount      = 4
 	RetryIntervalMs = 500
