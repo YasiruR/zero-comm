@@ -30,8 +30,8 @@ func Start(c *container.Container) {
 	r.HandleFunc(ConnectEndpoint, m.handleConnect).Methods(http.MethodPost)
 	r.HandleFunc(CreateEndpoint, m.handleCreate).Methods(http.MethodPost)
 	r.HandleFunc(JoinEndpoint, m.handleJoin).Methods(http.MethodPost)
-	r.HandleFunc(KillEndpoint, m.handleKill).Methods(http.MethodPost)
 	r.HandleFunc(GrpMsgAckEndpoint, m.handleGrpMsgListnr).Methods(http.MethodPost)
+	r.HandleFunc(KillEndpoint, m.handleKill).Methods(http.MethodPost)
 
 	go func(mockPort int, r *mux.Router) {
 		if err := http.ListenAndServe(":"+strconv.Itoa(mockPort), r); err != nil {

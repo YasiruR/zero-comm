@@ -164,23 +164,8 @@ func (p *processor) state(_, msg string) error {
 	}
 
 	if !m.Active {
-		if err = p.sendConnect(false, domain.RoleNull, ``, ``, m); err != nil {
-			return fmt.Errorf(`sending connect message failed - %v`, err)
-		}
-
-		if m.Publisher {
-			if err = p.sendSubscribe(false, false, false, true, status.Topic, p.myLabel, m); err != nil {
-				return fmt.Errorf(`sending internal subscribe message failed - %v`, err)
-			}
-		}
-
-		p.subs.Delete(status.Topic, m.Label)
-		if err = p.gs.DeleteMembr(status.Topic, m.Label); err != nil {
-			return fmt.Errorf(`deleting member failed - %v`, err)
-		}
-
-		if err = p.zmq.RemvKeys(m.Label); err != nil {
-			return fmt.Errorf(`removing zmq transport keys failed - %v`, err)
+		if err = p.removeMember(m, status); err != nil {
+			return fmt.Errorf(`removing member failed - %v`, err)
 		}
 		p.outChan <- m.Label + ` left group ` + status.Topic
 		return nil
@@ -257,6 +242,29 @@ func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.
 	}
 
 	msg.Reply <- packedMsg
+	return nil
+}
+
+func (p *processor) removeMember(m models.Member, status *messages.Status) error {
+	if err := p.sendConnect(false, domain.RoleNull, ``, ``, m); err != nil {
+		return fmt.Errorf(`sending connect message failed - %v`, err)
+	}
+
+	if m.Publisher {
+		if err := p.sendSubscribe(false, false, false, true, status.Topic, p.myLabel, m); err != nil {
+			return fmt.Errorf(`sending internal subscribe message failed - %v`, err)
+		}
+	}
+
+	p.subs.Delete(status.Topic, m.Label)
+	if err := p.gs.DeleteMembr(status.Topic, m.Label); err != nil {
+		return fmt.Errorf(`deleting member failed - %v`, err)
+	}
+
+	if err := p.zmq.RemvKeys(m.Label); err != nil {
+		return fmt.Errorf(`removing zmq transport keys failed - %v`, err)
+	}
+
 	return nil
 }
 

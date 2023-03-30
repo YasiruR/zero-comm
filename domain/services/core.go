@@ -60,8 +60,9 @@ type GroupAgent interface {
 	Join(topic, acceptor string, publisher bool) error
 	Send(topic, msg string) error
 	Leave(topic string) error
-	// Info and RegisterAck are util functions
 	Info(topic string) (models.GroupParams, []models.Member)
+	// RegisterAck and UnregisterAck are used for registering a
+	// callback for group messages of a member
 	RegisterAck(label string, ackChan chan string)
 	UnregisterAck(label string)
 	Close() error

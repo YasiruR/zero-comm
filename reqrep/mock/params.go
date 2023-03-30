@@ -8,8 +8,8 @@ const (
 	ConnectEndpoint   = `/oob`
 	CreateEndpoint    = `/create`
 	JoinEndpoint      = `/join`
-	KillEndpoint      = `/kill`
 	GrpMsgAckEndpoint = `/msg-ack`
+	KillEndpoint      = `/kill`
 )
 
 type reqCreate struct {
@@ -28,4 +28,11 @@ type ReqRegAck struct {
 	Peer  string `json:"peer"`
 	Msg   string `json:"msg"`
 	Count int    `json:"count"`
+}
+
+type ReqForceRemv struct {
+	Label       string `json:"label"`
+	Publisher   bool   `json:"publisher"`
+	Topic       string `json:"topic"`
+	PubEndpoint string `json:"pubEndpoint"`
 }

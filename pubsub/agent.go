@@ -158,6 +158,7 @@ func (a *Agent) Create(topic string, publisher bool, gp models.GroupParams) erro
 }
 
 func (a *Agent) Join(topic, acceptor string, publisher bool) error {
+	startTime := time.Now()
 	// check if already Joined to the topic
 	if a.gs.Joined(topic) {
 		return fmt.Errorf(`already connected to group %s`, topic)
@@ -262,6 +263,7 @@ func (a *Agent) Join(topic, acceptor string, publisher bool) error {
 		return fmt.Errorf(`publishing active status failed - %v`, err)
 	}
 
+	a.log.Trace(fmt.Sprintf(`joining to group %s completed successfully in %dms`, topic, time.Since(startTime).Milliseconds()))
 	return nil
 }
 

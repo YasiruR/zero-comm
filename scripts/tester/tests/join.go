@@ -14,18 +14,24 @@ import (
 
 func Join(typ TestMode, testBuf int64, usr, keyPath string, manualSize int) {
 	var grpSizes []int
+	var joinConsistnt bool
+	var topic string
 	if typ == JoinLatency {
 		grpSizes = latncygrpSizes
+		joinConsistnt = true
+		topic = `sq-c-o-topic`
 	} else {
 		grpSizes = thrptGrpSizes
+		joinConsistnt = false
+		topic = `sq-ic-o-topic`
 	}
 
 	testLatencyBuf = time.Duration(testBuf)
 	if manualSize != 0 {
-		fmt.Printf("\n[single-queue, join-consistent, ordered, connected, size=%d] \n", manualSize)
-		initJoinTest(typ, `sq-c-o-topic`, `single-queue`, true, true, true, true, int64(manualSize), usr, keyPath)
-		fmt.Printf("\n[single-queue, join-consistent, ordered, not-connected, size=%d] \n", manualSize)
-		initJoinTest(typ, `sq-c-o-topic`, `single-queue`, true, true, false, true, int64(manualSize), usr, keyPath)
+		fmt.Printf("\n[single-queue, join-consistent=%t, ordered, connected, size=%d] \n", joinConsistnt, manualSize)
+		initJoinTest(typ, topic, `single-queue`, joinConsistnt, true, true, true, int64(manualSize), usr, keyPath)
+		fmt.Printf("\n[single-queue, join-consistent=%t, ordered, not-connected, size=%d] \n", joinConsistnt, manualSize)
+		initJoinTest(typ, topic, `single-queue`, joinConsistnt, true, false, true, int64(manualSize), usr, keyPath)
 		return
 	}
 
@@ -37,10 +43,8 @@ func Join(typ TestMode, testBuf int64, usr, keyPath string, manualSize int) {
 				continue
 			}
 
-			fmt.Printf("\n[single-queue, join-consistent, ordered, size=%d] \n", size)
-			initJoinTest(typ, `sq-c-o-topic`, `single-queue`, true, true, conctd, false, int64(size), usr, keyPath)
-			//fmt.Printf("\n[multiple-queue, join-consistent, ordered, size=%d connected=%t] \n", size, conctd)
-			//initJoinTest(typ, `mq-c-o-topic`, `multiple-queue`, true, true, conctd, false, int64(size), usr, keyPath)
+			fmt.Printf("\n[single-queue, join-consistent=%t, connected=%t, ordered, size=%d] \n", joinConsistnt, conctd, size)
+			initJoinTest(typ, topic, `single-queue`, joinConsistnt, true, conctd, false, int64(size), usr, keyPath)
 
 			conctd = false
 		}
@@ -68,37 +72,6 @@ func initJoinTest(typ TestMode, topic, mode string, consistntJoin, ordrd, conctd
 
 	group.Purge(manualInit)
 }
-
-//func initJoinTest(typ TestMode, topic, mode string, consistntJoin, ordrd, conctd, manualInit bool, size int64, usr, keyPath string) {
-//	cfg := group.Config{
-//		Topic:            topic,
-//		InitSize:         size,
-//		Mode:             mode,
-//		ConsistntJoin:    consistntJoin,
-//		Ordered:          ordrd,
-//		InitConnectedAll: true,
-//	}
-//
-//	grp := group.InitGroup(cfg, testLatencyBuf, usr, keyPath, manualInit)
-//	time.Sleep(testLatencyBuf * time.Second)
-//
-//	for i := 0; i < 2; i++ {
-//		// when initial group size is 1, connected-to-all will have no impact
-//		if size == 1 && i == 1 {
-//			continue
-//		}
-//
-//		if typ == JoinLatency {
-//			joinLatency(cfg, grp)
-//		} else {
-//			joinThroughput(cfg, grp)
-//		}
-//
-//		cfg.InitConnectedAll = false
-//	}
-//
-//	group.Purge(manualInit)
-//}
 
 func joinLatency(cfg group.Config, grp []group.Member) {
 	fmt.Println("# Test debug logs (join-latency):")
@@ -151,6 +124,10 @@ func join(topic string, pub, conctd bool, grp []group.Member, count int) (latLis
 		for _, c := range contList {
 			if err := c.PubSub.Leave(topic); err != nil {
 				log.Error(fmt.Sprintf(`leaving group failed for %s`, c.Cfg.Name), err)
+			}
+
+			if err := c.Stop(); err != nil {
+				log.Error(fmt.Sprintf(`stopping agent %s failed - %v`, c.Cfg.Name, err))
 			}
 		}
 
