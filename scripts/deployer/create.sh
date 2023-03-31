@@ -2,8 +2,9 @@
 
 topic=$1
 mode=$2
-consistency=$3
+consistent_join=$3
 ordered=$4
+
 counter=0
 first_ip=''
 first_label=''
@@ -15,15 +16,13 @@ then
 fi
 
 # setting mode if not set by args
-if [[ "$mode" == "single" ]]
+if [[ "$mode" != "single-queue" ]]
 then
-  mode='single-queue'
-else
   mode='multiple-queue'
 fi
 
 # setting consistency if not set by args
-if [[ "$ordered" == "consistent_join" ]]
+if [[ "$consistent_join" == "consistent_join" ]]
 then
   consistency=true
 else
@@ -65,7 +64,7 @@ while IFS="," read -r label ip pub ; do
   if [[ $counter == 0 ]]
   then
     data='{"topic": "'"$topic"'", "publisher": '$is_pub', "params": {"ordered": '$ordered', "consistent_join": '$consistency', "mode": "'"$mode"'"}}'
-    echo "date: $data"
+    echo "data: $data"
     curl -X POST --header 'Content-Type: application/json' --data-raw "$data" "${ip}/create"
 
     counter=$((counter+1))

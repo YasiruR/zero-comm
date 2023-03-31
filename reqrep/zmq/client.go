@@ -3,78 +3,213 @@ package zmq
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	zmq "github.com/pebbe/zmq4"
+	"github.com/tryfix/log"
 	"sync"
 )
 
-type Client struct {
-	ctx   *zmq.Context
-	peers *sync.Map
+type req struct {
+	typ      models.MsgType
+	data     []byte
+	endpoint string
+	resChan  chan res
 }
 
-func NewClient(zmqCtx *zmq.Context) *Client {
+type res struct {
+	msg string
+	err error
+}
+
+type Client struct {
+	ctx     *zmq.Context
+	chanMap *sync.Map
+	log     log.Logger
+}
+
+func NewClient(zmqCtx *zmq.Context, log log.Logger) *Client {
 	return &Client{
-		ctx:   zmqCtx,
-		peers: &sync.Map{},
+		ctx:     zmqCtx,
+		chanMap: &sync.Map{},
+		log:     log,
 	}
 }
 
 // Send connects to the endpoint per each message since it is more appropriate8
 // with DIDComm as by nature it manifests an asynchronous simplex communication.
-func (c *Client) Send(typ models.MsgType, data []byte, endpoint string) (res string, err error) {
-	skt, err := c.socket(endpoint)
-	if err != nil {
-		return ``, fmt.Errorf(`fetching zmq socket failed - %v`, err)
+func (c *Client) Send(typ models.MsgType, data []byte, endpoint string) (response string, err error) {
+	//resChan := make(chan res)
+	//c.sendChan <- req{typ: typ, data: data, endpoint: endpoint, resChan: resChan}
+	//resMsg := <-resChan
+	//if resMsg.err != nil {
+	//	return ``, fmt.Errorf(`send error - %v`, resMsg.err)
+	//}
+	//
+	//return resMsg.msg, nil
+
+	inChan, ok := c.sendr(endpoint)
+	if !ok {
+		inChan = make(chan req)
+		go c.initSendr(endpoint, inChan)
 	}
 
-	metaByts, err := json.Marshal(metadata{Type: int(typ)})
-	if err != nil {
-		return ``, fmt.Errorf(`marshalling metadata failed - %v`, err)
+	resChan := make(chan res)
+	inChan <- req{typ: typ, data: data, endpoint: endpoint, resChan: resChan}
+	resMsg := <-resChan
+	if resMsg.err != nil {
+		return ``, fmt.Errorf(`send error - %v`, resMsg.err)
 	}
 
-	if _, err = skt.SendMessage([][]byte{metaByts, data}); err != nil {
-		return ``, fmt.Errorf(`sending zmq message by sender failed - %v`, err)
-	}
-
-receive:
-	msgs, err := skt.RecvMessage(0)
-	if err != nil {
-		if err.Error() == errTempUnavail {
-			goto receive
-		}
-		return ``, fmt.Errorf(`receiving zmq message by sender failed - %v`, err)
-	}
-
-	if len(msgs) == 0 {
-		return ``, fmt.Errorf(`received an empty message`)
-	}
-
-	if msgs[0] == failedRes {
-		return ``, fmt.Errorf(`received an error message`)
-	}
-
-	return msgs[0], nil
+	return resMsg.msg, nil
 }
 
-func (c *Client) socket(endpoint string) (skt *zmq.Socket, err error) {
-	val, ok := c.peers.Load(endpoint)
-	if ok {
-		skt, ok = val.(*zmq.Socket)
-		if ok {
-			return skt, nil
-		}
+func (c *Client) sendr(endpoint string) (inChan chan req, ok bool) {
+	val, ok := c.chanMap.Load(endpoint)
+	if !ok {
+		return nil, false
 	}
 
-	skt, err = c.ctx.NewSocket(zmq.REQ)
+	inChan, ok = val.(chan req)
+	if !ok {
+		return nil, false
+	}
+
+	return inChan, true
+}
+
+func (c *Client) initSendr(endpoint string, inChan chan req) {
+	c.chanMap.Store(endpoint, inChan)
+	skt, err := c.ctx.NewSocket(zmq.REQ)
 	if err != nil {
-		return nil, fmt.Errorf(`creating new socket for endpoint %s failed - %v`, endpoint, err)
+		c.log.Fatal(fmt.Sprintf(`creating new socket for endpoint %s failed - %v`, endpoint, err))
 	}
 
 	if err = skt.Connect(endpoint); err != nil {
-		return nil, fmt.Errorf(`connecting to zmq socket (%s) failed - %v`, endpoint, err)
+		c.log.Fatal(fmt.Sprintf(`connecting to zmq socket (%s) failed - %v`, endpoint, err))
 	}
 
-	c.peers.Store(endpoint, skt)
-	return skt, nil
+	for {
+		reqMsg := <-inChan
+		if string(reqMsg.data) == domain.MsgTerminate {
+			return
+		}
+
+		metaByts, err := json.Marshal(metadata{Type: int(reqMsg.typ)})
+		if err != nil {
+			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`marshalling metadata failed - %v`, err)}
+			continue
+		}
+
+		if _, err = skt.SendMessage([][]byte{metaByts, reqMsg.data}); err != nil {
+			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`sending zmq message by sender failed - %v`, err)}
+			continue
+		}
+
+	receive:
+		resMsgs, err := skt.RecvMessage(0)
+		if err != nil {
+			if err.Error() == errTempUnavail {
+				goto receive
+			}
+			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`receiving zmq message by sender failed - %v`, err)}
+			continue
+		}
+
+		if len(resMsgs) == 0 {
+			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`received an empty message`)}
+			continue
+		}
+
+		if resMsgs[0] == failedRes {
+			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`received an error message`)}
+			continue
+		}
+
+		reqMsg.resChan <- res{msg: resMsgs[0], err: nil}
+	}
+}
+
+//func (c *Client) socket(endpoint string) (skt *zmq.Socket, err error) {
+//	val, ok := c.peers.Load(endpoint)
+//	if ok {
+//		skt, ok = val.(*zmq.Socket)
+//		if ok {
+//			return skt, nil
+//		}
+//	}
+//
+//	skt, err = c.ctx.NewSocket(zmq.REQ)
+//	if err != nil {
+//		return nil, fmt.Errorf(`creating new socket for endpoint %s failed - %v`, endpoint, err)
+//	}
+//
+//	if err = skt.Connect(endpoint); err != nil {
+//		return nil, fmt.Errorf(`connecting to zmq socket (%s) failed - %v`, endpoint, err)
+//	}
+//
+//	c.peers.Store(endpoint, skt)
+//	return skt, nil
+//}
+//
+//func (c *Client) sender() {
+//	for {
+//		reqMsg := <-c.sendChan
+//		if string(reqMsg.data) == domain.MsgTerminate {
+//			return
+//		}
+//
+//		skt, err := c.socket(reqMsg.endpoint)
+//		if err != nil {
+//			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`fetching zmq socket failed - %v`, err)}
+//			continue
+//		}
+//
+//		metaByts, err := json.Marshal(metadata{Type: int(reqMsg.typ)})
+//		if err != nil {
+//			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`marshalling metadata failed - %v`, err)}
+//			continue
+//		}
+//
+//		if _, err = skt.SendMessage([][]byte{metaByts, reqMsg.data}); err != nil {
+//			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`sending zmq message by sender failed - %v`, err)}
+//			continue
+//		}
+//
+//	receive:
+//		resMsgs, err := skt.RecvMessage(0)
+//		if err != nil {
+//			if err.Error() == errTempUnavail {
+//				goto receive
+//			}
+//			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`receiving zmq message by sender failed - %v`, err)}
+//			continue
+//		}
+//
+//		if len(resMsgs) == 0 {
+//			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`received an empty message`)}
+//			continue
+//		}
+//
+//		if resMsgs[0] == failedRes {
+//			reqMsg.resChan <- res{msg: ``, err: fmt.Errorf(`received an error message`)}
+//			continue
+//		}
+//
+//		reqMsg.resChan <- res{msg: resMsgs[0], err: nil}
+//	}
+//}
+
+func (c *Client) Close() error {
+	c.chanMap.Range(func(key, val any) bool {
+		inChan, ok := val.(chan req)
+		if !ok {
+			return true
+		}
+
+		inChan <- req{data: []byte(domain.MsgTerminate)}
+		return true
+	})
+
+	return nil
 }

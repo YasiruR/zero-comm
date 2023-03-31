@@ -15,6 +15,7 @@ type Client interface {
 	// Send transmits the message but marshalling should be independent of the
 	// transport layer to support multiple encoding mechanisms
 	Send(typ models.MsgType, data []byte, endpoint string) (res string, err error)
+	Close() error
 }
 
 type Server interface {
@@ -26,15 +27,4 @@ type Server interface {
 	AddHandler(mt models.MsgType, notifier chan models.Message, async bool)
 	RemoveHandler(msgType string)
 	Stop() error
-}
-
-/* message queue functions */
-
-type GroupAgent interface {
-	Create(topic string, publisher bool, gp models.GroupParams) error
-	Join(topic, acceptor string, publisher bool) error
-	Send(topic, msg string) error
-	Leave(topic string) error
-	Info(topic string) []models.Member
-	Close() error
 }

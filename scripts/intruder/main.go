@@ -107,7 +107,7 @@ func init() {
 	}
 	ip := `tcp://` + ips[0].String() + `:`
 
-	logger := log3.NewLogger(true, 3)
+	logger := log3.NewLogger(true, 3, log3.LevelTrace)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
 	ctx, err := zmq.NewContext()
@@ -135,7 +135,7 @@ func init() {
 		DidAgent:     did.NewHandler(),
 		Connector:    connection.NewConnector(),
 		OOB:          invitation.NewOOBService(&cfg),
-		Client:       reqRepZmq.NewClient(ctx),
+		Client:       reqRepZmq.NewClient(ctx, logger),
 		Log:          logger,
 		ConnDoneChan: make(chan models.Connection),
 		OutChan:      make(chan string),

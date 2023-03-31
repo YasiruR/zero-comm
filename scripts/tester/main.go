@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"github.com/YasiruR/didcomm-prober/scripts/tester/tests"
 	"log"
 	"os"
 	"strconv"
@@ -8,37 +10,34 @@ import (
 
 func main() {
 	args := os.Args
-	if len(args) != 5 {
+	if len(args) != 5 && len(args) != 6 {
 		log.Fatalln(`incorrect number of arguments`)
 	}
 
-	typ, strSize, strBuf, mode := args[1], args[2], args[3], args[4]
-	buf, err := strconv.ParseInt(strBuf, 10, 64)
+	typ, strTestBuf, usr, keyPath := args[1], args[2], args[3], args[4]
+	testBuf, err := strconv.ParseInt(strTestBuf, 10, 64)
 	if err != nil {
-		log.Fatalln(`invalid buffer: `, err)
+		log.Fatalln(`invalid zmq buffer`)
 	}
 
-	size, err := strconv.ParseInt(strSize, 10, 64)
-	if err != nil {
-		log.Fatalln(`invalid size: `, err)
+	var manualSize int
+	if len(args) == 6 {
+		manualSize, err = strconv.Atoi(args[5])
+		if err != nil {
+			log.Fatalln(`invalid optional parameter`)
+		}
 	}
 
-	var singleQ bool
-	switch mode {
-	case `s`:
-		singleQ = true
-	case `m`:
-		singleQ = false
+	fmt.Println(`----- START -----`)
+	switch tests.TestMode(typ) {
+	case tests.JoinLatency:
+		tests.Join(tests.JoinLatency, testBuf, usr, keyPath, manualSize)
+	case tests.JoinThroughput:
+		tests.Join(tests.JoinThroughput, testBuf, usr, keyPath, manualSize)
+	case tests.PublishLatency:
+		tests.Send(testBuf, usr, keyPath, manualSize)
 	default:
-		log.Fatalln(`incorrect mode`)
+		log.Fatalln(`invalid test method`)
 	}
-
-	initGroup(int(size))
-
-	switch typ {
-	case `join`:
-		joinLatency(int(buf), singleQ, true)
-	}
-
-	// todo throughput
+	fmt.Println(`----- END -----`)
 }

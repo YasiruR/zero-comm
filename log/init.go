@@ -4,17 +4,23 @@ import (
 	"github.com/tryfix/log"
 )
 
+const (
+	LevelTrace = "TRACE"
+	LevelError = "ERROR"
+	LevelWarn  = "WARN"
+)
+
 type Logger struct {
 	logEnabled bool
 	log.Logger
 }
 
-func NewLogger(logEnabled bool, skipCount int) *Logger {
+func NewLogger(logEnabled bool, skipCount int, level string) *Logger {
 	return &Logger{
 		logEnabled: logEnabled,
 		Logger: log.Constructor.Log(
 			log.WithColors(true),
-			log.WithLevel("TRACE"),
+			log.WithLevel(log.Level(level)),
 			log.WithFilePath(true),
 			log.WithSkipFrameCount(skipCount),
 		),

@@ -15,7 +15,11 @@ type Agent interface {
 	ReadMessage(msg models.Message) (sender, text string, err error)
 	Peer(label string) (models.Peer, error)
 	Service(name, peer string) (*models.Service, error)
-	ValidConn(exchId string) (ok bool, pr models.Peer)
+	// SyncService is a blocking function which does not return until
+	// either of the service information or timeout is received
+	SyncService(name, peer string, timeoutMs int64) (*models.Service, error)
+	// ValidConn checks if a peer has been connected by the given exchange ID
+	ValidConn(exchId string) (pr models.Peer, ok bool)
 }
 
 type DIDUtils interface {
@@ -47,4 +51,19 @@ type OutOfBand interface {
 type Discoverer interface {
 	Query(endpoint, query, comment string) (fs []models.Feature, err error)
 	Disclose(id, query string) messages.DiscloseFeature
+}
+
+/* message queue functions */
+
+type GroupAgent interface {
+	Create(topic string, publisher bool, gp models.GroupParams) error
+	Join(topic, acceptor string, publisher bool) error
+	Send(topic, msg string) error
+	Leave(topic string) error
+	Info(topic string) (models.GroupParams, []models.Member)
+	// RegisterAck and UnregisterAck are used for registering a
+	// callback for group messages of a member
+	RegisterAck(label string, ackChan chan string)
+	UnregisterAck(label string)
+	Close() error
 }

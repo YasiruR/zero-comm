@@ -1,4 +1,4 @@
-package pubsub
+package transport
 
 import (
 	"fmt"
@@ -79,16 +79,10 @@ func (a *auth) setPubAuthn(skt *zmqPkg.Socket) error {
 	return nil
 }
 
-func (a *auth) setPeerAuthn(peer, servPubKey, clientPubKey string, sktState, sktMsgs *zmqPkg.Socket) error {
-	zmqPkg.AuthCurveAdd(domainGlobal, clientPubKey)
+func (a *auth) setPeerStateAuthn(peer, servPubKey, clientPubKey string, sktState *zmqPkg.Socket) error {
+	a.addClientPubKey(clientPubKey)
 	if err := sktState.ClientAuthCurve(servPubKey, a.client.pub, a.client.prvt); err != nil {
 		return fmt.Errorf(`setting curve client authentication to zmq state socket failed - %v`, err)
-	}
-
-	if sktMsgs != nil {
-		if err := sktMsgs.ClientAuthCurve(servPubKey, a.client.pub, a.client.prvt); err != nil {
-			return fmt.Errorf(`setting curve client authentication to zmq data socket failed - %v`, err)
-		}
 	}
 
 	a.Lock()
@@ -98,7 +92,14 @@ func (a *auth) setPeerAuthn(peer, servPubKey, clientPubKey string, sktState, skt
 	return nil
 }
 
-func (a *auth) remvKeys(peer string) error {
+func (a *auth) setPeerDataAuthn(servPubKey string, sktData *zmqPkg.Socket) error {
+	if err := sktData.ClientAuthCurve(servPubKey, a.client.pub, a.client.prvt); err != nil {
+		return fmt.Errorf(`setting curve client authentication to zmq data socket failed - %v`, err)
+	}
+	return nil
+}
+
+func (a *auth) RemvKeys(peer string) error {
 	a.Lock()
 	defer a.Unlock()
 	val, ok := a.keys.Load(peer)
@@ -115,6 +116,21 @@ func (a *auth) remvKeys(peer string) error {
 	a.keys.Delete(peer)
 
 	return nil
+}
+
+// modified pebbe/zmq4/auth.go with a mutex since key maps are not concurrent-safe
+func (a *auth) addClientPubKey(key string) {
+	a.Lock()
+	defer a.Unlock()
+	zmqPkg.AuthCurveAdd(domainGlobal, key) // tell authenticator to use this client public key
+}
+
+func (a *auth) ServrPubKey() string {
+	return a.servr.pub
+}
+
+func (a *auth) ClientPubKey() string {
+	return a.client.pub
 }
 
 func (a *auth) close() error {

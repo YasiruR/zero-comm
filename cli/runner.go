@@ -26,13 +26,13 @@ type runner struct {
 	outChan chan string
 	disCmds uint64 // flag to identify whether output cursor is on basic commands or not
 	pubsub  services.GroupAgent
+	verbose bool
 }
 
 func ParseArgs() *container.Args {
 	n := flag.String(`label`, ``, `agent's name'`)
 	p := flag.Int(`port`, 0, `agent's port'`)
 	pub := flag.Int(`pub_port`, 0, `agent's publishing port'`)
-	bufLat := flag.Int(`buf`, 500, `latency buffer for zmq in milli-seconds`)
 	mocker := flag.Bool(`mock`, true, `enables mocking functions`)
 	mockPort := flag.Int(`mock_port`, 0, `port for mocking functions`)
 	v := flag.Bool(`v`, false, `logging`)
@@ -47,7 +47,6 @@ func ParseArgs() *container.Args {
 		Name:     *n,
 		Port:     *p,
 		PubPort:  *pub,
-		ZmqBufMs: *bufLat,
 		Mocker:   *mocker,
 		MockPort: *mockPort,
 		Verbose:  *v,
@@ -64,8 +63,9 @@ func Init(c *container.Container) {
 		prober:  c.Prober,
 		disc:    discovery.NewDiscoverer(c),
 		outChan: c.OutChan,
-		log:     internalLog.NewLogger(c.Cfg.Verbose, 5),
+		log:     internalLog.NewLogger(c.Cfg.Verbose, 5, internalLog.LevelTrace),
 		pubsub:  c.PubSub,
+		verbose: c.Cfg.Verbose,
 	}
 
 	go r.listen()
@@ -149,11 +149,15 @@ func (r *runner) enableCommands() {
 func (r *runner) listen() {
 	for {
 		text := <-r.outChan
+		if !r.verbose {
+			continue
+		}
+
 		if r.disCmds == 1 {
 			atomic.StoreUint64(&r.disCmds, 0)
 			fmt.Println()
 		}
-		r.output(text)
+		r.output(text, true)
 	}
 }
 
@@ -166,7 +170,7 @@ func (r *runner) generateInvitation() {
 		return
 	}
 
-	r.output(fmt.Sprintf("Invitation URL: %s", inv))
+	r.output(fmt.Sprintf("Invitation URL: %s", inv), true)
 }
 
 func (r *runner) connectWithInv() {
@@ -216,9 +220,10 @@ func (r *runner) discover() {
 func (r *runner) createGroup() {
 	topic := r.input(`Topic`)
 	strPub := r.input(`Publisher (Y/N)`)
-	mode := r.input(`Group mode (single/multiple[default])`)
+	mode := r.input(`Group queue mode [single,multiple] (S/M)`)
 	strJoinConsist := r.input(`Strict consistency for join operation (Y/N)`)
 	strOrdrd := r.input(`Causal consistency for group messages (Y/N)`)
+	//mode, strJoinConsist, strOrdrd, strPub = `m`, `y`, `y`, `y`
 
 	publisher, err := r.validBool(strPub)
 	if err != nil {
@@ -238,13 +243,20 @@ func (r *runner) createGroup() {
 		return
 	}
 
+	var gm domain.GroupMode
+	if mode == `s` || mode == `S` {
+		gm = domain.SingleQueueMode
+	} else {
+		gm = domain.MultipleQueueMode
+	}
+
 	if err = r.pubsub.Create(topic, publisher,
-		models.GroupParams{OrderEnabled: ordrd, JoinConsistent: joinConsist, Mode: domain.GroupMode(mode)},
+		models.GroupParams{OrderEnabled: ordrd, JoinConsistent: joinConsist, Mode: gm},
 	); err != nil {
 		r.error(`create group failed`, err)
 		return
 	}
-	r.output(`Group created`)
+	r.output(`Group created`, true)
 }
 
 func (r *runner) joinGroup() {
@@ -262,7 +274,7 @@ func (r *runner) joinGroup() {
 		r.error(`group join failed`, err)
 		return
 	}
-	r.output(`Joined group ` + topic)
+	r.output(`Joined group `+topic, true)
 }
 
 func (r *runner) groupMsg() {
@@ -283,7 +295,17 @@ func (r *runner) leave() {
 
 func (r *runner) groupInfo() {
 	topic := r.input(`Topic`)
-	r.output(fmt.Sprintf(`%v`, r.pubsub.Info(topic)))
+	params, mems := r.pubsub.Info(topic)
+	if mems == nil {
+		r.output(`Topic does not exist`, true)
+		return
+	}
+
+	r.output(fmt.Sprintf(`Mode: %s`, params.Mode), true)
+	r.output(fmt.Sprintf(`Causally ordered: %t`, params.OrderEnabled), false)
+	r.output(fmt.Sprintf(`Virtual synchrony at join: %t`, params.JoinConsistent), false)
+	r.output(fmt.Sprintf(`Number of members: %d`, len(mems)), false)
+	r.output(fmt.Sprintf(`Member list: %v`, mems), false)
 }
 
 /* command-line specific functions */
@@ -299,8 +321,12 @@ readInput:
 	return strings.TrimSpace(msg)
 }
 
-func (r *runner) output(text string) {
-	fmt.Printf("-> %s\n", text)
+func (r *runner) output(text string, firstLine bool) {
+	if firstLine {
+		fmt.Printf("-> %s\n", text)
+		return
+	}
+	fmt.Printf("   %s\n", text)
 }
 
 func (r *runner) outputList(title string, list []string) {

@@ -1,0 +1,12 @@
+name,initial_size,mode,consistent_join,causally_ordered,init_connected,batch_size,latency_ms
+sq-ic-o-topic,4,single-queue,false,true,true,4,2608.000000
+sq-ic-o-topic,4,single-queue,false,true,true,16,2725.000000
+sq-ic-o-topic,4,single-queue,false,true,false,4,8381.000000
+sq-ic-o-topic,4,single-queue,false,true,false,16,23022.000000
+sq-ic-o-topic,16,single-queue,false,true,true,4,2966.000000
+sq-ic-o-topic,16,single-queue,false,true,true,16,3134.000000
+sq-ic-o-topic,16,single-queue,false,true,false,4,8573.000000
+sq-ic-o-topic,16,single-queue,false,true,false,16,23596.000000
+sq-ic-o-topic,64,single-queue,false,true,true,4,3711.000000
+sq-ic-o-topic,64,single-queue,false,true,true,16,5412.000000
+sq-ic-o-topic,64,single-queue,false,true,false,4,9293.000000

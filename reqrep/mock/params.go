@@ -3,11 +3,13 @@ package mock
 import "github.com/YasiruR/didcomm-prober/domain/models"
 
 const (
-	InvEndpoint     = `/inv`
-	ConnectEndpoint = `/oob`
-	CreateEndpoint  = `/create`
-	JoinEndpoint    = `/join`
-	KillEndpoint    = `/kill`
+	PingEndpoint      = `/ping`
+	InvEndpoint       = `/inv`
+	ConnectEndpoint   = `/oob`
+	CreateEndpoint    = `/create`
+	JoinEndpoint      = `/join`
+	GrpMsgAckEndpoint = `/msg-ack`
+	KillEndpoint      = `/kill`
 )
 
 type reqCreate struct {
@@ -20,4 +22,17 @@ type reqJoin struct {
 	Topic     string `json:"topic"`
 	Acceptor  string `json:"acceptor"`
 	Publisher bool   `json:"publisher"`
+}
+
+type ReqRegAck struct {
+	Peer  string `json:"peer"`
+	Msg   string `json:"msg"`
+	Count int    `json:"count"`
+}
+
+type ReqForceRemv struct {
+	Label       string `json:"label"`
+	Publisher   bool   `json:"publisher"`
+	Topic       string `json:"topic"`
+	PubEndpoint string `json:"pubEndpoint"`
 }

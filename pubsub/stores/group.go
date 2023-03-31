@@ -6,7 +6,6 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/pubsub/validator"
 	"sync"
-	"time"
 )
 
 const (
@@ -56,13 +55,26 @@ func (g *Group) AddMembrs(topic string, mems ...models.Member) error {
 	return nil
 }
 
-func (g *Group) DeleteMembr(topic, membr string) {
+func (g *Group) DeleteMembr(topic, membr string) error {
 	g.Lock()
 	defer g.Unlock()
 	if g.groups[topic] == nil {
-		return
+		return nil
 	}
 	delete(g.groups[topic].Members, membr)
+
+	var gm []models.Member
+	for _, m := range g.groups[topic].Members {
+		gm = append(gm, m)
+	}
+
+	hash, err := validator.Calculate(gm)
+	if err != nil {
+		return fmt.Errorf(`calculating group checksum failed - %v`, err)
+	}
+
+	g.groups[topic].Checksum = hash
+	return nil
 }
 
 func (g *Group) DeleteTopic(topic string) {
@@ -132,6 +144,17 @@ func (g *Group) SetParams(topic string, gp models.GroupParams) error {
 	return nil
 }
 
+func (g *Group) Params(topic string) *models.GroupParams {
+	g.RLock()
+	defer g.RUnlock()
+
+	if g.groups[topic] == nil {
+		return nil
+	}
+
+	return g.groups[topic].GroupParams
+}
+
 func (g *Group) Mode(topic string) domain.GroupMode {
 	g.RLock()
 	defer g.RUnlock()
@@ -154,22 +177,4 @@ func (g *Group) Checksum(topic string) string {
 	g.RLock()
 	g.RUnlock()
 	return g.groups[topic].Checksum
-}
-
-func (g *Group) Notifier(topic, msgHash string, out chan bool) {
-	t := time.NewTicker(notifierSleepMs)
-	for {
-		select {
-		case <-t.C:
-			g.RLock()
-			hash := g.groups[topic].Checksum
-			g.RUnlock()
-
-			if hash == msgHash {
-				out <- true
-				t.Stop()
-				return
-			}
-		}
-	}
 }

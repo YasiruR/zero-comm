@@ -46,7 +46,7 @@ func setConfigs(args *container.Args) *container.Config {
 }
 
 func initContainer(cfg *container.Config) *container.Container {
-	logger := log.NewLogger(cfg.Args.Verbose, 3)
+	logger := log.NewLogger(cfg.Args.Verbose, 3, log.LevelTrace)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
 	ctx, err := zmq.NewContext()
@@ -61,7 +61,7 @@ func initContainer(cfg *container.Config) *container.Container {
 		DidAgent:     did.NewHandler(),
 		Connector:    connection.NewConnector(),
 		OOB:          invitation.NewOOBService(cfg),
-		Client:       reqRepZmq.NewClient(ctx),
+		Client:       reqRepZmq.NewClient(ctx, logger),
 		Log:          logger,
 		ConnDoneChan: make(chan models.Connection),
 		OutChan:      make(chan string),

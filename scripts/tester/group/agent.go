@@ -1,4 +1,4 @@
-package main
+package group
 
 import (
 	"fmt"
@@ -19,13 +19,12 @@ import (
 	"strconv"
 )
 
-func initAgent(name string, port, pubPort, buf int, singleQ bool) *container.Container {
+func InitAgent(name string, port, pubPort int) *container.Container {
 	return initContainer(setConfigs(&container.Args{
-		Name:     name,
-		Port:     port,
-		Verbose:  false,
-		PubPort:  pubPort,
-		ZmqBufMs: buf,
+		Name:    name,
+		Port:    port,
+		Verbose: true,
+		PubPort: pubPort,
 	}))
 }
 
@@ -55,7 +54,7 @@ func setConfigs(args *container.Args) *container.Config {
 }
 
 func initContainer(cfg *container.Config) *container.Container {
-	logger := log.NewLogger(cfg.Args.Verbose, 3)
+	logger := log.NewLogger(cfg.Args.Verbose, 2, log.LevelWarn)
 	packer := crypto.NewPacker(logger)
 	km := crypto.NewKeyManager()
 	ctx, err := zmq.NewContext()
@@ -70,7 +69,7 @@ func initContainer(cfg *container.Config) *container.Container {
 		DidAgent:     did.NewHandler(),
 		Connector:    connection.NewConnector(),
 		OOB:          invitation.NewOOBService(cfg),
-		Client:       reqRepZmq.NewClient(ctx),
+		Client:       reqRepZmq.NewClient(ctx, logger),
 		Log:          logger,
 		ConnDoneChan: make(chan models.Connection),
 		OutChan:      make(chan string),
@@ -96,7 +95,7 @@ func initContainer(cfg *container.Config) *container.Container {
 	return c
 }
 
-func listen(c *container.Container) {
+func Listen(c *container.Container) {
 	for {
 		_ = <-c.OutChan
 		//fmt.Printf("-> %s\n", text)

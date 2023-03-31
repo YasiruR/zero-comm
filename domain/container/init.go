@@ -12,7 +12,6 @@ type Args struct {
 	Name     string
 	Port     int
 	PubPort  int
-	ZmqBufMs int
 	Mocker   bool
 	MockPort int
 	Verbose  bool
@@ -49,6 +48,10 @@ func (c *Container) Stop() error {
 
 	if err := c.PubSub.Close(); err != nil {
 		return fmt.Errorf(`group-agent shutdown failed - %v`, err)
+	}
+
+	if err := c.Client.Close(); err != nil {
+		return fmt.Errorf(`client shutdown failed - %v`, err)
 	}
 
 	c.Log.Info(`graceful shutdown of agent completed successfully`)

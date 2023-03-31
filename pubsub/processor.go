@@ -8,28 +8,34 @@ import (
 	"github.com/YasiruR/didcomm-prober/domain/messages"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	servicesPkg "github.com/YasiruR/didcomm-prober/domain/services"
+	"github.com/YasiruR/didcomm-prober/pubsub/transport"
 	"github.com/btcsuite/btcutil/base58"
 	"github.com/google/uuid"
-	zmqPkg "github.com/pebbe/zmq4"
 	"github.com/tryfix/log"
 )
 
 // processor implements the handlers functions for incoming messages
 type processor struct {
-	myLabel string
-	probr   servicesPkg.Agent
-	log     log.Logger
-	outChan chan string
+	myLabel     string
+	pubEndpoint string
+	outChan     chan string
+	probr       servicesPkg.Agent
+	log         log.Logger
+	// sync map may not be required as rarely updated by multiple go-routines
+	// and always read only by one go-routine
+	ackChans map[string]chan string
 	*internals
 }
 
-func newProcessor(label string, c *container.Container, in *internals) *processor {
+func newProcessor(label, pubEndpoint string, c *container.Container, in *internals) *processor {
 	return &processor{
-		myLabel:   label,
-		probr:     c.Prober,
-		internals: in,
-		log:       c.Log,
-		outChan:   c.OutChan,
+		myLabel:     label,
+		pubEndpoint: pubEndpoint,
+		probr:       c.Prober,
+		internals:   in,
+		log:         c.Log,
+		outChan:     c.OutChan,
+		ackChans:    map[string]chan string{},
 	}
 }
 
@@ -99,13 +105,8 @@ func (p *processor) subscriptions(msg *models.Message) error {
 		return fmt.Errorf(`requester (%s) is not eligible`, sm.Member.Label)
 	}
 
-	var sktMsgs *zmqPkg.Socket = nil
-	if sm.Member.Publisher {
-		sktMsgs = p.zmq.msgs
-	}
-
-	if err = p.auth.setPeerAuthn(sm.Member.Label, sm.Transport.ServrPubKey, sm.Transport.ClientPubKey, p.zmq.state, sktMsgs); err != nil {
-		return fmt.Errorf(`setting zmq transport authentication failed - %v`, err)
+	if err = p.sendAuth(sm.Member.Label, sm.Transport.ServrPubKey, sm.Transport.ClientPubKey, sm.Member.Publisher); err != nil {
+		return fmt.Errorf(`sending internal auth message failed - %v`, err)
 	}
 
 	// send response back to subscriber along with zmq server pub-key of this node
@@ -113,8 +114,8 @@ func (p *processor) subscriptions(msg *models.Message) error {
 		return fmt.Errorf(`sending subscribe response failed - %v`, err)
 	}
 
-	if err = p.zmq.connect(domain.RoleSubscriber, p.myLabel, sm.Topic, sm.Member); err != nil {
-		return fmt.Errorf(`zmq connection failed - %v`, err)
+	if err = p.sendConnect(true, domain.RoleSubscriber, p.myLabel, sm.Topic, sm.Member); err != nil {
+		return fmt.Errorf(`sending connect message failed - %v`, err)
 	}
 
 	sk := base58.Decode(sm.PubKey)
@@ -132,7 +133,7 @@ func (p *processor) state(_, msg string) error {
 
 	var validMsg string
 	for exchId, encMsg := range status.AuthMsgs {
-		ok, _ := p.probr.ValidConn(exchId)
+		_, ok := p.probr.ValidConn(exchId)
 		if ok {
 			validMsg = encMsg
 			break
@@ -143,9 +144,18 @@ func (p *processor) state(_, msg string) error {
 		return fmt.Errorf(`status update is not intended to this member`)
 	}
 
-	_, strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
+	sender, strAuthMsg, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupStatus, Data: []byte(validMsg)})
 	if err != nil {
 		return fmt.Errorf(`reading status didcomm message failed - %v`, err)
+	}
+
+	// return ack if hello protocol
+	if strAuthMsg == domain.HelloPrefix {
+		if err = p.probr.SendMessage(models.TypStatusAck, sender, p.pubEndpoint); err != nil {
+			return fmt.Errorf(`sending hello ack failed - %v`, err)
+		}
+		p.log.Debug(fmt.Sprintf(`sent ack to hello protocol of %s`, sender))
+		return nil
 	}
 
 	var m models.Member
@@ -154,26 +164,13 @@ func (p *processor) state(_, msg string) error {
 	}
 
 	if !m.Active {
-		if err = p.zmq.disconnectStatus(m.PubEndpoint); err != nil {
-			return fmt.Errorf(`disconnect failed - %v`, err)
-		}
-
-		if m.Publisher {
-			if err = p.zmq.unsubscribeData(p.myLabel, status.Topic, m); err != nil {
-				return fmt.Errorf(`unsubscribing data topic failed - %v`, err)
-			}
-		}
-
-		p.subs.Delete(status.Topic, m.Label)
-		p.gs.DeleteMembr(status.Topic, m.Label)
-		if err = p.auth.remvKeys(m.Label); err != nil {
-			return fmt.Errorf(`removing zmq transport keys failed - %v`, err)
+		if err = p.removeMember(m, status); err != nil {
+			return fmt.Errorf(`removing member failed - %v`, err)
 		}
 		p.outChan <- m.Label + ` left group ` + status.Topic
 		return nil
 	}
 
-	//p.gs.AddMembr(status.Topic, m)
 	if err = p.gs.AddMembrs(status.Topic, m); err != nil {
 		return fmt.Errorf(`adding member failed - %v`, err)
 	}
@@ -183,7 +180,7 @@ func (p *processor) state(_, msg string) error {
 }
 
 func (p *processor) data(zmqTopic, msg string) error {
-	topic := p.zmq.groupNameByDataTopic(zmqTopic)
+	topic := p.zmq.GroupNameByDataTopic(zmqTopic)
 	sender, data, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupMsg, Data: []byte(msg)})
 	if err != nil {
 		if p.gs.Mode(topic) == domain.SingleQueueMode {
@@ -196,6 +193,10 @@ func (p *processor) data(zmqTopic, msg string) error {
 	data, err = p.syncr.parse(topic, data)
 	if err != nil {
 		return fmt.Errorf(`parsing data message via syncer failed - %v`, err)
+	}
+
+	if p.ackChans[sender] != nil {
+		p.ackChans[sender] <- data
 	}
 
 	p.outChan <- fmt.Sprintf(`%s sent in group '%s': %s`, sender, topic, data)
@@ -225,8 +226,8 @@ func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.
 
 	resByts, err := json.Marshal(messages.ResSubscribe{
 		Transport: messages.Transport{
-			ServrPubKey:  p.auth.servr.pub,
-			ClientPubKey: p.auth.client.pub,
+			ServrPubKey:  p.zmq.ServrPubKey(),
+			ClientPubKey: p.zmq.ClientPubKey(),
 		},
 		Publisher: curntMembr.Publisher,
 		Checksum:  p.gs.Checksum(topic),
@@ -244,9 +245,142 @@ func (p *processor) sendSubscribeRes(topic string, m models.Member, msg *models.
 	return nil
 }
 
+func (p *processor) removeMember(m models.Member, status *messages.Status) error {
+	if err := p.sendConnect(false, domain.RoleNull, ``, ``, m); err != nil {
+		return fmt.Errorf(`sending connect message failed - %v`, err)
+	}
+
+	if m.Publisher {
+		if err := p.sendSubscribe(false, false, false, true, status.Topic, p.myLabel, m); err != nil {
+			return fmt.Errorf(`sending internal subscribe message failed - %v`, err)
+		}
+	}
+
+	p.subs.Delete(status.Topic, m.Label)
+	if err := p.gs.DeleteMembr(status.Topic, m.Label); err != nil {
+		return fmt.Errorf(`deleting member failed - %v`, err)
+	}
+
+	if err := p.zmq.RemvKeys(m.Label); err != nil {
+		return fmt.Errorf(`removing zmq transport keys failed - %v`, err)
+	}
+
+	return nil
+}
+
 // dummy validation for PoC
 func (p *processor) validJoiner(label string) bool {
 	return true
+}
+
+/* internal channel functions */
+
+func (p *processor) sendPublish(topic string, data []byte) error {
+	rep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	p.zmq.PubChan <- transport.PublishMsg{Topic: topic, Data: data, Reply: rep}
+	err := <-rep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq publish failed - %v`, err)
+	}
+
+	return nil
+}
+
+func (p *processor) sendConnect(connect bool, initRole domain.Role, initLabel, topic string, m models.Member) error {
+	stateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	dataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	p.zmq.ConChan <- transport.ConnectMsg{
+		Connect:   connect,
+		Initiator: transport.Initiator{Role: initRole, Label: initLabel},
+		Topic:     topic,
+		Peer:      m,
+		Reply: struct {
+			State transport.Reply `json:"state"`
+			Data  transport.Reply `json:"data"`
+		}{State: stateRep, Data: dataRep},
+	}
+
+	err := <-stateRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq state connection failed - %v`, err)
+	}
+
+	err = <-dataRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq data connection failed - %v`, err)
+	}
+
+	return nil
+}
+
+func (p *processor) sendSubscribe(subscribe, unsubAll, state, data bool, topic, label string, m models.Member) error {
+	stateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	dataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	p.zmq.SubChan <- transport.SubscribeMsg{
+		Subscribe: subscribe,
+		UnsubAll:  unsubAll,
+		MyLabel:   label,
+		Topic:     topic,
+		State:     state,
+		Data:      data,
+		Peer:      m,
+		Reply: struct {
+			State transport.Reply `json:"state"`
+			Data  transport.Reply `json:"data"`
+		}{State: stateRep, Data: dataRep},
+	}
+
+	err := <-stateRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq state subscribe failed - %v`, err)
+	}
+
+	err = <-dataRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq data subscribe failed - %v`, err)
+	}
+
+	return nil
+}
+
+func (p *processor) sendAuth(label, srvrPubK, clientPubK string, publisher bool) error {
+	var dataAuth bool
+	if publisher {
+		dataAuth = true
+	}
+
+	authStateRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	authDataRep := transport.Reply{Id: uuid.New().String(), Chan: make(chan error)}
+	p.zmq.AuthChan <- transport.AuthMsg{
+		Label:        label,
+		ServrPubKey:  srvrPubK,
+		ClientPubKey: clientPubK,
+		Data:         dataAuth,
+		Reply: struct {
+			State transport.Reply `json:"state"`
+			Data  transport.Reply `json:"data"`
+		}{State: authStateRep, Data: authDataRep},
+	}
+
+	err := <-authStateRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq state authenticate failed - %v`, err)
+	}
+
+	err = <-authDataRep.Chan
+	if err != nil {
+		return fmt.Errorf(`zmq data authenticate failed - %v`, err)
+	}
+
+	return nil
+}
+
+func (p *processor) acker(register bool, label string, ackr chan string) {
+	if register {
+		p.ackChans[label] = ackr
+		return
+	}
+	delete(p.ackChans, label)
 }
 
 //func (p *processor) addIntruder(topic string) []models.Member {
