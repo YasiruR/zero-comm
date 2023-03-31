@@ -10,6 +10,10 @@ const (
 	PublishLatency TestMode = `publish-latency`
 )
 
+const (
+	callbackEndpoint = `/callback`
+)
+
 var (
 	numTests            int
 	latncygrpSizes                    = []int{1, 2, 4, 8, 16}

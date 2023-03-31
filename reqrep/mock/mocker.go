@@ -1,6 +1,7 @@
 package mock
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/domain/container"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type mocker struct {
@@ -42,7 +44,8 @@ func Start(c *container.Container) {
 	c.Log.Info(fmt.Sprintf(`mock server initialized and started listening on %d`, c.Cfg.MockPort))
 }
 
-func (m *mocker) handlePing(_ http.ResponseWriter, _ *http.Request) {
+func (m *mocker) handlePing(w http.ResponseWriter, _ *http.Request) {
+	w.Write([]byte(`ok`))
 	return
 }
 
@@ -138,26 +141,46 @@ func (m *mocker) handleGrpMsgListnr(_ http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var count int
-	ackChan := make(chan string)
-	m.ctr.PubSub.RegisterAck(req.Peer, ackChan)
-	defer m.ctr.PubSub.UnregisterAck(req.Peer)
-	for {
-		msg := <-ackChan
-		if msg != req.Msg {
-			continue
-		}
-
-		count++
-		if count == req.Count {
-			m.log.Debug(fmt.Sprintf(`reached message count registered by tester (label=%s, count=%d)`, req.Peer, req.Count))
-			return
-		}
-	}
+	m.initCallback(req)
 }
 
 func (m *mocker) handleKill(_ http.ResponseWriter, _ *http.Request) {
 	if err := m.ctr.Stop(); err != nil {
 		m.log.Error(`terminating container failed`, err)
+	}
+}
+
+func (m *mocker) initCallback(req ReqRegAck) {
+	ackChan := make(chan string)
+	m.ctr.PubSub.RegisterAck(req.Peer, ackChan)
+	timr := time.NewTimer(time.Duration(req.TimeoutMs) * time.Millisecond)
+
+	go func(req ReqRegAck, ackChan chan string) {
+		var count int
+		defer m.ctr.PubSub.UnregisterAck(req.Peer)
+		for {
+			select {
+			case msg := <-ackChan:
+				if msg != req.Msg {
+					continue
+				}
+
+				count++
+				if count == req.Count {
+					m.sendCallbackRes(req.CallbackEndpoint, count)
+					m.log.Debug(fmt.Sprintf(`reached message count registered by tester (label=%s, count=%d)`, req.Peer, req.Count))
+					return
+				}
+			case <-timr.C:
+				m.sendCallbackRes(req.CallbackEndpoint, count)
+				m.log.Debug(fmt.Sprintf(`timedout while waiting for %d messages registered by callback of %s`, req.Count, req.Peer))
+			}
+		}
+	}(req, ackChan)
+}
+
+func (m *mocker) sendCallbackRes(endpoint string, count int) {
+	if _, err := http.Post(endpoint, `text/plain`, bytes.NewReader([]byte(strconv.Itoa(count)))); err != nil {
+		m.log.Error(fmt.Sprintf(`error while returning ack - %v`, err))
 	}
 }
