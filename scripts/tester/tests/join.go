@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-// todo test joining with multiple groups
-
 func Join(typ TestMode, testBuf int64, usr, keyPath string, manualSize int) {
 	var grpSizes []int
 	var joinConsistnt bool
@@ -126,9 +124,9 @@ func join(topic string, pub, conctd bool, grp []group.Member, count int) (latLis
 				log.Error(fmt.Sprintf(`leaving group failed for %s`, c.Cfg.Name), err)
 			}
 
-			if err := c.Stop(); err != nil {
-				log.Error(fmt.Sprintf(`stopping agent %s failed - %v`, c.Cfg.Name, err))
-			}
+			//if err := c.Stop(); err != nil {
+			//	log.Error(fmt.Sprintf(`stopping agent %s failed - %v`, c.Cfg.Name, err))
+			//}
 		}
 
 		latList = append(latList, float64(latency))

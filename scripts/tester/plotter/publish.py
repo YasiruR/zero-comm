@@ -233,26 +233,6 @@ for i in range(len(sucs_dist_batchs_m)):
 
 plotSuccess(sucs_sizes_s, sucs_sizes_m, sucs_avg_lat_list_s, sucs_avg_lat_list_m, sucs_err_list_s, sucs_err_list_m, clrs, labels)
 
-#sucs_sizes_s = []
-#avg_sucs_list_s = []
-#sucs_err_list_s = []
-#for i in range(len(sucs_batch_sizes_s)):
-#    tmp_sizes, tmp_avg_list, tmp_err_list = parseSuccess(batch_sizes_s[i], sucs_init_sizes_s, sucs_batch_sizes_s, sucs_list_s)
-#    sucs_sizes_s.append(tmp_sizes)
-#    avg_sucs_list_s.append(tmp_avg_list)
-#    sucs_err_list_s.append(tmp_err_list)
-#    
-#sucs_sizes_m = []
-#avg_sucs_list_m = []
-#sucs_err_list_m = []
-#for i in range(len(sucs_batch_sizes_m)):
-#    tmp_sizes, tmp_avg_list, tmp_err_list = parseSuccess(batch_sizes_m[i], sucs_init_sizes_m, sucs_batch_sizes_m, sucs_list_m)
-#    sucs_sizes_m.append(tmp_sizes)
-#    avg_sucs_list_m.append(tmp_avg_list)
-#    sucs_err_list_m.append(tmp_err_list)
-#
-#plotSuccess(sucs_sizes_s, sucs_sizes_m, avg_sucs_list_s, avg_sucs_list_m, sucs_err_list_s, sucs_err_list_m, clrs, labels)
-
 
 
 
