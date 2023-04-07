@@ -3,6 +3,15 @@
 This project contains a prototype of using DIDComm with ZeroMQ in terms of both
 client-server and publisher-subscriber patterns.
 
+### Internal Architecture
+
+![alt text](./docs/software-architecure.png)
+
+### Component stack
+
+![alt text](./docs/group-stack.png)
+
+
 ### Dependencies
 
 <table>

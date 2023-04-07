@@ -71,7 +71,7 @@ def parse(filtr_batch, init_sizes, batch_sizes, latency):
     sizes.append(tmp_size)
     return sizes, avg_lat_list, err_list
 
-def plot(sizes_s, sizes_m, avg_lat_list_s, avg_lat_list_m, err_list_s, err_list_m, clrs, labels):
+def plot(sizes_s, sizes_m, avg_lat_list_s, avg_lat_list_m, err_list_s, err_list_m, clrs, labels):    
     fig, ax = plt.subplots()
     j = 0
     
@@ -84,8 +84,8 @@ def plot(sizes_s, sizes_m, avg_lat_list_s, avg_lat_list_m, err_list_s, err_list_
         j += 1
     
     ax.set_xlabel('initial group size')
-    ax.set_ylabel('average time (ms)')
-    ax.set_title('Latency for publish operation')
+    ax.set_ylabel('average time taken (ms)')
+    ax.set_title('Latency and throughput results for group-message')
     plt.rc('grid', linestyle="--", color='#C6C6C6')
     plt.legend(bbox_to_anchor=(1.1, 1.05))
     plt.grid()
@@ -111,12 +111,20 @@ for i in range(len(dist_batchs_s)):
     avg_lat_list_s.append(tmp_avg_list)
     err_list_s.append(tmp_err_list)
     index += 1
+    
+print('here')
+for i in range(len(sizes_s)):
+    print(sizes_s[i], ',' , batch_sizes_s[i], ' : ', avg_lat_list_s[i])
 
 dist_batchs_m = findDisctnctBatches(batch_sizes_m)
 sizes_m = []
 avg_lat_list_m = []
 err_list_m = []
 index = 0
+
+# to eliminate last 3 items of multiple-queue
+init_sizes_m = init_sizes_m[:-1]
+latency_m = latency_m[:-1]
 
 for i in range(len(dist_batchs_m)):
     tmp_sizes, tmp_avg_list, tmp_err_list = parse(dist_batchs_m[i], init_sizes_m, batch_sizes_m, latency_m)
@@ -190,7 +198,7 @@ def plotSuccess(sizes_s, sizes_m, avg_sucs_list_s, avg_sucs_list_m, sucs_err_lis
     
     ax.set_xlabel('initial group size')
     ax.set_ylabel('success rate (%)')
-    ax.set_title('Success rates for publish operation')
+    ax.set_title('Success rates of group-join')
     ax.set_ylim(ymin=0)
     plt.rc('grid', linestyle="--", color='#C6C6C6')
     plt.legend(bbox_to_anchor=(1.1, 1.05))

@@ -54,7 +54,7 @@ def plotJoinLatency(sizes_con, sizes_ncon, avg_lat_list_con, avg_lat_list_ncon, 
     ax.errorbar(sizes_ncon, avg_lat_list_ncon, yerr=err_list_ncon, ecolor="red", color="green", label="not-connected")
     ax.set_xlabel('initial group size')
     ax.set_ylabel('average time taken (ms)')
-    ax.set_title('Latency for join operation')
+    ax.set_title('Latency results of group-join')
     plt.rc('grid', linestyle="--", color='#C6C6C6')
     plt.legend()
     plt.grid()
@@ -117,7 +117,7 @@ def plotJoinThroughput(sizes_con_4, sizes_ncon_4, sizes_con_16, sizes_ncon_16, a
     plt.plot(sizes_ncon_16, avg_lat_list_ncon_16, color="brown", label="batch=16,not-connected")
     ax.set_xlabel('initial group size')
     ax.set_ylabel('average time taken (ms)')
-    ax.set_title('Throughput results of join')
+    ax.set_title('Throughput results of group-join')
     plt.rc('grid', linestyle="--", color='#C6C6C6')
     plt.legend()
     plt.grid()
@@ -131,6 +131,7 @@ sizes_ncon_4, avg_lat_list_ncon_4, err_list_ncon_4 = parse('false', init_sizes_4
 sizes_con_16, avg_lat_list_con_16, err_list_con_16 = parse('true', init_sizes_16, conctd_16, latency_16)
 sizes_ncon_16, avg_lat_list_ncon_16, err_list_ncon_16 = parse('false', init_sizes_16, conctd_16, latency_16)
 plotJoinThroughput(sizes_con_4, sizes_ncon_4, sizes_con_16, sizes_ncon_16, avg_lat_list_con_4, avg_lat_list_ncon_4, avg_lat_list_con_16, avg_lat_list_ncon_16)
+
 #plotJoinThroughput(sizes_con_4[:-1], sizes_ncon_4[:-1], sizes_con_16[:-1], sizes_ncon_16[:-1], avg_lat_list_con_4[:-1], avg_lat_list_ncon_4[:-1], avg_lat_list_con_16[:-1], avg_lat_list_ncon_16[:-1])
 
 
