@@ -1,0 +1,10 @@
+cff-version: 1.0.0
+message: "For citation purposes"
+authors:
+  - family-names: Witharanage
+    given-names: Yasiru
+#     orcid: https://orcid.org/1234-5678-9101-1121
+title: "Zero-Comm"
+version: 3.0.0
+# doi: 10.5281/zenodo.1234
+date-released: 2023-04-01

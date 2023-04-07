@@ -25,9 +25,11 @@ type reqJoin struct {
 }
 
 type ReqRegAck struct {
-	Peer  string `json:"peer"`
-	Msg   string `json:"msg"`
-	Count int    `json:"count"`
+	Peer             string `json:"peer"`
+	Msg              string `json:"msg"`
+	Count            int    `json:"count"`
+	CallbackEndpoint string `json:"callbackEndpoint"`
+	TimeoutMs        int64  `json:"timeoutMs"`
 }
 
 type ReqForceRemv struct {

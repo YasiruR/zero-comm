@@ -28,7 +28,7 @@ func InitAgent(name string, port, pubPort int) *container.Container {
 	}))
 }
 
-func setConfigs(args *container.Args) *container.Config {
+func IP() string {
 	hn, err := os.Hostname()
 	if err != nil {
 		log2.Fatal(fmt.Sprintf(`fetching hostname failed - %v`, err))
@@ -42,8 +42,12 @@ func setConfigs(args *container.Args) *container.Config {
 	if len(ips) == 0 {
 		log2.Fatal(fmt.Sprintf(`could not find an ip address within the kernel`))
 	}
-	ip := `tcp://` + ips[0].String() + `:`
 
+	return ips[0].String() + `:`
+}
+
+func setConfigs(args *container.Args) *container.Config {
+	ip := `tcp://` + IP()
 	return &container.Config{
 		Args:        args,
 		Hostname:    ip,

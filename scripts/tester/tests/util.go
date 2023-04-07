@@ -54,13 +54,13 @@ func initTestAgents(testId, count int, grp []group.Member, conctd bool) []*conta
 	return contList
 }
 
-func avg(latList []float64) float64 {
+func avg(list []float64) float64 {
 	var total float64
-	for _, l := range latList {
+	for _, l := range list {
 		total += l
 	}
 
-	return total / float64(len(latList))
+	return total / float64(len(list))
 }
 
 func maxAckLatency(ackList []int64) float64 {
@@ -91,6 +91,15 @@ func pingAll(grp []group.Member) (latency, success int64) {
 
 	wg.Wait()
 	return time.Since(pingStart).Milliseconds() / 2.0, count
+}
+
+func successRate(membrCount, msgCount, totalMsgs int) float64 {
+	target := membrCount * msgCount
+	if totalMsgs == target {
+		return 100.0
+	}
+
+	return (float64(totalMsgs) / float64(target)) * 100.0
 }
 
 func pingAllMap(grp []group.Member) (pingLats map[string]int64) {

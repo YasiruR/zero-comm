@@ -184,7 +184,7 @@ func (p *processor) data(zmqTopic, msg string) error {
 	sender, data, err := p.probr.ReadMessage(models.Message{Type: models.TypGroupMsg, Data: []byte(msg)})
 	if err != nil {
 		if p.gs.Mode(topic) == domain.SingleQueueMode {
-			p.log.Debug(fmt.Sprintf(`message may not be intended to this member - %v`, err))
+			//p.log.Debug(fmt.Sprintf(`message may not be intended to this member - %v`, err))
 			return nil
 		}
 		return fmt.Errorf(`reading subscribed message failed - %v`, err)

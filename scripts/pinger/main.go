@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/YasiruR/didcomm-prober/reqrep/mock"
 	"github.com/gorilla/mux"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -80,12 +81,23 @@ func read() (labels, ips, mockPorts []string) {
 
 func ping(ip, mockPort string) (int64, error) {
 	start := time.Now()
-	_, err := http.Get(`http://` + ip + `:` + mockPort + mock.PingEndpoint)
+	res, err := http.Get(`http://` + ip + `:` + mockPort + mock.PingEndpoint)
 	if err != nil {
 		return 0, fmt.Errorf(`request failed - %v`, err)
 	}
 
 	latency := time.Since(start).Milliseconds()
+	defer res.Body.Close()
+
+	data, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return 0, fmt.Errorf(`reading body failed - %v`, err)
+	}
+
+	if string(data) != `ok` {
+		return 0, fmt.Errorf(`invalid response`)
+	}
+
 	return latency, nil
 }
 
