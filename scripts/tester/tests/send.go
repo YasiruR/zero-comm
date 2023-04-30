@@ -94,7 +94,7 @@ func initCallbackRouter() {
 			log.Fatal(fmt.Sprintf(`http server initialization failed - %v`, err))
 		}
 	}(callbackPort, r)
-	fmt.Printf("# Callback server started listening on %d (endpoint: %s)\n", callbackPort, callbackEndpoint)
+	fmt.Printf("	Callback server started listening on %d (endpoint: %s)\n", callbackPort, callbackEndpoint)
 	// server should be shutdown gracefully
 }
 

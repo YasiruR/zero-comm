@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/core/connection"
-	"github.com/YasiruR/didcomm-prober/core/did"
-	"github.com/YasiruR/didcomm-prober/core/invitation"
 	"github.com/YasiruR/didcomm-prober/crypto"
+	"github.com/YasiruR/didcomm-prober/didcomm/connection"
+	"github.com/YasiruR/didcomm-prober/didcomm/did"
+	"github.com/YasiruR/didcomm-prober/didcomm/invitation"
 	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
 	"github.com/YasiruR/didcomm-prober/log"
