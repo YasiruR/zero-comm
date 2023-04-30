@@ -592,8 +592,15 @@ func (a *Agent) compressStatus(topic string, active, publisher bool) ([]byte, er
 		return nil, fmt.Errorf(`marshalling status message failed - %v`, err)
 	}
 
+	fmt.Println()
+	fmt.Println(`members: `, len(a.gs.Membrs(topic)))
+	fmt.Println(`before comprs: `, len(encodedStatus))
+
 	cmprsd := a.compactr.zEncodr.EncodeAll(encodedStatus, make([]byte, 0, len(encodedStatus)))
 	a.log.Trace(fmt.Sprintf(`compressed status message (from %d to %d #bytes)`, len(encodedStatus), len(cmprsd)))
+
+	fmt.Println(`after comprs: `, len(cmprsd))
+	fmt.Println()
 	return cmprsd, nil
 }
 

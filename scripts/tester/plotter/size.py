@@ -24,10 +24,21 @@ def plot(name):
     
 plot('msg_sizes')
 
+grp_sizes = [2, 4, 8, 16, 32, 64]
+befr_compr = [1756, 5050, 11617, 24726, 50962, 103534]
+aftr_compr = [1400, 3512, 7711, 16120, 32860, 66385]
 
-def diff():
-    for i in range(len(init_sizes)):
-        d = didcomm_sizes[i]-init_sizes[i]
-        print(d, init_sizes[i])
-        
-diff()
+def plotState(name):
+    fig, ax = plt.subplots()    
+    ax.errorbar(grp_sizes, befr_compr, marker='.', markerfacecolor='red', markeredgecolor='black', label='before compression', ls='--')
+    ax.errorbar(grp_sizes, aftr_compr, marker='.', markerfacecolor='red', markeredgecolor='black', label='after compression', color='green')
+    
+    ax.set_xlabel('number of members')
+    ax.set_ylabel('Message size (bytes)')
+    ax.set_title('State message sizes in ZeroComm')
+    plt.legend()
+    plt.grid()
+    plt.savefig('../../../docs/' + name + '.pdf', bbox_inches="tight")
+    plt.show()
+    
+plotState('state_msgs')
