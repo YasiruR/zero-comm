@@ -389,46 +389,47 @@ func (a *Agent) reqState(topic, accptr, inv string) (*messages.ResGroupJoin, err
 	return &resGroup, nil
 }
 
-func (a *Agent) Send(topic, msg string) error {
+func (a *Agent) Send(topic, msg string) (n []int, err error) {
 	curntMembr := a.gs.Membr(topic, a.myLabel)
 	if curntMembr == nil {
-		return fmt.Errorf(`member information does not exist for the current member`)
+		return nil, fmt.Errorf(`member information does not exist for the current member`)
 	}
 
 	if !curntMembr.Publisher {
-		return fmt.Errorf(`current member is not registered as a publisher`)
+		return nil, fmt.Errorf(`current member is not registered as a publisher`)
 	}
 
 	subs, err := a.subs.QueryByTopic(topic)
 	if err != nil {
-		return fmt.Errorf(`fetching subscribers for topic %s failed - %v`, topic, err)
+		return nil, fmt.Errorf(`fetching subscribers for topic %s failed - %v`, topic, err)
 	}
 
 	// including order-metadata only if it is a group message and syncing is enabled by params of topic
 	syncdMsg, err := a.syncr.message(topic, []byte(msg))
 	if err != nil {
-		return fmt.Errorf(`constructing ordered group message failed - %v`, err)
+		return nil, fmt.Errorf(`constructing ordered group message failed - %v`, err)
 	}
 
 	var published bool
 	for sub, key := range subs {
 		data, err := a.packr.pack(sub, key, syncdMsg)
 		if err != nil {
-			return fmt.Errorf(`packing data message for %s failed - %v`, sub, err)
+			return nil, fmt.Errorf(`packing data message for %s failed - %v`, sub, err)
 		}
 
 		if err = a.proc.sendPublish(a.zmq.DataTopic(topic, a.myLabel, sub), data); err != nil {
-			return fmt.Errorf(`sending internal publish message failed - %v`, err)
+			return nil, fmt.Errorf(`sending internal publish message failed - %v`, err)
 		}
 
 		published = true
+		n = append(n, len(data))
 		a.log.Trace(fmt.Sprintf(`published %s to %s of %s`, msg, topic, sub))
 	}
 
 	if published {
 		a.outChan <- `Published '` + msg + `' to '` + topic + `'`
 	}
-	return nil
+	return n, nil
 }
 
 func (a *Agent) connectDIDComm(m models.Member) error {

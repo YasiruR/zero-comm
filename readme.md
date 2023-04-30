@@ -11,7 +11,6 @@ client-server and publisher-subscriber patterns.
 
 ![alt text](./docs/group-stack.png)
 
-
 ### Dependencies
 
 <table>

@@ -11,7 +11,7 @@ import (
 func main() {
 	args := os.Args
 	if len(args) != 5 && len(args) != 6 {
-		log.Fatalln(`incorrect number of arguments`)
+		log.Fatalf("incorrect number of arguments (provided=%d)\n", len(args))
 	}
 
 	typ, strTestBuf, usr, keyPath := args[1], args[2], args[3], args[4]
@@ -36,6 +36,8 @@ func main() {
 		tests.Join(tests.JoinThroughput, testBuf, usr, keyPath, manualSize)
 	case tests.PublishLatency:
 		tests.Send(testBuf, usr, keyPath, manualSize)
+	case tests.MsgSize:
+		tests.Size()
 	default:
 		log.Fatalln(`invalid test method`)
 	}

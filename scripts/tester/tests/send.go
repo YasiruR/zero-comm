@@ -152,7 +152,7 @@ func send(topic string, tester *container.Container, grp []group.Member, msgCoun
 		start := time.Now()
 		for j := 0; j < msgCount; j++ {
 			go func() {
-				if err = tester.PubSub.Send(topic, req.Msg); err != nil {
+				if _, err = tester.PubSub.Send(topic, req.Msg); err != nil {
 					log.Fatal(fmt.Sprintf(`publish error - %v`, err))
 				}
 			}()
