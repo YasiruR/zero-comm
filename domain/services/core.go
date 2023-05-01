@@ -58,7 +58,8 @@ type Discoverer interface {
 type GroupAgent interface {
 	Create(topic string, publisher bool, gp models.GroupParams) error
 	Join(topic, acceptor string, publisher bool) error
-	Send(topic, msg string) error
+	// Send returns the number of bytes transmitted as DIDComm messages per each member
+	Send(topic, msg string) (n []int, err error)
 	Leave(topic string) error
 	Info(topic string) (models.GroupParams, []models.Member)
 	// RegisterAck and UnregisterAck are used for registering a

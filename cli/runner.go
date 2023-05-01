@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"github.com/YasiruR/didcomm-prober/core/discovery"
+	"github.com/YasiruR/didcomm-prober/didcomm/discovery"
 	"github.com/YasiruR/didcomm-prober/domain"
 	"github.com/YasiruR/didcomm-prober/domain/container"
 	"github.com/YasiruR/didcomm-prober/domain/models"
@@ -281,7 +281,7 @@ func (r *runner) groupMsg() {
 	topic := r.input(`Topic`)
 	msg := r.input(`Message`)
 
-	if err := r.pubsub.Send(topic, msg); err != nil {
+	if _, err := r.pubsub.Send(topic, msg); err != nil {
 		r.error(`sending group message failed`, err)
 	}
 }

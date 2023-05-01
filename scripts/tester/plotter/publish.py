@@ -47,7 +47,7 @@ def findDisctnctBatches(batch_sizes):
                 dist_batchs.append(tmp_batch)
     return dist_batchs
 
-def parse(filtr_batch, init_sizes, batch_sizes, latency):
+def parse(filtr_batch, init_sizes, batch_sizes, pings, latency):
     sizes = []
     avg_lat_list = []
     err_list = []
@@ -62,13 +62,14 @@ def parse(filtr_batch, init_sizes, batch_sizes, latency):
             err_list.append(np.std(tmp_lat_list))
             sizes.append(tmp_size)
             tmp_size = init_sizes[i]
-            tmp_lat_list = [latency[i]]
+            tmp_lat_list = [latency[i]-pings[i]]
         else:
-            tmp_lat_list.append(latency[i])
+            tmp_lat_list.append(latency[i]-pings[i])
 
     avg_lat_list.append(np.mean(tmp_lat_list))
     err_list.append(np.std(tmp_lat_list))
     sizes.append(tmp_size)
+    
     return sizes, avg_lat_list, err_list
 
 def plot(sizes_s, sizes_m, avg_lat_list_s, avg_lat_list_m, err_list_s, err_list_m, clrs, labels):    
@@ -89,7 +90,7 @@ def plot(sizes_s, sizes_m, avg_lat_list_s, avg_lat_list_m, err_list_s, err_list_
     plt.rc('grid', linestyle="--", color='#C6C6C6')
     plt.legend(bbox_to_anchor=(1.1, 1.05))
     plt.grid()
-    plt.savefig('publish_latency.pdf', bbox_inches="tight")
+    plt.savefig('../../../docs/publish_latency.pdf', bbox_inches="tight")
     plt.show()
 
 
@@ -104,7 +105,7 @@ err_list_s = []
 index = 0
 
 for i in range(len(dist_batchs_s)):
-    tmp_sizes, tmp_avg_list, tmp_err_list = parse(dist_batchs_s[i], init_sizes_s, batch_sizes_s, latency_s)
+    tmp_sizes, tmp_avg_list, tmp_err_list = parse(dist_batchs_s[i], init_sizes_s, batch_sizes_s, pings_s, latency_s)
     if len(tmp_sizes) == 0:
         continue
     sizes_s.append(tmp_sizes)
@@ -112,10 +113,6 @@ for i in range(len(dist_batchs_s)):
     err_list_s.append(tmp_err_list)
     index += 1
     
-print('here')
-for i in range(len(sizes_s)):
-    print(sizes_s[i], ',' , batch_sizes_s[i], ' : ', avg_lat_list_s[i])
-
 dist_batchs_m = findDisctnctBatches(batch_sizes_m)
 sizes_m = []
 avg_lat_list_m = []
@@ -127,14 +124,14 @@ init_sizes_m = init_sizes_m[:-1]
 latency_m = latency_m[:-1]
 
 for i in range(len(dist_batchs_m)):
-    tmp_sizes, tmp_avg_list, tmp_err_list = parse(dist_batchs_m[i], init_sizes_m, batch_sizes_m, latency_m)
+    tmp_sizes, tmp_avg_list, tmp_err_list = parse(dist_batchs_m[i], init_sizes_m, batch_sizes_m, pings_m, latency_m)
     if len(tmp_sizes) == 0:
         continue
     sizes_m.append(tmp_sizes)
     avg_lat_list_m.append(tmp_avg_list)
     err_list_m.append(tmp_err_list)
     index += 1
-
+ 
 clrs = ["navy", "darkgreen", "darkgoldenrod", "purple", "cornflowerblue", "darkseagreen", "khaki", "plum"]
 labels = ["batch=1,single-queue", "batch=10,single-queue", "batch=50,single-queue", "batch=100,single-queue", "batch=1,multiple-queue", "batch=10,multiple-queue", "batch=50,multiple-queue", "batch=100,multiple-queue"]
 plot(sizes_s, sizes_m, avg_lat_list_s, avg_lat_list_m, err_list_s, err_list_m, clrs, labels)
@@ -198,12 +195,12 @@ def plotSuccess(sizes_s, sizes_m, avg_sucs_list_s, avg_sucs_list_m, sucs_err_lis
     
     ax.set_xlabel('initial group size')
     ax.set_ylabel('success rate (%)')
-    ax.set_title('Success rates of group-join')
+    ax.set_title('Success rates of group-message')
     ax.set_ylim(ymin=0)
     plt.rc('grid', linestyle="--", color='#C6C6C6')
     plt.legend(bbox_to_anchor=(1.1, 1.05))
     plt.grid()
-    plt.savefig('publish_success.pdf', bbox_inches="tight")
+    plt.savefig('../../../docs/publish_success.pdf', bbox_inches="tight")
     plt.show()
     
 sucs_init_sizes_s, sucs_batch_sizes_s, sucs_list_s = readSuccess('../results/publish_latency.csv', 'sq-c-o-topic')
@@ -241,8 +238,59 @@ for i in range(len(sucs_dist_batchs_m)):
 
 plotSuccess(sucs_sizes_s, sucs_sizes_m, sucs_avg_lat_list_s, sucs_avg_lat_list_m, sucs_err_list_s, sucs_err_list_m, clrs, labels)
 
+# for single node graph
 
+def plotSingle(batch_list, avg_lat_list, err_list, name):    
+    fig, ax = plt.subplots()    
+    ax.errorbar(batch_list, avg_lat_list, yerr=err_list, ecolor="red")
+    
+    ax.set_xlabel('number of messages')
+    ax.set_ylabel('average time taken (ms)')
+    ax.set_title('Latency for group messages with a single node')
+    plt.grid()
+    plt.savefig('../../../docs/' + name + '.pdf', bbox_inches="tight")
+    plt.show()
 
+init_sizes_s, batch_sizes_s, pings_s, latency_s = read('../results/publish_latency_single.csv', 'sq-c-o-topic')
+
+dist_batchs_s = findDisctnctBatches(batch_sizes_s)
+avg_lat_list_s = []
+err_list_s = []
+index = 0
+
+for i in range(len(dist_batchs_s)):
+    tmp_sizes, tmp_avg_list, tmp_err_list = parse(dist_batchs_s[i], init_sizes_s, batch_sizes_s, pings_s, latency_s)
+    if len(tmp_sizes) == 0:
+        continue
+    avg_lat_list_s.append(tmp_avg_list[0])
+    err_list_s.append(tmp_err_list[0])
+    index += 1
+
+# for small batches
+small_batchs_s = []
+small_avg_lat_list_s = []
+small_err_list_s = []    
+for i in range(len(dist_batchs_s)):
+    if dist_batchs_s[i] > 100:
+        continue
+    small_batchs_s.append(dist_batchs_s[i])
+    small_avg_lat_list_s.append(avg_lat_list_s[i])
+    small_err_list_s.append(err_list_s [i])
+
+plotSingle(small_batchs_s, small_avg_lat_list_s, small_err_list_s, 'publish_latency_single_small')
+
+# for large batches
+large_batchs_s = []
+large_avg_lat_list_s = []
+large_err_list_s = []    
+for i in range(len(dist_batchs_s)):
+    if dist_batchs_s[i] < 100:
+        continue
+    large_batchs_s.append(dist_batchs_s[i])
+    large_avg_lat_list_s.append(avg_lat_list_s[i])
+    large_err_list_s.append(err_list_s [i])
+
+plotSingle(large_batchs_s, large_avg_lat_list_s, large_err_list_s, 'publish_latency_single_large')
 
 
 
