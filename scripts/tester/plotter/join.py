@@ -58,7 +58,7 @@ def plotJoinLatency(sizes_con, sizes_ncon, avg_lat_list_con, avg_lat_list_ncon, 
     plt.rc('grid', linestyle="--", color='#C6C6C6')
     plt.legend()
     plt.grid()
-    plt.savefig('join_latency.pdf', bbox_inches="tight")
+    plt.savefig('../../../docs/join_latency.pdf', bbox_inches="tight")
     plt.show()
 
 init_sizes, conctd, latency = readJoinLatency('../results/join_latency.csv')
@@ -111,17 +111,17 @@ def parse(filtrConctd, init_sizes, conctd, latency):
 
 def plotJoinThroughput(sizes_con_4, sizes_ncon_4, sizes_con_16, sizes_ncon_16, avg_lat_list_con_4, avg_lat_list_ncon_4, avg_lat_list_con_16, avg_lat_list_ncon_16):
     fig, ax = plt.subplots()   
-    plt.plot(sizes_con_4, avg_lat_list_con_4, label="batch=4,connected")
-    plt.plot(sizes_ncon_4, avg_lat_list_ncon_4, color="green", label="batch=4,not-connected")
-    plt.plot(sizes_con_16, avg_lat_list_con_16, color="purple", label="batch=16,connected")
-    plt.plot(sizes_ncon_16, avg_lat_list_ncon_16, color="brown", label="batch=16,not-connected")
+    plt.plot(sizes_con_4, avg_lat_list_con_4, label="batch=4,connected", marker='.', markerfacecolor='grey', markeredgecolor='black',)
+    plt.plot(sizes_ncon_4, avg_lat_list_ncon_4, color="green", label="batch=4,not-connected", marker='.', markerfacecolor='grey', markeredgecolor='black',)
+    plt.plot(sizes_con_16, avg_lat_list_con_16, color="purple", label="batch=16,connected", marker='.', markerfacecolor='grey', markeredgecolor='black',)
+    plt.plot(sizes_ncon_16, avg_lat_list_ncon_16, color="brown", label="batch=16,not-connected", marker='.', markerfacecolor='grey', markeredgecolor='black',)
     ax.set_xlabel('initial group size')
     ax.set_ylabel('average time taken (ms)')
     ax.set_title('Throughput results of group-join')
     plt.rc('grid', linestyle="--", color='#C6C6C6')
     plt.legend()
     plt.grid()
-    plt.savefig('join_throughput.pdf', bbox_inches="tight")
+    plt.savefig('../../../docs/join_throughput.pdf', bbox_inches="tight")
     plt.show()
 
 init_sizes_4, conctd_4, latency_4 = readJoinThroughput('../results/join_throughput.csv', 4)
