@@ -3,15 +3,33 @@
 This project contains a prototype of using DIDComm with ZeroMQ in terms of both
 client-server and publisher-subscriber patterns.
 
-### Internal Architecture
+## Usage
+
+Follow the steps listed below to start an agent.
+
+1. Clone the repository
+2. Build from the source code by running `go build` command in the parent directory
+3. Start the agent. eg: `./didcomm-prober -label=alice -port=6001 -pub_port=7001 -mock_port=8001 -mock -v` 
+4. Press `c` and enter to proceed
+
+### Parameters
+
+- `label`: display name of the agent
+- `port`: port for peer-to-peer communication
+- `pub_port`: port for group communication
+- `mock_port`: port for testing purposes
+- `mock`: if used, enables mocking endpoints
+- `v`: if used, prints the logs of the agent
+
+## Internal Architecture
 
 ![alt text](./docs/software-architecure.png)
 
-### Component stack
+## Component stack
 
 ![alt text](./docs/group-stack.png)
 
-### Dependencies
+## Dependencies
 
 <table>
 <thead>
