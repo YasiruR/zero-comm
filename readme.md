@@ -3,6 +3,17 @@
 This project contains a prototype of using DIDComm with ZeroMQ in terms of both
 client-server and publisher-subscriber patterns.
 
+Supported features:
+- Generating invitations to connect with agents
+- Connecting via invitations
+- Peer-to-peer communication
+- Creating a group
+- Joining a group
+- Group messaging
+- Leaving a group
+- Fetching group information
+- Discover services of the agent
+
 ## Usage
 
 Follow the steps listed below to start an agent.
