@@ -1,7 +1,13 @@
-# DIDComm-Prober
+# ZeroComm
 
-This project contains a prototype of using DIDComm with ZeroMQ in terms of both
-client-server and publisher-subscriber patterns.
+ZeroComm is a Go implementation of a novel solution which 
+enables decentralized secure messaging with both peer-to-peer
+and group communication, while combining DIDComm framework and 
+ZeroMQ transport protocol. This prototype was researched and designed as 
+a thesis project.
+
+Please refer to the [documentation](docs/zerocomm.pdf) to find more information about the requirements,
+architecture, design, implementation and performance evaluation of the solution.
 
 Supported features:
 - Generating invitations to connect with agents
@@ -22,6 +28,8 @@ Follow the steps listed below to start an agent.
 2. Build from the source code by running `go build` command in the parent directory
 3. Start the agent. eg: `./didcomm-prober -label=alice -port=6001 -pub_port=7001 -mock_port=8001 -mock -v` 
 4. Press `c` and enter to proceed
+
+![alt text](./docs/initial-screen.png)
 
 ### Parameters
 
